@@ -70,6 +70,7 @@ pnpm web:smoke
 - [Identity and Abuse Prevention](docs/hana-chat-identity-and-abuse-prevention.md)
 - [Development Guide](docs/development.md)
 - [VPS and Vercel Deployment](docs/deployment-vps-vercel.md)
+- [Playground VPS Deployment](docs/playground-vps-deployment.md)
 - [Domain Integration](docs/domain-integration.md)
 - [Guardrails and SSE](docs/guardrails-and-sse.md)
 - [AI Harness](docs/ai-harness.md)

@@ -1,0 +1,22 @@
+services:
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    env_file:
+      - ${HANA_ENV_FILE:?Set HANA_ENV_FILE to the production env file}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./infra/deploy/playground/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - hana-internal
+    depends_on:
+      api-gateway:
+        condition: service_healthy
+
+volumes:
+  caddy_data:
+  caddy_config:

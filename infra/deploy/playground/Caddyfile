@@ -1,0 +1,16 @@
+{
+	email {$ACME_EMAIL}
+}
+
+api.hanachat.live {
+	encode zstd gzip
+
+	header {
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+	}
+
+	reverse_proxy api-gateway:4000
+}
