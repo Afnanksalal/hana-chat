@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
+import { createSessionCookie } from "../../session-cookie";
 
 const apiBaseUrl = process.env["API_GATEWAY_URL"] ?? "http://localhost:4000";
-const authCookieName = process.env["AUTH_COOKIE_NAME"] ?? "hana_session";
-const authCookieDomain = process.env["AUTH_COOKIE_DOMAIN"];
 
 interface StartPayload {
   verified?: boolean;
@@ -24,16 +23,7 @@ export async function POST(request: Request) {
     });
 
     if (response.ok && payload.verified === true && typeof payload.sessionToken === "string") {
-      nextResponse.cookies.set({
-        name: authCookieName,
-        value: payload.sessionToken,
-        httpOnly: true,
-        sameSite: "lax",
-        secure: process.env["NODE_ENV"] === "production",
-        domain: authCookieDomain || undefined,
-        maxAge: 60 * 60 * 24 * 30,
-        path: "/",
-      });
+      nextResponse.cookies.set(createSessionCookie(request, payload.sessionToken));
     }
 
     return nextResponse;

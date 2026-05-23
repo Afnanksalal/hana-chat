@@ -1,11 +1,10 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
+import { authCookieName, clearSessionCookie } from "../session-cookie";
 
 const apiBaseUrl = process.env["API_GATEWAY_URL"] ?? "http://localhost:4000";
-const authCookieName = process.env["AUTH_COOKIE_NAME"] ?? "hana_session";
-const authCookieDomain = process.env["AUTH_COOKIE_DOMAIN"];
 
-export async function POST() {
+export async function POST(request: Request) {
   const cookieStore = await cookies();
   const sessionToken = cookieStore.get(authCookieName)?.value;
 
@@ -19,16 +18,7 @@ export async function POST() {
 
   const response = NextResponse.json({ ok: true });
 
-  response.cookies.set({
-    name: authCookieName,
-    value: "",
-    httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-    domain: authCookieDomain || undefined,
-    maxAge: 0,
-    path: "/",
-  });
+  response.cookies.set(clearSessionCookie(request));
 
   return response;
 }

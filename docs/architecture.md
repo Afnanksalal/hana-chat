@@ -6,8 +6,9 @@ This document is the implementation map for the current Hana Chat codebase.
 
 ```mermaid
 flowchart LR
-  User["Web / PWA user"] --> Vercel["Next.js on Vercel"]
-  Vercel --> Gateway["NestJS API Gateway"]
+  User["Web / PWA user"] --> Caddy["Caddy public edge on VPS"]
+  Caddy --> Web["Next.js web container"]
+  Web --> Gateway["NestJS API Gateway"]
   Gateway --> Postgres["Postgres canonical data"]
   Gateway --> Qdrant["Qdrant vector retrieval"]
   Gateway --> Xai["xAI chat completions"]
@@ -88,13 +89,14 @@ sequenceDiagram
 - `infra/database/migrations`: canonical schema migrations.
 - `infra/docker`: production service image.
 
-## Deployment Split
+## Deployment
 
-- Frontend: Vercel.
-- VPS: API gateway, worker services, Postgres, Qdrant, Neo4j, Redis, Redpanda, Temporal, ClickHouse.
+- Frontend: Next.js container on the VPS behind Caddy.
+- VPS: Caddy, Next.js web, API gateway, worker services, Postgres, Qdrant, Neo4j, Redis, Redpanda, Temporal, ClickHouse.
 - Secrets: `.env` locally, VPS environment or secret manager in production. Never commit live secrets.
-- Domains: `hanachat.live` for public landing/legal/crawler routes, `app.hanachat.live` for authenticated app routes, and `api.hanachat.live` for the VPS API gateway.
-- Auth cookies use `AUTH_COOKIE_DOMAIN=.hanachat.live` in production so public and app subdomains share server-validated session state.
+- Current Playground access: `https://18.61.174.6` serves the full product through a Let's Encrypt IP-address certificate.
+- Domains when ready: `hanachat.live` for public landing/legal/crawler routes, `app.hanachat.live` for authenticated app routes, and `api.hanachat.live` for the API gateway.
+- Auth cookies use `AUTH_COOKIE_DOMAIN=.hanachat.live` on matching domain hosts, and fall back to host-only cookies on raw-IP access.
 - Next.js and NestJS both emit defensive security headers; production API and SSE responses redact unexpected internal error messages.
 - Production CORS origins are validated through `WEB_ORIGIN` and every entry in `WEB_ORIGINS`; localhost or non-HTTPS origins fail fast in production.
 - Production chat responses do not expose internal model-routing data to clients.
