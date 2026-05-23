@@ -1,16 +1,32 @@
 {
 	email {$ACME_EMAIL}
+	default_sni {$VPS_PUBLIC_IP}
 }
 
-api.hanachat.live {
-	encode zstd gzip
-
+(security_headers) {
 	header {
 		Referrer-Policy "strict-origin-when-cross-origin"
-		Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
 		X-Content-Type-Options "nosniff"
 		X-Frame-Options "DENY"
 	}
+}
 
-	reverse_proxy api-gateway:4000
+http://{$VPS_PUBLIC_IP} {
+	encode zstd gzip
+
+	handle /.well-known/acme-challenge/* {
+		root * /srv/certbot-webroot
+		file_server
+	}
+
+	redir https://{$VPS_PUBLIC_IP}{uri} 308
+}
+
+https://{$VPS_PUBLIC_IP} {
+	encode zstd gzip
+	tls /etc/letsencrypt/live/{$VPS_PUBLIC_IP}/fullchain.pem /etc/letsencrypt/live/{$VPS_PUBLIC_IP}/privkey.pem
+
+	import security_headers
+
+	reverse_proxy web:3000
 }
