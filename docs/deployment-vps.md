@@ -51,6 +51,11 @@ The Playground VPS env has xAI configured. Razorpay and Twilio values are expect
 placeholder/missing until the live provider accounts are added. Do not commit or paste provider
 secrets.
 
+Temporary owner access before domain/Twilio completion is controlled by
+`ADMIN_OTP_BYPASS_PHONE_NUMBER` in `/opt/hana-chat/shared/.env.vps`. It bypasses OTP only for that
+one configured number, grants admin/Ultra access, and should be removed when real phone verification
+is live.
+
 ## Start
 
 ```bash

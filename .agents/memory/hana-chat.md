@@ -21,6 +21,7 @@
 - Playground raw-IP access is a supported path at `https://18.61.174.6`; auth cookies fall back to host-only cookies on IP access and use `.hanachat.live` only on matching domain hosts.
 - Raw-IP HTTPS uses Let's Encrypt IP-address certificates through Certbot with the `shortlived` profile; renewal must run daily.
 - Portainer should be interpreted through `docs/vps-container-map.md`: `caddy`, `web`, and `api-gateway` are the live request path; the extra Nest containers are private bounded-context runtimes and extraction boundaries.
+- Temporary production owner access uses `ADMIN_OTP_BYPASS_PHONE_NUMBER` in the VPS env only; do not hardcode or commit the phone number, and remove the bypass when real Twilio/domain auth is ready.
 - Backend preference: NestJS with heavily typed TypeScript.
 - Vector memory/search uses Qdrant from the start, not pgvector.
 - Graph projection target is Neo4j.

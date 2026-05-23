@@ -30,12 +30,12 @@ export class IdentityController {
     verified?: boolean;
     userId?: string;
     sessionToken?: string;
-    bypass?: "dev_admin";
+    bypass?: "admin_otp_bypass";
   }> {
     const input = StartPhoneVerificationRequestSchema.parse(body);
 
-    if (this.isDevAdminPhone(input.phoneNumber)) {
-      return this.issueDevAdminSession(input.phoneNumber, input.deviceId, userAgent);
+    if (this.isAdminBypassPhone(input.phoneNumber)) {
+      return this.issueAdminBypassSession(input.phoneNumber, input.deviceId, userAgent);
     }
 
     const phoneHash = hashPhoneNumber(input.phoneNumber, this.config.PHONE_HASH_SECRET);
@@ -218,15 +218,16 @@ export class IdentityController {
     };
   }
 
-  private isDevAdminPhone(phoneNumber: string): boolean {
-    return (
-      this.config.NODE_ENV !== "production" &&
-      Boolean(this.config.DEV_ADMIN_PHONE_NUMBER) &&
-      phoneNumber === this.config.DEV_ADMIN_PHONE_NUMBER
-    );
+  private isAdminBypassPhone(phoneNumber: string): boolean {
+    const configuredPhoneNumber =
+      this.config.NODE_ENV === "production"
+        ? this.config.ADMIN_OTP_BYPASS_PHONE_NUMBER
+        : (this.config.DEV_ADMIN_PHONE_NUMBER ?? this.config.ADMIN_OTP_BYPASS_PHONE_NUMBER);
+
+    return Boolean(configuredPhoneNumber) && phoneNumber === configuredPhoneNumber;
   }
 
-  private async issueDevAdminSession(
+  private async issueAdminBypassSession(
     phoneNumber: PhoneNumberE164,
     deviceId: string | undefined,
     userAgent: string | undefined,
@@ -234,7 +235,7 @@ export class IdentityController {
     verified: true;
     userId: string;
     sessionToken: string;
-    bypass: "dev_admin";
+    bypass: "admin_otp_bypass";
   }> {
     const phoneHash = hashPhoneNumber(phoneNumber, this.config.PHONE_HASH_SECRET);
     const existingCredential = await this.db
@@ -263,7 +264,7 @@ export class IdentityController {
             this.config.PHONE_ENCRYPTION_KEY_BASE64,
           ).value,
           country_code: inferCountryCode(phoneNumber),
-          line_type: "dev_admin",
+          line_type: "admin_otp_bypass",
           is_primary: true,
         })
         .execute();
@@ -283,27 +284,27 @@ export class IdentityController {
       })
       .onConflict((oc) => oc.columns(["user_id", "role"]).doNothing())
       .execute();
-    await this.ensureDevAdminEntitlements(userId);
+    await this.ensureAdminBypassEntitlements(userId);
 
     const session = await this.issueSession(userId, deviceId, userAgent);
 
     await auditEvent(this.db, {
       actorUserId: userId,
-      action: "auth.dev_admin.bypass",
+      action: "auth.admin_otp_bypass",
       resourceType: "identity.session",
       resourceId: session.sessionId,
-      metadata: { devOnly: true },
+      metadata: { otpBypass: true, production: this.config.NODE_ENV === "production" },
     });
 
     return {
       verified: true,
       userId,
       sessionToken: session.sessionToken,
-      bypass: "dev_admin",
+      bypass: "admin_otp_bypass",
     };
   }
 
-  private async ensureDevAdminEntitlements(userId: string): Promise<void> {
+  private async ensureAdminBypassEntitlements(userId: string): Promise<void> {
     const now = new Date();
     const currentPeriodEnd = new Date(now);
     currentPeriodEnd.setUTCFullYear(currentPeriodEnd.getUTCFullYear() + 1);
@@ -354,8 +355,8 @@ export class IdentityController {
       .values({
         user_id: userId,
         plan_id: "ultra",
-        provider: "dev_admin",
-        provider_subscription_id: `dev_admin_${userId}`,
+        provider: "admin_otp_bypass",
+        provider_subscription_id: `admin_otp_bypass_${userId}`,
         status: "active",
         current_period_start: now,
         current_period_end: currentPeriodEnd,

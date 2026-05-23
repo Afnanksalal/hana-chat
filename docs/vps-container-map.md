@@ -148,9 +148,15 @@ Set and keep secret:
 - `TWILIO_ACCOUNT_SID`
 - `TWILIO_AUTH_TOKEN`
 - `TWILIO_VERIFY_SERVICE_SID`
+- `ADMIN_OTP_BYPASS_PHONE_NUMBER`
 
 The deployed Playground env currently has xAI configured. Razorpay and Twilio are expected to stay
 placeholder/missing until real provider accounts are added.
+
+`ADMIN_OTP_BYPASS_PHONE_NUMBER` is a temporary owner-login escape hatch for the raw-IP deployment.
+It grants the matching phone number an admin session and Ultra entitlement without OTP. Keep it in
+the VPS env only, remove it once Twilio/domain auth is live, and never hardcode the phone number in
+the repository.
 
 Never paste these values into docs, commits, tickets, Portainer labels, or chat transcripts.
 
