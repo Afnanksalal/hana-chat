@@ -71,6 +71,7 @@ pnpm web:smoke
 - [Development Guide](docs/development.md)
 - [VPS Deployment](docs/deployment-vps.md)
 - [Playground VPS Deployment](docs/playground-vps-deployment.md)
+- [VPS Container Map](docs/vps-container-map.md)
 - [Domain Integration](docs/domain-integration.md)
 - [Guardrails and SSE](docs/guardrails-and-sse.md)
 - [AI Harness](docs/ai-harness.md)

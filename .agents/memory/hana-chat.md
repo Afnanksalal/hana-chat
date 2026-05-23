@@ -20,6 +20,7 @@
 - VPS stack: Caddy, Next.js web, NestJS services, Postgres, Qdrant, Neo4j, Redis, Redpanda, Temporal, ClickHouse.
 - Playground raw-IP access is a supported path at `https://18.61.174.6`; auth cookies fall back to host-only cookies on IP access and use `.hanachat.live` only on matching domain hosts.
 - Raw-IP HTTPS uses Let's Encrypt IP-address certificates through Certbot with the `shortlived` profile; renewal must run daily.
+- Portainer should be interpreted through `docs/vps-container-map.md`: `caddy`, `web`, and `api-gateway` are the live request path; the extra Nest containers are private bounded-context runtimes and extraction boundaries.
 - Backend preference: NestJS with heavily typed TypeScript.
 - Vector memory/search uses Qdrant from the start, not pgvector.
 - Graph projection target is Neo4j.

@@ -2,6 +2,9 @@
 
 Hana Chat is deployed side-by-side on the Playground EC2 host under `/opt/hana-chat`.
 
+For a Portainer-friendly explanation of every running `hana-chat-vps-*` container, see
+[VPS Container Map](vps-container-map.md).
+
 ## Compose Files
 
 Use the base VPS stack plus the Playground Caddy overlay:

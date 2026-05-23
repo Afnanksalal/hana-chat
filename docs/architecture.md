@@ -89,6 +89,28 @@ sequenceDiagram
 - `infra/database/migrations`: canonical schema migrations.
 - `infra/docker`: production service image.
 
+## Runtime Boundaries
+
+The deployed VPS contains more containers than the immediate request path because Hana is organized
+around production-grade bounded contexts.
+
+- **Public edge:** `caddy` is the only public container. It owns `80/443`, TLS, ACME, redirects, and
+  reverse proxying.
+- **Frontend:** `web` serves the Next.js product UI and same-origin route handlers. It is private and
+  reachable through Caddy only.
+- **Active API:** `api-gateway` owns the current production API and active orchestration path.
+- **Domain services:** `identity-service`, `risk-service`, `chat-orchestrator`, `memory-service`,
+  `retrieval-service`, `graph-service`, `moderation-service`, `billing-service`, `creator-service`,
+  and `notification-service` are private NestJS bounded-context runtimes. They are deployed from day
+  one so logic can be extracted from the gateway without reworking Docker, health checks, networking,
+  or env loading.
+- **Workers:** `batch-orchestrator` and `worker-service` process private batch/projection work.
+- **State:** Postgres, Redis, Qdrant, Neo4j, Redpanda, Temporal, and ClickHouse are split by storage
+  workload rather than squeezed into one database.
+
+For a Portainer-friendly explanation of every running container, see
+[VPS Container Map](vps-container-map.md).
+
 ## Deployment
 
 - Frontend: Next.js container on the VPS behind Caddy.

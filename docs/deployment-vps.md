@@ -17,6 +17,9 @@ Hana Chat runs as one self-hosted VPS deployment on the Playground host:
 The raw-IP HTTPS route uses a Let's Encrypt IP-address certificate with the `shortlived` profile.
 Keep the renewal cron from [Playground VPS Deployment](playground-vps-deployment.md) active.
 
+For the full Portainer/runtime breakdown of every `hana-chat-vps-*` container, see
+[VPS Container Map](vps-container-map.md).
+
 ## Environment
 
 Use `/opt/hana-chat/shared/.env.vps` on the VPS. Required public-edge values:
@@ -43,6 +46,10 @@ AUTH_COOKIE_DOMAIN=.hanachat.live
 The web container overrides `API_GATEWAY_URL` to `http://api-gateway:4000` so web route handlers
 call the API over the private Docker network. Raw-IP auth uses host-only cookies; domain traffic uses
 `.hanachat.live`.
+
+The Playground VPS env has xAI configured. Razorpay and Twilio values are expected to remain
+placeholder/missing until the live provider accounts are added. Do not commit or paste provider
+secrets.
 
 ## Start
 
