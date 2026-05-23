@@ -1,0 +1,366 @@
+"use client";
+
+import {
+  ArrowDownToLine,
+  Banknote,
+  CheckCircle2,
+  Clock3,
+  CreditCard,
+  Landmark,
+  RefreshCw,
+  ShieldCheck,
+  WalletCards,
+} from "lucide-react";
+import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
+import type { FormEvent } from "react";
+import { apiJson, money } from "../api";
+
+interface WalletResponse {
+  wallet: {
+    currency: string;
+    pendingCents: number;
+    availableCents: number;
+    lifetimeEarnedCents: number;
+    lifetimeFeeCents: number;
+    lifetimePaidCents: number;
+    updatedAt: string;
+  };
+  payoutProfile: {
+    status: "draft" | "pending_review" | "verified" | "disabled";
+    displayName: string;
+    legalName: string | null;
+    payoutMode: "upi";
+    vpaLast4: string | null;
+    providerReady: boolean;
+    updatedAt: string;
+  } | null;
+  ledgerEntries: Array<{
+    id: string;
+    type: string;
+    amountCents: number;
+    currency: string;
+    status: string;
+    availableAt: string;
+    createdAt: string;
+    characterName: string | null;
+  }>;
+  payouts: Array<{
+    id: string;
+    amountCents: number;
+    currency: string;
+    status: string;
+    provider: string;
+    providerPayoutId: string | null;
+    failureReason: string | null;
+    requestedAt: string;
+    approvedAt: string | null;
+    paidAt: string | null;
+  }>;
+  purchases: Array<{
+    id: string;
+    characterName: string;
+    amountCents: number;
+    currency: string;
+    status: string;
+    createdAt: string;
+  }>;
+  policy: {
+    platformFeeBps: number;
+    earningHoldDays: number;
+    minimumPayoutCents: number;
+  };
+}
+
+const emptyWallet: WalletResponse = {
+  wallet: {
+    currency: "USD",
+    pendingCents: 0,
+    availableCents: 0,
+    lifetimeEarnedCents: 0,
+    lifetimeFeeCents: 0,
+    lifetimePaidCents: 0,
+    updatedAt: new Date().toISOString(),
+  },
+  payoutProfile: null,
+  ledgerEntries: [],
+  payouts: [],
+  purchases: [],
+  policy: {
+    platformFeeBps: 3000,
+    earningHoldDays: 7,
+    minimumPayoutCents: 1000,
+  },
+};
+
+export default function CreatorWalletPage() {
+  const [wallet, setWallet] = useState<WalletResponse>(emptyWallet);
+  const [displayName, setDisplayName] = useState("");
+  const [legalName, setLegalName] = useState("");
+  const [vpa, setVpa] = useState("");
+  const [payoutAmount, setPayoutAmount] = useState("");
+  const [status, setStatus] = useState("Loading wallet...");
+
+  useEffect(() => {
+    void loadWallet();
+  }, []);
+
+  async function loadWallet() {
+    try {
+      const payload = await apiJson<WalletResponse>("/api/v1/monetization/wallet");
+      setWallet(payload);
+      setDisplayName(payload.payoutProfile?.displayName ?? "");
+      setLegalName(payload.payoutProfile?.legalName ?? "");
+      setStatus("");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Wallet unavailable.");
+    }
+  }
+
+  async function savePayoutProfile(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setStatus("Saving payout profile...");
+
+    try {
+      await apiJson("/api/v1/monetization/payout-profile", {
+        method: "PATCH",
+        body: JSON.stringify({
+          displayName: displayName.trim(),
+          legalName: legalName.trim(),
+          payoutMode: "upi",
+          vpa: vpa.trim(),
+        }),
+      });
+      await loadWallet();
+      setVpa("");
+      setStatus("Payout profile saved.");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Could not save payout profile.");
+    }
+  }
+
+  async function requestPayout(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const amountCents = Math.round(Number(payoutAmount) * 100);
+
+    if (!Number.isFinite(amountCents) || amountCents <= 0) {
+      setStatus("Enter a valid payout amount.");
+      return;
+    }
+
+    setStatus("Requesting payout...");
+
+    try {
+      await apiJson("/api/v1/monetization/payouts", {
+        method: "POST",
+        body: JSON.stringify({ amountCents, currency: wallet.wallet.currency }),
+      });
+      setPayoutAmount("");
+      await loadWallet();
+      setStatus("Payout requested.");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Could not request payout.");
+    }
+  }
+
+  const netRate = useMemo(
+    () => Math.max(0, 100 - wallet.policy.platformFeeBps / 100),
+    [wallet.policy.platformFeeBps],
+  );
+  const profileStatus = wallet.payoutProfile?.status ?? "not set";
+
+  return (
+    <div className="app-page wallet-page">
+      <section className="wallet-hero">
+        <div>
+          <span className="section-label">
+            <WalletCards size={15} /> Creator wallet
+          </span>
+          <h1>Earn from characters people love.</h1>
+          <p>
+            Track paid unlocks, held earnings, available balance, payout requests, and buyer
+            purchases in one place.
+          </p>
+        </div>
+        <button
+          className="secondary-action compact"
+          type="button"
+          onClick={() => void loadWallet()}
+        >
+          <RefreshCw size={15} /> Refresh
+        </button>
+      </section>
+
+      <section className="wallet-metric-grid">
+        <article className="wallet-metric primary">
+          <Banknote size={22} />
+          <span>Available</span>
+          <strong>{money(wallet.wallet.availableCents, wallet.wallet.currency)}</strong>
+        </article>
+        <article className="wallet-metric">
+          <Clock3 size={22} />
+          <span>Pending</span>
+          <strong>{money(wallet.wallet.pendingCents, wallet.wallet.currency)}</strong>
+        </article>
+        <article className="wallet-metric">
+          <Landmark size={22} />
+          <span>Paid out</span>
+          <strong>{money(wallet.wallet.lifetimePaidCents, wallet.wallet.currency)}</strong>
+        </article>
+        <article className="wallet-metric">
+          <ShieldCheck size={22} />
+          <span>Creator net</span>
+          <strong>{netRate}%</strong>
+        </article>
+      </section>
+
+      <section className="wallet-grid">
+        <form
+          className="settings-card payout-card"
+          onSubmit={(event) => void savePayoutProfile(event)}
+        >
+          <div className="settings-card-title">
+            <CreditCard size={19} />
+            <div>
+              <h2>Payout profile</h2>
+              <p>Status: {profileStatus}</p>
+            </div>
+          </div>
+          <label>
+            Creator display name
+            <input
+              value={displayName}
+              onChange={(event) => setDisplayName(event.target.value)}
+              required
+            />
+          </label>
+          <label>
+            Legal name
+            <input value={legalName} onChange={(event) => setLegalName(event.target.value)} />
+          </label>
+          <label>
+            UPI ID
+            <input
+              value={vpa}
+              onChange={(event) => setVpa(event.target.value)}
+              placeholder={
+                wallet.payoutProfile?.vpaLast4
+                  ? `Saved ending ${wallet.payoutProfile.vpaLast4}`
+                  : "name@bank"
+              }
+              required={!wallet.payoutProfile}
+            />
+          </label>
+          <button className="primary-action compact" type="submit">
+            Save payout profile
+          </button>
+          <small>
+            Earnings are held for {wallet.policy.earningHoldDays} day
+            {wallet.policy.earningHoldDays === 1 ? "" : "s"} before payout.
+          </small>
+        </form>
+
+        <form className="settings-card payout-card" onSubmit={(event) => void requestPayout(event)}>
+          <div className="settings-card-title">
+            <ArrowDownToLine size={19} />
+            <div>
+              <h2>Request payout</h2>
+              <p>Minimum {money(wallet.policy.minimumPayoutCents, wallet.wallet.currency)}.</p>
+            </div>
+          </div>
+          <label>
+            Amount
+            <input
+              inputMode="decimal"
+              value={payoutAmount}
+              onChange={(event) => setPayoutAmount(event.target.value)}
+              placeholder="25.00"
+            />
+          </label>
+          <button className="primary-action compact" type="submit">
+            Request payout
+          </button>
+          <small>
+            Admin approval is required before money leaves Hana. Failed provider payouts are
+            returned to your available balance.
+          </small>
+        </form>
+      </section>
+
+      <section className="wallet-ledger-grid">
+        <article className="wallet-table-panel">
+          <div className="panel-heading split">
+            <div>
+              <span className="section-label">
+                <Banknote size={15} /> Ledger
+              </span>
+              <h2>Creator earnings</h2>
+            </div>
+          </div>
+          <div className="wallet-table">
+            {wallet.ledgerEntries.map((entry) => (
+              <div className="wallet-table-row" key={entry.id}>
+                <span>
+                  <strong>{entry.characterName ?? entry.type}</strong>
+                  <small>
+                    {entry.status} · {new Date(entry.createdAt).toLocaleDateString()}
+                  </small>
+                </span>
+                <b className={entry.amountCents >= 0 ? "positive" : "negative"}>
+                  {money(entry.amountCents, entry.currency)}
+                </b>
+              </div>
+            ))}
+            {wallet.ledgerEntries.length === 0 ? (
+              <div className="dashboard-empty-card compact-empty">
+                <CheckCircle2 size={20} />
+                <h3>No earnings yet</h3>
+                <p>Publish a paid character and unlock revenue will appear here.</p>
+                <Link className="secondary-action compact" href="/app/create">
+                  Create character
+                </Link>
+              </div>
+            ) : null}
+          </div>
+        </article>
+
+        <article className="wallet-table-panel">
+          <div className="panel-heading split">
+            <div>
+              <span className="section-label">
+                <Landmark size={15} /> Payouts
+              </span>
+              <h2>Requests</h2>
+            </div>
+          </div>
+          <div className="wallet-table">
+            {wallet.payouts.map((payout) => (
+              <div className="wallet-table-row" key={payout.id}>
+                <span>
+                  <strong>{payout.status}</strong>
+                  <small>
+                    {payout.provider} · {new Date(payout.requestedAt).toLocaleDateString()}
+                  </small>
+                </span>
+                <b>{money(payout.amountCents, payout.currency)}</b>
+              </div>
+            ))}
+            {wallet.payouts.length === 0 ? (
+              <div className="dashboard-empty-card compact-empty">
+                <Clock3 size={20} />
+                <h3>No payout requests</h3>
+                <p>Available earnings can be requested once your payout profile is verified.</p>
+              </div>
+            ) : null}
+          </div>
+        </article>
+      </section>
+
+      {status ? (
+        <p className="floating-status" aria-live="polite">
+          {status}
+        </p>
+      ) : null}
+    </div>
+  );
+}

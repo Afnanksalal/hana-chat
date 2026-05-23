@@ -1,0 +1,17 @@
+{
+  "name": "@hana/identity-core",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@hana/contracts": "workspace:*",
+    "@hana/errors": "workspace:*",
+    "libphonenumber-js": "^1.12.31"
+  }
+}

@@ -1,0 +1,442 @@
+name: hana-chat-vps
+
+x-hana-service: &hana-service
+  build:
+    context: .
+    dockerfile: infra/docker/service.Dockerfile
+  env_file:
+    - ${HANA_ENV_FILE:?Set HANA_ENV_FILE to your production env file, for example .env.vps}
+  restart: unless-stopped
+  networks:
+    - hana-internal
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+    qdrant:
+      condition: service_started
+    neo4j:
+      condition: service_healthy
+    redpanda:
+      condition: service_healthy
+    clickhouse:
+      condition: service_healthy
+    temporal:
+      condition: service_started
+
+x-service-health: &service-health
+  interval: 30s
+  timeout: 5s
+  start_period: 30s
+  retries: 5
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-hana}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DATABASE:-hana}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infra/database/migrations:/docker-entrypoint-initdb.d:ro
+    networks:
+      - hana-internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--protected-mode", "yes"]
+    volumes:
+      - redis_data:/data
+    networks:
+      - hana-internal
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  qdrant:
+    image: qdrant/qdrant:v1.15.5
+    restart: unless-stopped
+    volumes:
+      - qdrant_data:/qdrant/storage
+    networks:
+      - hana-internal
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c ':> /dev/tcp/127.0.0.1/6333'"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  neo4j:
+    image: neo4j:5.26-community
+    restart: unless-stopped
+    environment:
+      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:?Set NEO4J_PASSWORD}
+      NEO4J_server_memory_heap_initial__size: 512m
+      NEO4J_server_memory_heap_max__size: 1G
+      NEO4J_server_memory_pagecache_size: 512m
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+      - ./infra/neo4j:/import:ro
+    networks:
+      - hana-internal
+    healthcheck:
+      test: ["CMD-SHELL", "cypher-shell -u neo4j -p $${NEO4J_AUTH#neo4j/} 'RETURN 1' || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+
+  redpanda:
+    image: docker.redpanda.com/redpandadata/redpanda:v25.2.7
+    restart: unless-stopped
+    command:
+      - redpanda
+      - start
+      - --smp=1
+      - --memory=1G
+      - --reserve-memory=0M
+      - --overprovisioned
+      - --node-id=0
+      - --check=false
+      - --kafka-addr=PLAINTEXT://0.0.0.0:9092
+      - --advertise-kafka-addr=PLAINTEXT://redpanda:9092
+    volumes:
+      - redpanda_data:/var/lib/redpanda/data
+    networks:
+      - hana-internal
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health | grep -E 'Healthy:.+true'"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:25.8-alpine
+    restart: unless-stopped
+    environment:
+      CLICKHOUSE_DB: ${CLICKHOUSE_DATABASE:-hana}
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-hana}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:?Set CLICKHOUSE_PASSWORD}
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+    networks:
+      - hana-internal
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q http://127.0.0.1:8123/ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  temporal-postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: temporal
+      POSTGRES_PASSWORD: ${TEMPORAL_POSTGRES_PASSWORD:?Set TEMPORAL_POSTGRES_PASSWORD}
+      POSTGRES_DB: temporal
+    volumes:
+      - temporal_postgres_data:/var/lib/postgresql/data
+    networks:
+      - hana-internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U temporal -d temporal"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  temporal:
+    image: temporalio/auto-setup:1.29.0
+    restart: unless-stopped
+    environment:
+      DB: postgres12
+      DB_PORT: 5432
+      POSTGRES_USER: temporal
+      POSTGRES_PWD: ${TEMPORAL_POSTGRES_PASSWORD:?Set TEMPORAL_POSTGRES_PASSWORD}
+      POSTGRES_SEEDS: temporal-postgres
+      DYNAMIC_CONFIG_FILE_PATH: config/dynamicconfig/development-sql.yaml
+    volumes:
+      - ./infra/temporal:/etc/temporal/config/dynamicconfig:ro
+    networks:
+      - hana-internal
+    depends_on:
+      temporal-postgres:
+        condition: service_healthy
+
+  api-gateway:
+    <<: *hana-service
+    build:
+      context: .
+      dockerfile: infra/docker/service.Dockerfile
+      args:
+        SERVICE_PATH: services/api-gateway
+    environment:
+      HEALTH_PORT: 4000
+    ports:
+      - "127.0.0.1:${API_GATEWAY_PORT:-4000}:4000"
+    volumes:
+      - media_data:/var/lib/hana/media
+    healthcheck:
+      <<: *service-health
+      test:
+        [
+          "CMD-SHELL",
+          'node -e "fetch(''http://127.0.0.1:4000/health'').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"',
+        ]
+
+  identity-service:
+    <<: *hana-service
+    build:
+      context: .
+      dockerfile: infra/docker/service.Dockerfile
+      args:
+        SERVICE_PATH: services/identity-service
+    environment:
+      HEALTH_PORT: 4010
+    healthcheck:
+      <<: *service-health
+      test:
+        [
+          "CMD-SHELL",
+          'node -e "fetch(''http://127.0.0.1:4010/health'').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"',
+        ]
+
+  risk-service:
+    <<: *hana-service
+    build:
+      context: .
+      dockerfile: infra/docker/service.Dockerfile
+      args:
+        SERVICE_PATH: services/risk-service
+    environment:
+      HEALTH_PORT: 4020
+    healthcheck:
+      <<: *service-health
+      test:
+        [
+          "CMD-SHELL",
+          'node -e "fetch(''http://127.0.0.1:4020/health'').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"',
+        ]
+
+  chat-orchestrator:
+    <<: *hana-service
+    build:
+      context: .
+      dockerfile: infra/docker/service.Dockerfile
+      args:
+        SERVICE_PATH: services/chat-orchestrator
+    environment:
+      HEALTH_PORT: 4030
+    healthcheck:
+      <<: *service-health
+      test:
+        [
+          "CMD-SHELL",
+          'node -e "fetch(''http://127.0.0.1:4030/health'').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"',
+        ]
+
+  memory-service:
+    <<: *hana-service
+    build:
+      context: .
+      dockerfile: infra/docker/service.Dockerfile
+      args:
+        SERVICE_PATH: services/memory-service
+    environment:
+      HEALTH_PORT: 4040
+    healthcheck:
+      <<: *service-health
+      test:
+        [
+          "CMD-SHELL",
+          'node -e "fetch(''http://127.0.0.1:4040/health'').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"',
+        ]
+
+  retrieval-service:
+    <<: *hana-service
+    build:
+      context: .
+      dockerfile: infra/docker/service.Dockerfile
+      args:
+        SERVICE_PATH: services/retrieval-service
+    environment:
+      HEALTH_PORT: 4050
+    healthcheck:
+      <<: *service-health
+      test:
+        [
+          "CMD-SHELL",
+          'node -e "fetch(''http://127.0.0.1:4050/health'').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"',
+        ]
+
+  graph-service:
+    <<: *hana-service
+    build:
+      context: .
+      dockerfile: infra/docker/service.Dockerfile
+      args:
+        SERVICE_PATH: services/graph-service
+    environment:
+      HEALTH_PORT: 4060
+    healthcheck:
+      <<: *service-health
+      test:
+        [
+          "CMD-SHELL",
+          'node -e "fetch(''http://127.0.0.1:4060/health'').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"',
+        ]
+
+  moderation-service:
+    <<: *hana-service
+    build:
+      context: .
+      dockerfile: infra/docker/service.Dockerfile
+      args:
+        SERVICE_PATH: services/moderation-service
+    environment:
+      HEALTH_PORT: 4070
+    healthcheck:
+      <<: *service-health
+      test:
+        [
+          "CMD-SHELL",
+          'node -e "fetch(''http://127.0.0.1:4070/health'').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"',
+        ]
+
+  billing-service:
+    <<: *hana-service
+    build:
+      context: .
+      dockerfile: infra/docker/service.Dockerfile
+      args:
+        SERVICE_PATH: services/billing-service
+    environment:
+      HEALTH_PORT: 4080
+    healthcheck:
+      <<: *service-health
+      test:
+        [
+          "CMD-SHELL",
+          'node -e "fetch(''http://127.0.0.1:4080/health'').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"',
+        ]
+
+  creator-service:
+    <<: *hana-service
+    build:
+      context: .
+      dockerfile: infra/docker/service.Dockerfile
+      args:
+        SERVICE_PATH: services/creator-service
+    environment:
+      HEALTH_PORT: 4090
+    healthcheck:
+      <<: *service-health
+      test:
+        [
+          "CMD-SHELL",
+          'node -e "fetch(''http://127.0.0.1:4090/health'').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"',
+        ]
+
+  notification-service:
+    <<: *hana-service
+    build:
+      context: .
+      dockerfile: infra/docker/service.Dockerfile
+      args:
+        SERVICE_PATH: services/notification-service
+    environment:
+      HEALTH_PORT: 4100
+    healthcheck:
+      <<: *service-health
+      test:
+        [
+          "CMD-SHELL",
+          'node -e "fetch(''http://127.0.0.1:4100/health'').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"',
+        ]
+
+  batch-orchestrator:
+    <<: *hana-service
+    build:
+      context: .
+      dockerfile: infra/docker/service.Dockerfile
+      args:
+        SERVICE_PATH: services/batch-orchestrator
+    environment:
+      HEALTH_PORT: 4110
+    healthcheck:
+      <<: *service-health
+      test:
+        [
+          "CMD-SHELL",
+          'node -e "fetch(''http://127.0.0.1:4110/health'').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"',
+        ]
+
+  worker-service:
+    <<: *hana-service
+    build:
+      context: .
+      dockerfile: infra/docker/service.Dockerfile
+      args:
+        SERVICE_PATH: services/worker-service
+    environment:
+      HEALTH_PORT: 4120
+    healthcheck:
+      <<: *service-health
+      test:
+        [
+          "CMD-SHELL",
+          'node -e "fetch(''http://127.0.0.1:4120/health'').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"',
+        ]
+
+  temporal-ui:
+    image: temporalio/ui:2.42.1
+    restart: unless-stopped
+    profiles: ["ops"]
+    environment:
+      TEMPORAL_ADDRESS: temporal:7233
+      TEMPORAL_CORS_ORIGINS: ${WEB_ORIGIN:-https://app.hanachat.live}
+    ports:
+      - "127.0.0.1:8233:8080"
+    networks:
+      - hana-internal
+    depends_on:
+      - temporal
+
+  redpanda-console:
+    image: docker.redpanda.com/redpandadata/console:v3.2.2
+    restart: unless-stopped
+    profiles: ["ops"]
+    environment:
+      KAFKA_BROKERS: redpanda:9092
+    ports:
+      - "127.0.0.1:8080:8080"
+    networks:
+      - hana-internal
+    depends_on:
+      redpanda:
+        condition: service_healthy
+
+networks:
+  hana-internal:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
+  qdrant_data:
+  neo4j_data:
+  neo4j_logs:
+  redpanda_data:
+  clickhouse_data:
+  temporal_postgres_data:
+  media_data:

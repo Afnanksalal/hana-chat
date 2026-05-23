@@ -1,0 +1,33 @@
+{
+  "name": "@hana/api-gateway",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx watch src/main.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@hana/config": "workspace:*",
+    "@hana/contracts": "workspace:*",
+    "@hana/database": "workspace:*",
+    "@hana/errors": "workspace:*",
+    "@hana/identity-core": "workspace:*",
+    "@hana/model-router": "workspace:*",
+    "@hana/nest-core": "workspace:*",
+    "@hana/risk-core": "workspace:*",
+    "@hana/safety-core": "workspace:*",
+    "@nestjs/common": "^11.1.9",
+    "@nestjs/core": "^11.1.9",
+    "@nestjs/platform-fastify": "^11.1.9",
+    "kysely": "^0.28.8",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2",
+    "zod": "^4.2.1"
+  },
+  "devDependencies": {
+    "tsx": "^4.21.0"
+  }
+}
