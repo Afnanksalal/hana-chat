@@ -32,6 +32,8 @@ export function createLogger(options: CreateLoggerOptions) {
         "PHONE_HASH_SECRET",
         "PHONE_ENCRYPTION_KEY_BASE64",
         "SESSION_SECRET",
+        "DEV_ADMIN_PHONE_NUMBER",
+        "ADMIN_OTP_BYPASS_PHONE_NUMBER",
       ],
       censor: "[redacted]",
     },

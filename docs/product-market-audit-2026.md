@@ -68,7 +68,7 @@ Observed in the repo:
 - Paid character flow includes mandatory 30-message trial before purchase.
 - Creator wallet, ledger entries, payout profiles, payout requests, admin monetization surface, Razorpay order verification, RazorpayX payout support, and 7-day hold logic are present.
 - Chat has JSON and SSE paths, idempotent client message IDs, guardrail pre-checks, output safety checks, analytics model-call recording, typing UX, roleplay formatting, and conversation evolution state.
-- Public legal pages, PWA manifest, robots, sitemap, llms.txt, domain split, and Vercel/VPS deployment docs exist.
+- Public legal pages, PWA manifest, robots, sitemap, llms.txt, domain hierarchy, raw-IP access, and fully self-hosted VPS deployment docs exist.
 
 This is beyond MVP scaffolding. The product now needs operational depth.
 

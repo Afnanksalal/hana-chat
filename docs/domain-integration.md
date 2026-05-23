@@ -4,9 +4,9 @@ Production uses a clear public/app/API hierarchy:
 
 ```mermaid
 flowchart LR
-  User["User browser"] --> Site["hanachat.live public landing"]
-  User --> App["app.hanachat.live authenticated PWA"]
-  App --> Api["api.hanachat.live API gateway on VPS"]
+  User["User browser"] --> Edge["Caddy on Playground VPS"]
+  Edge --> Site["hanachat.live public landing / app.hanachat.live PWA"]
+  Site --> Api["api.hanachat.live API gateway"]
   Api --> Services["private Docker network services"]
   Services --> Data["Postgres, Redis, Qdrant, Neo4j, Redpanda, ClickHouse, Temporal"]
 ```
@@ -15,19 +15,19 @@ flowchart LR
 
 | Host                | Target                   | Purpose                                                           |
 | ------------------- | ------------------------ | ----------------------------------------------------------------- |
-| `hanachat.live`     | Vercel apex/ALIAS        | Public product landing, legal, sitemap, robots, LLM crawler files |
-| `www.hanachat.live` | Vercel CNAME             | Optional alias that should redirect to `hanachat.live`            |
-| `app.hanachat.live` | Vercel CNAME             | Authenticated web app, PWA, account, chat, character builder      |
+| `hanachat.live`     | VPS reverse proxy A/AAAA | Public product landing, legal, sitemap, robots, LLM crawler files |
+| `www.hanachat.live` | VPS reverse proxy A/AAAA | Optional alias for the public product site                        |
+| `app.hanachat.live` | VPS reverse proxy A/AAAA | Authenticated web app, PWA, account, chat, character builder      |
 | `api.hanachat.live` | VPS reverse proxy A/AAAA | NestJS API gateway only                                           |
 
 ## Required Environment
 
-Vercel:
+VPS web container:
 
 ```bash
 NEXT_PUBLIC_SITE_URL=https://hanachat.live
 NEXT_PUBLIC_APP_URL=https://app.hanachat.live
-API_GATEWAY_URL=https://api.hanachat.live
+API_GATEWAY_URL=http://api-gateway:4000
 AUTH_COOKIE_NAME=hana_session
 AUTH_COOKIE_DOMAIN=.hanachat.live
 ```
@@ -41,9 +41,10 @@ API_GATEWAY_URL=https://api.hanachat.live
 AUTH_COOKIE_DOMAIN=.hanachat.live
 ```
 
-`AUTH_COOKIE_DOMAIN=.hanachat.live` is intentional: it lets `hanachat.live`, `www.hanachat.live`,
-and `app.hanachat.live` read the same HTTP-only session cookie through server-side checks. Keep this
-unset in local development unless you are explicitly testing local domain aliases.
+`AUTH_COOKIE_DOMAIN=.hanachat.live` is intentional for domain traffic: it lets `hanachat.live`,
+`www.hanachat.live`, and `app.hanachat.live` read the same HTTP-only session cookie through
+server-side checks. Raw-IP access gets host-only cookies automatically, so `https://18.61.174.6`
+continues to work before the domain is bought.
 
 User-facing web navigation should use root-relative routes such as `/auth`, `/app`, and
 `/app/chat`. Those links resolve against the current browser origin, which keeps local development,
@@ -53,7 +54,8 @@ sitemaps, robots, and LLM crawler files.
 
 ## Reverse Proxy
 
-Terminate TLS at Caddy, Nginx, or Traefik and forward only the API gateway:
+Terminate TLS at Caddy, Nginx, or Traefik. Web domains proxy to the Next.js web container; the API
+subdomain proxies to the API gateway:
 
 ```nginx
 server {

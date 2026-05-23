@@ -16,8 +16,12 @@
 - API gateway domain: `api.hanachat.live`.
 - Production auth cookies use `.hanachat.live` so landing CTAs can detect sessions created on the app subdomain.
 - Interactive web navigation uses root-relative current-origin paths; absolute app/site URL helpers are only for canonical metadata and crawler artifacts.
-- Frontend deploy target: Vercel.
-- Backend/VPS stack: NestJS services, Postgres, Qdrant, Neo4j, Redis, Redpanda, Temporal, ClickHouse.
+- Frontend deploy target: Next.js container on the Playground VPS behind Caddy.
+- VPS stack: Caddy, Next.js web, NestJS services, Postgres, Qdrant, Neo4j, Redis, Redpanda, Temporal, ClickHouse.
+- Playground raw-IP access is a supported path at `https://18.61.174.6`; auth cookies fall back to host-only cookies on IP access and use `.hanachat.live` only on matching domain hosts.
+- Raw-IP HTTPS uses Let's Encrypt IP-address certificates through Certbot with the `shortlived` profile; renewal must run daily.
+- Portainer should be interpreted through `docs/vps-container-map.md`: `caddy`, `web`, and `api-gateway` are the live request path; the extra Nest containers are private bounded-context runtimes and extraction boundaries.
+- Temporary production owner access uses `ADMIN_OTP_BYPASS_PHONE_NUMBER` in the VPS env only; do not hardcode or commit the phone number, and remove the bypass when real Twilio/domain auth is ready.
 - Backend preference: NestJS with heavily typed TypeScript.
 - Vector memory/search uses Qdrant from the start, not pgvector.
 - Graph projection target is Neo4j.

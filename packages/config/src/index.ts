@@ -5,6 +5,13 @@ import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 const portSchema = z.coerce.number().int().min(1).max(65_535);
+const optionalE164PhoneSchema = z.preprocess(
+  (value) => (value === "" ? undefined : value),
+  z
+    .string()
+    .regex(/^\+[1-9]\d{7,14}$/)
+    .optional(),
+);
 let dotenvLoaded = false;
 
 function findEnvFile(startDirectory: string): string | undefined {
@@ -110,10 +117,8 @@ export const AppConfigSchema = z
     PHONE_ENCRYPTION_KEY_BASE64: z.string().default("replace-with-32-byte-base64-key"),
     SESSION_SECRET: z.string().default("replace-with-32-byte-session-secret"),
     AUTH_COOKIE_NAME: z.string().default("hana_session"),
-    DEV_ADMIN_PHONE_NUMBER: z
-      .string()
-      .regex(/^\+[1-9]\d{7,14}$/)
-      .optional(),
+    DEV_ADMIN_PHONE_NUMBER: optionalE164PhoneSchema,
+    ADMIN_OTP_BYPASS_PHONE_NUMBER: optionalE164PhoneSchema,
     TWILIO_ACCOUNT_SID: z.string().optional(),
     TWILIO_AUTH_TOKEN: z.string().optional(),
     TWILIO_VERIFY_SERVICE_SID: z.string().optional(),
