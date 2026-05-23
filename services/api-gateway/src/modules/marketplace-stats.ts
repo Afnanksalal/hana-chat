@@ -12,6 +12,8 @@ export interface MarketplaceStats {
   likes: number;
   saves: number;
   revenueCents: number;
+  ratingAverage: number;
+  ratingCount: number;
   interactions: number;
   trendingScore: number;
   lastInteractionAt: string | null;
@@ -26,6 +28,8 @@ export const DEFAULT_MARKETPLACE_STATS: MarketplaceStats = {
   likes: 0,
   saves: 0,
   revenueCents: 0,
+  ratingAverage: 0,
+  ratingCount: 0,
   interactions: 0,
   trendingScore: 0,
   lastInteractionAt: null,
@@ -47,6 +51,8 @@ export function normalizeMarketplaceStats(value: unknown): MarketplaceStats {
     likes: readCount(record["likes"]),
     saves: readCount(record["saves"]),
     revenueCents: readCount(record["revenueCents"]),
+    ratingAverage: readScore(record["ratingAverage"]),
+    ratingCount: readCount(record["ratingCount"]),
     interactions: readCount(record["interactions"]),
     trendingScore: readScore(record["trendingScore"]),
     lastInteractionAt:
@@ -64,6 +70,23 @@ export function normalizeMarketplaceStats(value: unknown): MarketplaceStats {
   stats.trendingScore = stats.trendingScore || calculateTrendingScore(stats);
 
   return stats;
+}
+
+export function applyMarketplaceRatingAggregate(
+  stats: MarketplaceStats,
+  input: { ratingAverage: number; ratingCount: number },
+): MarketplaceStats {
+  const next = {
+    ...stats,
+    ratingAverage: clampRating(input.ratingAverage),
+    ratingCount: Math.max(0, Math.floor(input.ratingCount)),
+    interactions: stats.interactions + 1,
+    lastInteractionAt: new Date().toISOString(),
+  };
+
+  next.trendingScore = calculateTrendingScore(next);
+
+  return next;
 }
 
 export async function incrementMarketplaceStats(
@@ -146,6 +169,7 @@ function calculateTrendingScore(stats: MarketplaceStats): number {
     stats.messages * 1.4 +
     stats.likes * 12 +
     stats.saves * 7 +
+    stats.ratingAverage * stats.ratingCount * 4 +
     (stats.revenueCents / 100) * 3;
 
   return Number((weighted * freshness).toFixed(3));
@@ -180,4 +204,12 @@ function readScore(value: unknown): number {
   }
 
   return Math.max(0, parsed);
+}
+
+function clampRating(value: number): number {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+
+  return Math.min(5, Math.max(0, Number(value.toFixed(2))));
 }

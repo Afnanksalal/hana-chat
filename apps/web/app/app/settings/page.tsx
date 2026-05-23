@@ -3,6 +3,7 @@
 import {
   ArrowRight,
   Bell,
+  Camera,
   Check,
   CreditCard,
   LogOut,
@@ -20,6 +21,7 @@ type PlanId = "free" | "plus" | "ultra";
 
 interface SettingsResponse {
   displayName: string | null;
+  avatarUrl: string | null;
   adultModeEnabled: boolean;
   memoryEnabled: boolean;
   voiceEnabled: boolean;
@@ -86,16 +88,31 @@ declare global {
 
 const fallbackSettings: SettingsResponse = {
   displayName: "Hana User",
+  avatarUrl: null,
   adultModeEnabled: false,
   memoryEnabled: true,
   voiceEnabled: false,
   marketingOptIn: false,
 };
 
+interface MediaAssetResponse {
+  id: string;
+  url: string;
+  purpose: "user_avatar";
+  mimeType: string;
+  byteSize: number;
+  fileName: string;
+}
+
+const acceptedImageTypes = ["image/png", "image/jpeg", "image/webp"];
+const maxClientUploadBytes = 5 * 1024 * 1024;
+
 export default function SettingsPage() {
   const [settings, setSettings] = useState<SettingsResponse>(fallbackSettings);
   const [billing, setBilling] = useState<BillingResponse | undefined>();
   const [profileName, setProfileName] = useState(fallbackSettings.displayName ?? "");
+  const [profileAvatarUrl, setProfileAvatarUrl] = useState(fallbackSettings.avatarUrl);
+  const [avatarUploadStatus, setAvatarUploadStatus] = useState("PNG, JPG, or WebP up to 5MB.");
   const [status, setStatus] = useState("Loading settings...");
 
   useEffect(() => {
@@ -110,6 +127,7 @@ export default function SettingsPage() {
       ]);
       setSettings(settingsPayload);
       setProfileName(settingsPayload.displayName ?? "");
+      setProfileAvatarUrl(settingsPayload.avatarUrl);
       setBilling(billingPayload);
       setStatus("");
     } catch (error) {
@@ -125,7 +143,7 @@ export default function SettingsPage() {
       return;
     }
 
-    await patchSettings({ displayName });
+    await patchSettings({ displayName, avatarUrl: profileAvatarUrl });
   }
 
   async function patchSettings(input: Partial<SettingsResponse>) {
@@ -137,9 +155,47 @@ export default function SettingsPage() {
         body: JSON.stringify(input),
       });
       setSettings(updated);
+      setProfileName(updated.displayName ?? "");
+      setProfileAvatarUrl(updated.avatarUrl);
       setStatus("Saved.");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Could not update setting.");
+    }
+  }
+
+  async function uploadProfileImage(file: File | undefined) {
+    if (!file) {
+      return;
+    }
+
+    if (!acceptedImageTypes.includes(file.type)) {
+      setAvatarUploadStatus("Use a PNG, JPG, or WebP image.");
+      return;
+    }
+
+    if (file.size > maxClientUploadBytes) {
+      setAvatarUploadStatus("Image must be 5MB or smaller.");
+      return;
+    }
+
+    setAvatarUploadStatus("Uploading...");
+
+    try {
+      const contentBase64 = await fileToDataUrl(file);
+      const media = await apiJson<MediaAssetResponse>("/api/v1/media", {
+        method: "POST",
+        body: JSON.stringify({
+          purpose: "user_avatar",
+          fileName: file.name,
+          mimeType: file.type,
+          contentBase64,
+        }),
+      });
+
+      setProfileAvatarUrl(media.url);
+      setAvatarUploadStatus("Photo uploaded. Save profile to use it.");
+    } catch (error) {
+      setAvatarUploadStatus(error instanceof Error ? error.message : "Upload failed.");
     }
   }
 
@@ -260,6 +316,31 @@ export default function SettingsPage() {
             <div>
               <h2>Profile</h2>
               <p>This is how Hana addresses you.</p>
+            </div>
+          </div>
+          <div className="profile-avatar-editor">
+            <div className="profile-avatar-preview">
+              {profileAvatarUrl ? (
+                <img src={profileAvatarUrl} alt="" />
+              ) : (
+                <UserRound size={30} />
+              )}
+            </div>
+            <div>
+              <label className="media-upload-button profile-upload-button">
+                <Camera size={16} />
+                Upload photo
+                <input
+                  aria-label="Upload profile photo"
+                  type="file"
+                  accept={acceptedImageTypes.join(",")}
+                  onChange={(event) => {
+                    void uploadProfileImage(event.target.files?.[0]);
+                    event.currentTarget.value = "";
+                  }}
+                />
+              </label>
+              <small>{avatarUploadStatus}</small>
             </div>
           </div>
           <label>
@@ -421,4 +502,20 @@ async function loadRazorpay(): Promise<RazorpayCheckout> {
   }
 
   return window.Razorpay;
+}
+
+function fileToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.addEventListener("load", () => {
+      if (typeof reader.result === "string") {
+        resolve(reader.result);
+      } else {
+        reject(new Error("Could not read image."));
+      }
+    });
+    reader.addEventListener("error", () => reject(new Error("Could not read image.")));
+    reader.readAsDataURL(file);
+  });
 }

@@ -14,13 +14,20 @@ export class SettingsController {
   public async show(@Headers("authorization") authorization?: string) {
     const session = await requireSession(this.db, this.config, authorization);
     await this.ensureSettings(session.userId);
-    const settings = await this.db
-      .selectFrom("identity.user_settings")
-      .selectAll()
-      .where("user_id", "=", session.userId)
-      .executeTakeFirstOrThrow();
+    const [settings, user] = await Promise.all([
+      this.db
+        .selectFrom("identity.user_settings")
+        .selectAll()
+        .where("user_id", "=", session.userId)
+        .executeTakeFirstOrThrow(),
+      this.db
+        .selectFrom("identity.users")
+        .select(["avatar_url"])
+        .where("id", "=", session.userId)
+        .executeTakeFirstOrThrow(),
+    ]);
 
-    return toSettingsResponse(settings);
+    return toSettingsResponse(settings, user.avatar_url);
   }
 
   @Patch()
@@ -63,10 +70,14 @@ export class SettingsController {
       .returningAll()
       .executeTakeFirstOrThrow();
 
-    if (input.displayName !== undefined) {
+    if (input.displayName !== undefined || input.avatarUrl !== undefined) {
       await this.db
         .updateTable("identity.users")
-        .set({ display_name: input.displayName, updated_at: new Date() })
+        .set({
+          ...(input.displayName !== undefined ? { display_name: input.displayName } : {}),
+          ...(input.avatarUrl !== undefined ? { avatar_url: input.avatarUrl } : {}),
+          updated_at: new Date(),
+        })
         .where("id", "=", session.userId)
         .execute();
     }
@@ -79,7 +90,13 @@ export class SettingsController {
       metadata: input,
     });
 
-    return toSettingsResponse(updated);
+    const user = await this.db
+      .selectFrom("identity.users")
+      .select(["avatar_url"])
+      .where("id", "=", session.userId)
+      .executeTakeFirstOrThrow();
+
+    return toSettingsResponse(updated, user.avatar_url);
   }
 
   private async ensureSettings(userId: string): Promise<void> {
@@ -94,16 +111,20 @@ export class SettingsController {
   }
 }
 
-function toSettingsResponse(settings: {
-  display_name: string | null;
-  adult_mode_enabled: boolean;
-  adult_verified_at: Date | null;
-  memory_enabled: boolean;
-  voice_enabled: boolean;
-  marketing_opt_in: boolean;
-}) {
+function toSettingsResponse(
+  settings: {
+    display_name: string | null;
+    adult_mode_enabled: boolean;
+    adult_verified_at: Date | null;
+    memory_enabled: boolean;
+    voice_enabled: boolean;
+    marketing_opt_in: boolean;
+  },
+  avatarUrl: string | null | undefined,
+) {
   return {
     displayName: settings.display_name,
+    avatarUrl: avatarUrl ?? null,
     adultModeEnabled: settings.adult_mode_enabled,
     adultVerifiedAt: settings.adult_verified_at?.toISOString() ?? null,
     memoryEnabled: settings.memory_enabled,

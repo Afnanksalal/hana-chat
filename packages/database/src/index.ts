@@ -11,6 +11,7 @@ export interface IdentityUsersTable {
   updated_at: TimestampColumn;
   status: DefaultColumn<"active" | "limited" | "suspended" | "deleted">;
   display_name: string | null;
+  avatar_url: DefaultColumn<string | null>;
 }
 
 export interface IdentityPhoneCredentialsTable {
@@ -144,6 +145,14 @@ export interface CreatorCharacterEngagementEventsTable {
   event_type: "view" | "profile_open" | "chat_start" | "message" | "like" | "save";
   created_at: TimestampColumn;
   metadata_json: unknown;
+}
+
+export interface CreatorCharacterRatingsTable {
+  character_id: string;
+  user_id: string;
+  score: number;
+  created_at: TimestampColumn;
+  updated_at: TimestampColumn;
 }
 
 export interface ChatConversationsTable {
@@ -436,6 +445,7 @@ export interface HanaDatabase {
   "creator.character_versions": CreatorCharacterVersionsTable;
   "creator.media_assets": CreatorMediaAssetsTable;
   "creator.character_engagement_events": CreatorCharacterEngagementEventsTable;
+  "creator.character_ratings": CreatorCharacterRatingsTable;
   "chat.conversations": ChatConversationsTable;
   "chat.conversation_evolution": ChatConversationEvolutionTable;
   "chat.messages": ChatMessagesTable;

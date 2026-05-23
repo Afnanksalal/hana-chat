@@ -302,6 +302,17 @@ export default function AppHomePage() {
 
 function greetingFor(displayName: string): string {
   const firstName = displayName.trim().split(/\s+/)[0] || "there";
+  const hour = new Date().getHours();
+  const moment =
+    hour < 5
+      ? "late night"
+      : hour < 12
+        ? "morning"
+        : hour < 17
+          ? "afternoon"
+          : hour < 21
+            ? "evening"
+            : "night";
 
-  return `Your night is ready, ${firstName}.`;
+  return `Your ${moment} is ready, ${firstName}.`;
 }

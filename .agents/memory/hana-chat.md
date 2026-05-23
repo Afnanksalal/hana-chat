@@ -48,7 +48,9 @@
 - Chat "Your rooms" is only for existing conversations; marketplace/new-character discovery belongs in Discover. Start Chat from Discover opens a fresh room by character id instead of resuming an old same-bot room.
 - A user can keep multiple rooms with the same character. The chat list distinguishes duplicate bot rooms with last-active timestamps, and exact rooms can be resumed through `conversationId` links.
 - Creator image uploads are stored as owned `creator.media_assets` records and served through the API media file route; creator UI should not rely on raw image URL fields.
+- User profile avatars are also uploaded through `creator.media_assets` with purpose `user_avatar`, then saved on `identity.users.avatar_url`.
 - Marketplace engagement uses real counters and event rows for views, profile opens, chat starts, messages, likes, saves, interactions, and trending score.
+- Marketplace ratings are persisted in `creator.character_ratings` as one score per user per character; `ratingAverage` and `ratingCount` live in `marketplace_stats_json` and affect trending rank.
 - Paid character access is per-character purchase based: buyers get a mandatory 30 user-message trial, then chat requires a paid `billing.character_purchases` unlock or creator ownership, not just a subscription entitlement.
 - Creator monetization uses wallet snapshots plus signed ledger entries for gross sale, platform fee, hold release, payout reserve, settlement, and failed-payout release.
 - Creator earnings from paid-character purchases stay pending for the configured 7-day hold before becoming available for payout.
