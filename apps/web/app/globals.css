@@ -4719,6 +4719,14 @@ textarea:focus {
     min-height: auto;
   }
 
+  .settings-dashboard,
+  .wallet-metric-grid,
+  .wallet-grid,
+  .wallet-ledger-grid,
+  .admin-grid {
+    grid-template-columns: 1fr;
+  }
+
   .wallet-table-row,
   .admin-review-card,
   .admin-payout-main {
