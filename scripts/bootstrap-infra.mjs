@@ -80,6 +80,7 @@ async function applyClickHouseSchema() {
     `
 CREATE TABLE IF NOT EXISTS hana.model_calls
 (
+  model_call_id String,
   created_at DateTime64(3),
   user_id String,
   provider LowCardinality(String),
@@ -92,8 +93,9 @@ CREATE TABLE IF NOT EXISTS hana.model_calls
 )
 ENGINE = MergeTree
 PARTITION BY toYYYYMM(created_at)
-ORDER BY (provider, model, created_at)
+ORDER BY (provider, model, created_at, model_call_id)
 `,
+    "ALTER TABLE hana.model_calls ADD COLUMN IF NOT EXISTS model_call_id String",
   ];
 
   for (const query of queries) {
@@ -153,6 +155,7 @@ await applyClickHouseSchema();
   "safety.decision.created",
   "billing.credit.changed",
   "model.call.logged",
+  "analytics.event.created",
 ].forEach(ensureRedpandaTopic);
 
 console.log("Hana infra bootstrap complete.");

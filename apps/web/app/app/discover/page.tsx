@@ -19,6 +19,11 @@ import { apiJson, money } from "../api";
 
 interface CharacterSummary {
   id: string;
+  creator?: {
+    id: string;
+    displayName: string;
+    avatarUrl: string | null;
+  };
   name: string;
   description: string;
   rating: "general" | "teen" | "mature" | "adult";
@@ -38,6 +43,8 @@ interface CharacterSummary {
     messages: number;
     likes: number;
     saves: number;
+    ratingAverage: number;
+    ratingCount: number;
     interactions: number;
     trendingScore: number;
   };
@@ -69,6 +76,11 @@ interface CharacterPurchaseResponse {
     name: string;
     priceCents: number;
   };
+}
+
+interface RatingResponse {
+  score: number;
+  stats: NonNullable<CharacterSummary["marketplaceStats"]>;
 }
 
 type RazorpayCheckout = new (options: {
@@ -104,6 +116,7 @@ function DiscoverExperience() {
   const searchParams = useSearchParams();
   const query = searchParams.get("query")?.trim() ?? "";
   const [characters, setCharacters] = useState<CharacterSummary[]>([]);
+  const [ratingsByCharacterId, setRatingsByCharacterId] = useState<Record<string, number>>({});
   const [category, setCategory] = useState("all");
   const [localSearch, setLocalSearch] = useState(query);
   const [remoteQuery, setRemoteQuery] = useState(query);
@@ -254,6 +267,34 @@ function DiscoverExperience() {
     }
   }
 
+  async function rateCharacter(character: CharacterSummary, score: number) {
+    setRatingsByCharacterId((current) => ({ ...current, [character.id]: score }));
+
+    try {
+      const payload = await apiJson<RatingResponse>(
+        `/api/v1/characters/${encodeURIComponent(character.id)}/rating`,
+        {
+          method: "POST",
+          body: JSON.stringify({ score }),
+        },
+      );
+
+      setCharacters((current) =>
+        current.map((item) =>
+          item.id === character.id ? { ...item, marketplaceStats: payload.stats } : item,
+        ),
+      );
+      setStatus(`Rated ${character.name} ${payload.score}/5.`);
+    } catch (error) {
+      setRatingsByCharacterId((current) => {
+        const next = { ...current };
+        delete next[character.id];
+        return next;
+      });
+      setStatus(error instanceof Error ? error.message : "Could not save rating.");
+    }
+  }
+
   return (
     <div className="app-page discover-page">
       <section className="marketplace-hero">
@@ -308,7 +349,13 @@ function DiscoverExperience() {
               <Flame size={15} /> {marketplaceLabel(featured)}
             </span>
             <h2>{featured.name}</h2>
+            <CreatorByline character={featured} />
             <p>{featured.marketplacePreview || featured.description}</p>
+            <CharacterRatingControl
+              character={featured}
+              selectedScore={ratingsByCharacterId[featured.id]}
+              onRate={(score) => void rateCharacter(featured, score)}
+            />
             <div className="chip-row">
               {featured.tags.slice(0, 5).map((tag) => (
                 <span key={tag}>{tag}</span>
@@ -373,7 +420,14 @@ function DiscoverExperience() {
                     {price}
                   </span>
                 </div>
+                <CreatorByline character={character} compact />
                 <p>{character.marketplacePreview || character.description}</p>
+                <CharacterRatingControl
+                  character={character}
+                  compact
+                  selectedScore={ratingsByCharacterId[character.id]}
+                  onRate={(score) => void rateCharacter(character, score)}
+                />
                 <div className="chip-row">
                   {character.tags.slice(0, 3).map((tag) => (
                     <span key={tag}>{tag}</span>
@@ -427,6 +481,70 @@ export default function DiscoverPage() {
     <Suspense fallback={null}>
       <DiscoverExperience />
     </Suspense>
+  );
+}
+
+function CreatorByline({
+  character,
+  compact = false,
+}: {
+  character: CharacterSummary;
+  compact?: boolean;
+}) {
+  const creator = character.creator;
+
+  return (
+    <div className={compact ? "creator-byline compact" : "creator-byline"}>
+      <span className="creator-avatar">
+        {creator?.avatarUrl ? <img src={creator.avatarUrl} alt="" /> : <BadgeCheck size={13} />}
+      </span>
+      <span>
+        Made by <strong>{creator?.displayName ?? "Hana creator"}</strong>
+      </span>
+    </div>
+  );
+}
+
+function CharacterRatingControl({
+  character,
+  compact = false,
+  selectedScore,
+  onRate,
+}: {
+  character: CharacterSummary;
+  compact?: boolean;
+  selectedScore?: number | undefined;
+  onRate: (score: number) => void;
+}) {
+  const average = character.marketplaceStats?.ratingAverage ?? 0;
+  const count = character.marketplaceStats?.ratingCount ?? 0;
+  const label = count > 0 ? `${average.toFixed(1)} from ${formatCompact(count)}` : "New rating";
+
+  return (
+    <div className={compact ? "rating-widget compact" : "rating-widget"}>
+      <span>
+        <Star size={14} /> {label}
+      </span>
+      <div role="radiogroup" aria-label={`Rate ${character.name}`}>
+        {[1, 2, 3, 4, 5].map((score) => {
+          const active = selectedScore
+            ? score <= selectedScore
+            : count > 0 && score <= Math.round(average);
+
+          return (
+            <button
+              aria-label={`Rate ${character.name} ${score} out of 5`}
+              className={active ? "rating-star active" : "rating-star"}
+              key={score}
+              type="button"
+              onClick={() => onRate(score)}
+            >
+              <Star size={compact ? 13 : 15} />
+            </button>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 

@@ -35,6 +35,7 @@ flowchart TD
 - Web cards show imagery, tags, price, rating, model feel, and engagement stats.
 - Character images are uploaded media assets owned by the creator and served through `/v1/media/:id/file`; URL text boxes are not the creation path.
 - Marketplace ranking uses persisted engagement counters and event rows: views, profile opens, chat starts, messages, likes, saves, interactions, and a computed trending score.
+- Marketplace cards expose the creator display name/avatar and persisted user ratings. Ratings are stored once per user per character and roll into `ratingAverage`, `ratingCount`, and the trending score.
 
 ## Monetization
 

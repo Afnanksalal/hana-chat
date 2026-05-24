@@ -12,6 +12,8 @@ const WORKER_TOPICS = [
   "memory.neo4j.upsert.requested",
   "creator.character.qdrant.upsert.requested",
   "creator.character.neo4j.upsert.requested",
+  "analytics.event.created",
+  "chat.turn.completed",
 ] as const;
 
 type WorkerTopic = (typeof WORKER_TOPICS)[number];
@@ -57,20 +59,22 @@ export class ProjectionWorkerService implements OnModuleInit, OnModuleDestroy {
   }
 
   public async drainOnce(maxItems = 25): Promise<{ workerId: string; processed: number }> {
-    const events = await leaseOutboxEvents(this.db, {
+    const lease = await leaseOutboxEventsWithBoundary(this.config, this.db, {
       workerId: this.workerId,
       maxItems: clampInteger(maxItems, 1, 100),
       lockSeconds: 60,
+      topics: [...WORKER_TOPICS],
     });
+    const events = lease.events;
     let processed = 0;
 
     for (const event of events) {
       try {
         await this.processEvent(event);
-        await ackOutboxEvent(this.db, event.id, this.workerId);
+        await ackOutboxEventWithBoundary(this.config, this.db, event.id, this.workerId);
         processed += 1;
       } catch (error) {
-        await failOutboxEvent(this.db, event, this.workerId, error);
+        await failOutboxEventWithBoundary(this.config, this.db, event, this.workerId, error);
       }
     }
 
@@ -121,8 +125,57 @@ export class ProjectionWorkerService implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
+    if (event.topic === "analytics.event.created") {
+      await this.projectAnalyticsEvent(event.payload_json);
+      return;
+    }
+
+    if (event.topic === "chat.turn.completed") {
+      await this.projectConversationTurnToNeo4j(event.payload_json);
+      return;
+    }
+
     throw new DomainError("VALIDATION_FAILED", "Unsupported worker topic", {
       topic: event.topic,
+    });
+  }
+
+  private async projectAnalyticsEvent(payload: unknown): Promise<void> {
+    if (!payload || typeof payload !== "object") {
+      throw new DomainError("VALIDATION_FAILED", "Analytics payload must be an object");
+    }
+
+    const kind = (payload as Record<string, unknown>)["kind"];
+
+    if (kind !== "model_call") {
+      return;
+    }
+
+    await this.projectModelCallToClickHouse(payloadString(payload, "modelCallId"));
+  }
+
+  private async projectModelCallToClickHouse(modelCallId: string): Promise<void> {
+    const modelCall = await this.db
+      .selectFrom("analytics.model_calls")
+      .selectAll()
+      .where("id", "=", modelCallId)
+      .executeTakeFirst();
+
+    if (!modelCall) {
+      return;
+    }
+
+    await clickHouseInsert(this.config, "hana.model_calls", {
+      model_call_id: modelCall.id,
+      created_at: toClickHouseDateTime64(modelCall.created_at),
+      user_id: modelCall.user_id ?? "",
+      provider: modelCall.provider,
+      model: modelCall.model,
+      input_tokens: modelCall.input_tokens,
+      cached_input_tokens: modelCall.cached_input_tokens,
+      output_tokens: modelCall.output_tokens,
+      estimated_cost_usd: Number(modelCall.estimated_cost_usd),
+      latency_ms: modelCall.latency_ms,
     });
   }
 
@@ -313,6 +366,76 @@ SET r.updatedAt = $updatedAt
       await session.close();
     }
   }
+
+  private async projectConversationTurnToNeo4j(payload: unknown): Promise<void> {
+    const userId = payloadString(payload, "userId");
+    const characterId = payloadString(payload, "characterId");
+    const conversationId = payloadString(payload, "conversationId");
+    const userMessageId = payloadString(payload, "userMessageId");
+    const assistantMessageId = payloadString(payload, "assistantMessageId");
+    const occurredAt = payloadOptionalString(payload, "occurredAt") ?? new Date().toISOString();
+    const [messageCount, memoryCount] = await Promise.all([
+      this.db
+        .selectFrom("chat.messages")
+        .select((eb) => eb.fn.countAll<number>().as("count"))
+        .where("user_id", "=", userId)
+        .where("character_id", "=", characterId)
+        .where("conversation_id", "=", conversationId)
+        .where("role", "=", "user")
+        .executeTakeFirst(),
+      this.db
+        .selectFrom("memory.facts")
+        .select((eb) => eb.fn.countAll<number>().as("count"))
+        .where("user_id", "=", userId)
+        .where("character_id", "=", characterId)
+        .where("conversation_id", "=", conversationId)
+        .where("scope", "=", "conversation")
+        .where("kind", "not in", ["safety", "system"])
+        .where("is_active", "=", true)
+        .executeTakeFirst(),
+    ]);
+    const userMessageCount = Number(messageCount?.count ?? 0);
+    const activeMemoryCount = Number(memoryCount?.count ?? 0);
+    const session = this.driver.session();
+
+    try {
+      await session.executeWrite((tx) =>
+        tx.run(
+          `
+MERGE (u:User {id: $userId})
+MERGE (ch:Character {id: $characterId})
+MERGE (conv:Conversation {id: $conversationId})
+SET conv.userMessageCount = $userMessageCount,
+    conv.activeMemoryCount = $activeMemoryCount,
+    conv.lastUserMessageId = $userMessageId,
+    conv.lastAssistantMessageId = $assistantMessageId,
+    conv.updatedAt = $occurredAt
+MERGE (u)-[uc:HAS_CONVERSATION]->(conv)
+SET uc.updatedAt = $occurredAt
+MERGE (conv)-[cw:WITH_CHARACTER]->(ch)
+SET cw.updatedAt = $occurredAt
+MERGE (u)-[rel:RELATES_TO]->(ch)
+SET rel.turns = $userMessageCount,
+    rel.activeMemoryCount = $activeMemoryCount,
+    rel.lastConversationId = $conversationId,
+    rel.updatedAt = $occurredAt
+`,
+          {
+            userId,
+            characterId,
+            conversationId,
+            userMessageId,
+            assistantMessageId,
+            userMessageCount,
+            activeMemoryCount,
+            occurredAt,
+          },
+        ),
+      );
+    } finally {
+      await session.close();
+    }
+  }
 }
 
 async function leaseOutboxEvents(
@@ -368,6 +491,45 @@ async function leaseOutboxEvents(
   });
 }
 
+async function leaseOutboxEventsWithBoundary(
+  config: AppConfig,
+  db: Kysely<HanaDatabase>,
+  input: { workerId: string; maxItems: number; lockSeconds: number; topics: WorkerTopic[] },
+): Promise<{ workerId: string; events: LeasedEvent[]; source: "batch-orchestrator" | "database" }> {
+  try {
+    const response = await fetchWithTimeout(
+      `${config.BATCH_ORCHESTRATOR_URL.replace(/\/+$/, "")}/internal/batches/outbox/lease`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+      },
+      2_000,
+    );
+
+    if (response.ok) {
+      const payload = (await response.json()) as Record<string, unknown>;
+      const events = Array.isArray(payload["events"])
+        ? payload["events"].map(parseLeasedEvent).filter((event): event is LeasedEvent => Boolean(event))
+        : [];
+
+      return {
+        workerId: typeof payload["workerId"] === "string" ? payload["workerId"] : input.workerId,
+        events,
+        source: "batch-orchestrator",
+      };
+    }
+  } catch {
+    // The worker can lease directly from Postgres if the batch boundary restarts.
+  }
+
+  return {
+    workerId: input.workerId,
+    events: await leaseOutboxEvents(db, input),
+    source: "database",
+  };
+}
+
 async function ackOutboxEvent(
   db: Kysely<HanaDatabase>,
   eventId: string,
@@ -386,6 +548,35 @@ async function ackOutboxEvent(
     .where("status", "=", "processing")
     .where("locked_by", "=", workerId)
     .execute();
+}
+
+async function ackOutboxEventWithBoundary(
+  config: AppConfig,
+  db: Kysely<HanaDatabase>,
+  eventId: string,
+  workerId: string,
+): Promise<void> {
+  try {
+    const response = await fetchWithTimeout(
+      `${config.BATCH_ORCHESTRATOR_URL.replace(/\/+$/, "")}/internal/batches/outbox/${encodeURIComponent(
+        eventId,
+      )}/ack`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ workerId }),
+      },
+      2_000,
+    );
+
+    if (response.ok) {
+      return;
+    }
+  } catch {
+    // Fall through to direct DB ack for resilience.
+  }
+
+  await ackOutboxEvent(db, eventId, workerId);
 }
 
 async function failOutboxEvent(
@@ -409,6 +600,66 @@ async function failOutboxEvent(
     .where("status", "=", "processing")
     .where("locked_by", "=", workerId)
     .execute();
+}
+
+async function failOutboxEventWithBoundary(
+  config: AppConfig,
+  db: Kysely<HanaDatabase>,
+  event: LeasedEvent,
+  workerId: string,
+  error: unknown,
+): Promise<void> {
+  const message = error instanceof Error ? error.message.slice(0, 500) : "worker_failed";
+
+  try {
+    const response = await fetchWithTimeout(
+      `${config.BATCH_ORCHESTRATOR_URL.replace(/\/+$/, "")}/internal/batches/outbox/${encodeURIComponent(
+        event.id,
+      )}/fail`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ workerId, error: message, retryAfterSeconds: 60 }),
+      },
+      2_000,
+    );
+
+    if (response.ok) {
+      return;
+    }
+  } catch {
+    // Fall through to direct DB fail for resilience.
+  }
+
+  await failOutboxEvent(db, event, workerId, error);
+}
+
+function parseLeasedEvent(value: unknown): LeasedEvent | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const payload = value as Record<string, unknown>;
+  const topic = payload["topic"];
+
+  if (
+    typeof payload["id"] !== "string" ||
+    !isWorkerTopic(topic) ||
+    typeof payload["attempts"] !== "number"
+  ) {
+    return null;
+  }
+
+  return {
+    id: payload["id"],
+    topic,
+    payload_json: payload["payload_json"],
+    attempts: payload["attempts"],
+  };
+}
+
+function isWorkerTopic(value: unknown): value is WorkerTopic {
+  return typeof value === "string" && (WORKER_TOPICS as readonly string[]).includes(value);
 }
 
 async function selectCharacterForProjection(db: Kysely<HanaDatabase>, characterId: string) {
@@ -477,6 +728,31 @@ async function qdrantDelete(config: AppConfig, collection: string, pointId: stri
   }
 }
 
+async function clickHouseInsert(
+  config: AppConfig,
+  table: string,
+  row: Record<string, string | number>,
+): Promise<void> {
+  const url = new URL("/", config.CLICKHOUSE_URL);
+  url.searchParams.set("user", config.CLICKHOUSE_USER);
+  url.searchParams.set("password", config.CLICKHOUSE_PASSWORD);
+  url.searchParams.set("query", `INSERT INTO ${table} FORMAT JSONEachRow`);
+
+  const response = await fetchWithTimeout(url.toString(), {
+    method: "POST",
+    headers: { "Content-Type": "application/x-ndjson" },
+    body: `${JSON.stringify(row)}\n`,
+  });
+
+  if (!response.ok) {
+    throw new Error(`ClickHouse insert failed: HTTP ${response.status} ${await response.text()}`);
+  }
+}
+
+function toClickHouseDateTime64(date: Date): string {
+  return date.toISOString().replace("T", " ").replace("Z", "");
+}
+
 function qdrantBaseUrl(config: AppConfig): string {
   return config.QDRANT_URL.replace(/\/+$/, "");
 }
@@ -508,6 +784,16 @@ function payloadString(payload: unknown, key: string): string {
   }
 
   return value;
+}
+
+function payloadOptionalString(payload: unknown, key: string): string | null {
+  if (!payload || typeof payload !== "object") {
+    return null;
+  }
+
+  const value = (payload as Record<string, unknown>)[key];
+
+  return typeof value === "string" && value ? value : null;
 }
 
 function embedTextForRetrieval(text: string): number[] {

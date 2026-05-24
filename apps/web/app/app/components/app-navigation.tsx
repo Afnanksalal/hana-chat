@@ -1,8 +1,18 @@
 "use client";
 
-import { Compass, House, MessageSquareText, Plus, Settings, UserRound } from "lucide-react";
+import {
+  Compass,
+  House,
+  MessageSquareText,
+  Plus,
+  Settings,
+  ShieldCheck,
+  UserRound,
+} from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
+import { apiJson } from "../api";
 
 const items = [
   { href: "/app", label: "Home", icon: House },
@@ -12,12 +22,50 @@ const items = [
   { href: "/app/settings", label: "Settings", icon: Settings },
 ];
 
+interface NavigationDashboardResponse {
+  user: {
+    roles?: string[];
+  };
+}
+
 export function AppNavigation() {
   const pathname = usePathname();
+  const [isAdmin, setIsAdmin] = useState(false);
+  const navItems = useMemo(
+    () =>
+      isAdmin
+        ? [
+            ...items.slice(0, 4),
+            { href: "/app/admin", label: "Admin", icon: ShieldCheck },
+            ...items.slice(4),
+          ]
+        : items,
+    [isAdmin],
+  );
+
+  useEffect(() => {
+    let mounted = true;
+
+    apiJson<NavigationDashboardResponse>("/api/v1/dashboard")
+      .then((dashboard) => {
+        if (mounted) {
+          setIsAdmin(dashboard.user.roles?.includes("admin") ?? false);
+        }
+      })
+      .catch(() => {
+        if (mounted) {
+          setIsAdmin(false);
+        }
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   return (
-    <nav className="app-nav" aria-label="App navigation">
-      {items.map((item) => {
+    <nav className={isAdmin ? "app-nav has-admin" : "app-nav"} aria-label="App navigation">
+      {navItems.map((item) => {
         const isActive =
           item.href === "/app" ? pathname === "/app" : pathname.startsWith(item.href);
 

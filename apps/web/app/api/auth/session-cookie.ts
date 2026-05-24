@@ -1,26 +1,30 @@
 export const authCookieName = process.env["AUTH_COOKIE_NAME"] ?? "hana_session";
 
 export function createSessionCookie(request: Request, value: string) {
+  const domain = getCookieDomain(request);
+
   return {
     name: authCookieName,
     value,
     httpOnly: true,
     sameSite: "lax" as const,
     secure: isHttpsRequest(request),
-    domain: getCookieDomain(request),
+    ...(domain ? { domain } : {}),
     maxAge: 60 * 60 * 24 * 30,
     path: "/",
   };
 }
 
 export function clearSessionCookie(request: Request) {
+  const domain = getCookieDomain(request);
+
   return {
     name: authCookieName,
     value: "",
     httpOnly: true,
     sameSite: "lax" as const,
     secure: isHttpsRequest(request),
-    domain: getCookieDomain(request),
+    ...(domain ? { domain } : {}),
     maxAge: 0,
     path: "/",
   };

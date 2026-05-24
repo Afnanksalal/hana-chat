@@ -19,3 +19,11 @@ test-results/
 data/
 .logs/
 tmp/
+apps/android-twa/.gradle/
+apps/android-twa/app/build/
+apps/android-twa/android.keystore
+apps/android-twa/*.keystore
+apps/android-twa/*.jks
+apps/android-twa/*release*.apk
+apps/android-twa/*release*.aab
+apps/android-twa/*.idsig

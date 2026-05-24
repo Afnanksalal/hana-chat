@@ -17,14 +17,14 @@ export function getSiteUrl(): string {
   return (
     process.env["NEXT_PUBLIC_SITE_URL"] ??
     process.env["WEB_ORIGIN"] ??
-    "https://hanachat.live"
+    "https://hanachat.site"
   )
     .trim()
     .replace(/\/$/, "");
 }
 
 export function getAppUrl(): string {
-  return (process.env["NEXT_PUBLIC_APP_URL"] ?? "https://app.hanachat.live")
+  return (process.env["NEXT_PUBLIC_APP_URL"] ?? "https://app.hanachat.site")
     .trim()
     .replace(/\/$/, "");
 }

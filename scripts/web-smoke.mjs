@@ -28,6 +28,8 @@ const coverUploadFixture = resolve(
   "assets",
   "hana-hero.png",
 );
+const dashboardHeadingPattern =
+  /^Your (late night|morning|afternoon|evening|night) is ready, .+\.$/;
 
 mkdirSync(screenshotDir, { recursive: true });
 
@@ -116,7 +118,7 @@ try {
 
   await check("app dashboard", async () => {
     await page.goto(`${WEB_BASE_URL}/app`, { waitUntil: "load" });
-    await expectVisible(page.getByRole("heading", { name: "Your night is ready, Hana." }));
+    await expectVisible(page.getByRole("heading", { name: dashboardHeadingPattern }));
     await expectVisible(page.getByLabel("App navigation").getByRole("link", { name: "Discover" }));
     await expectVisible(page.getByLabel("App navigation").getByRole("link", { name: "Create" }));
     await assertNoBrokenImages(page);
@@ -263,6 +265,33 @@ try {
     return "fresh-room links preserve older same-character rooms";
   });
 
+  await check("chat room delete removes selected room", async () => {
+    await page.goto(
+      `${WEB_BASE_URL}/app/chat?characterId=${encodeURIComponent(globalThis.createdCharacterId)}&new=1`,
+      { waitUntil: "load" },
+    );
+    await expectVisible(page.getByRole("heading", { name: characterName }));
+    await page.getByLabel(`Message ${characterName}`).fill("Temporary room for delete QA.");
+    await page.getByRole("button", { name: "Send message" }).click();
+    await page.waitForFunction(
+      () => new URL(window.location.href).searchParams.has("conversationId"),
+      { timeout: 60_000 },
+    );
+    const deletedConversationUrl = page.url();
+
+    await page.getByRole("button", { name: "Chat settings", exact: true }).click();
+    await expectVisible(page.getByRole("heading", { name: "Delete chat" }));
+    await page.getByRole("button", { name: "Delete chat" }).click();
+    await page.getByRole("button", { name: "Delete forever" }).click();
+    await expectVisible(page.getByRole("heading", { name: "Your rooms" }));
+    await assertNoHorizontalOverflow(page);
+
+    await page.goto(deletedConversationUrl, { waitUntil: "load" });
+    await expectVisible(page.getByText("That room is not available on this account."));
+
+    return "selected conversation is hidden after confirmed delete";
+  });
+
   await check("chat settings add and remove memory", async () => {
     const memoryText = `Browser smoke memory ${Date.now().toString().slice(-6)}`;
     await page.goto(
@@ -350,7 +379,7 @@ try {
     await screenshot(mobilePage, "landing-mobile.png");
 
     await mobilePage.goto(`${WEB_BASE_URL}/app`, { waitUntil: "load" });
-    await expectVisible(mobilePage.getByRole("heading", { name: "Your night is ready, Web." }));
+    await expectVisible(mobilePage.getByRole("heading", { name: dashboardHeadingPattern }));
     assert(
       (await mobilePage.getByLabel("Search Hana Chat").count()) === 0,
       "mobile dashboard should not render the global character search",
@@ -406,7 +435,7 @@ try {
     await screenshot(mobilePage, "wallet-mobile.png");
 
     await mobilePage.goto(`${WEB_BASE_URL}/app/admin`, { waitUntil: "domcontentloaded" });
-    await expectVisible(mobilePage.getByRole("heading", { name: "Creator monetization ops." }));
+    await expectVisible(mobilePage.getByRole("heading", { name: "Command center." }));
     await assertNoHorizontalOverflow(mobilePage);
     await screenshot(mobilePage, "admin-mobile.png");
 
@@ -414,6 +443,36 @@ try {
   });
 
   await mobileContext.close();
+
+  const tabletContext = await browser.newContext({
+    viewport: { width: 820, height: 1180 },
+    isMobile: true,
+  });
+  await addSessionCookie(tabletContext, globalThis.adminSessionToken);
+  const tabletPage = await tabletContext.newPage();
+  wireConsoleCapture(tabletPage);
+
+  await check("tablet chat settings and admin metrics layout", async () => {
+    await tabletPage.goto(`${WEB_BASE_URL}/app/chat`, { waitUntil: "load" });
+    await tabletPage.locator(".chat-thread").first().click();
+    await expectVisible(tabletPage.getByRole("button", { name: "Chat settings", exact: true }));
+    await tabletPage.getByRole("button", { name: "Chat settings", exact: true }).click();
+    await expectVisible(tabletPage.getByRole("heading", { name: "Delete chat" }));
+    await assertPanelCoversViewport(tabletPage, ".chat-settings-panel");
+    await assertElementCanScrollWhenOverflowing(tabletPage, ".chat-settings-panel");
+    await assertNoHorizontalOverflow(tabletPage);
+    await screenshot(tabletPage, "chat-settings-tablet.png");
+
+    await tabletPage.goto(`${WEB_BASE_URL}/app/admin`, { waitUntil: "domcontentloaded" });
+    await expectVisible(tabletPage.getByRole("heading", { name: "Daily product pulse" }));
+    await expectVisible(tabletPage.locator(".admin-day-card").first());
+    await assertNoHorizontalOverflow(tabletPage);
+    await screenshot(tabletPage, "admin-tablet.png");
+
+    return "settings sheet is viewport-bound; admin day cards fit tablet";
+  });
+
+  await tabletContext.close();
 
   await check("browser console health", async () => {
     const relevantErrors = consoleErrors.filter(

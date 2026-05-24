@@ -2,6 +2,7 @@ import { loadConfig, type AppConfig } from "@hana/config";
 import {
   CreateCharacterRequestSchema,
   PublishCharacterRequestSchema,
+  RateCharacterRequestSchema,
   RecordCharacterEventRequestSchema,
   type CreateCharacterRequest,
   type CharacterRating,
@@ -15,6 +16,7 @@ import { randomUUID } from "node:crypto";
 import { projectCharacterUpsert } from "./character-projection";
 import {
   DEFAULT_MARKETPLACE_STATS,
+  applyMarketplaceRatingAggregate,
   incrementMarketplaceStats,
   normalizeMarketplaceStats,
 } from "./marketplace-stats";
@@ -56,6 +58,7 @@ export class CharactersController {
     const session = await requireSession(this.db, this.config, authorization);
     const characters = await this.db
       .selectFrom("creator.characters as characters")
+      .innerJoin("identity.users as creators", "creators.id", "characters.creator_user_id")
       .leftJoin(
         "creator.character_versions as versions",
         "versions.id",
@@ -63,6 +66,9 @@ export class CharactersController {
       )
       .select([
         "characters.id",
+        "characters.creator_user_id",
+        "creators.display_name as creator_display_name",
+        "creators.avatar_url as creator_avatar_url",
         "characters.name",
         "characters.description",
         "characters.visibility",
@@ -98,6 +104,7 @@ export class CharactersController {
     const session = await requireSession(this.db, this.config, authorization);
     const character = await this.db
       .selectFrom("creator.characters as characters")
+      .innerJoin("identity.users as creators", "creators.id", "characters.creator_user_id")
       .innerJoin(
         "creator.character_versions as versions",
         "versions.id",
@@ -106,6 +113,8 @@ export class CharactersController {
       .select([
         "characters.id",
         "characters.creator_user_id",
+        "creators.display_name as creator_display_name",
+        "creators.avatar_url as creator_avatar_url",
         "characters.name",
         "characters.description",
         "characters.visibility",
@@ -420,6 +429,101 @@ export class CharactersController {
 
     return { stats };
   }
+
+  @Post("/:characterId/rating")
+  public async rateCharacter(
+    @Param("characterId") characterId: string,
+    @Body() body: unknown,
+    @Headers("authorization") authorization?: string,
+  ) {
+    const session = await requireSession(this.db, this.config, authorization);
+    const input = RateCharacterRequestSchema.parse(body);
+
+    const stats = await this.db.transaction().execute(async (trx) => {
+      const character = await trx
+        .selectFrom("creator.characters")
+        .select([
+          "id",
+          "creator_user_id",
+          "visibility",
+          "moderation_status",
+          "marketplace_stats_json",
+        ])
+        .where("id", "=", characterId)
+        .forUpdate()
+        .executeTakeFirst();
+
+      if (!character) {
+        throw new DomainError("RESOURCE_NOT_FOUND", "Character not found");
+      }
+
+      if (character.creator_user_id === session.userId) {
+        throw new DomainError("CONFLICT", "Creators cannot rate their own character");
+      }
+
+      if (character.visibility !== "public" || character.moderation_status !== "approved") {
+        throw new DomainError("AUTH_FORBIDDEN", "Character is not available for ratings");
+      }
+
+      const now = new Date();
+
+      await trx
+        .insertInto("creator.character_ratings")
+        .values({
+          character_id: character.id,
+          user_id: session.userId,
+          score: input.score,
+          updated_at: now,
+        })
+        .onConflict((oc) =>
+          oc.columns(["character_id", "user_id"]).doUpdateSet({
+            score: input.score,
+            updated_at: now,
+          }),
+        )
+        .execute();
+
+      const aggregate = await trx
+        .selectFrom("creator.character_ratings")
+        .select([
+          sql<number>`COUNT(*)::integer`.as("rating_count"),
+          sql<number>`COALESCE(ROUND(AVG(score)::numeric, 2), 0)::double precision`.as(
+            "rating_average",
+          ),
+        ])
+        .where("character_id", "=", character.id)
+        .executeTakeFirstOrThrow();
+
+      const nextStats = applyMarketplaceRatingAggregate(
+        normalizeMarketplaceStats(character.marketplace_stats_json),
+        {
+          ratingAverage: Number(aggregate.rating_average),
+          ratingCount: Number(aggregate.rating_count),
+        },
+      );
+
+      await trx
+        .updateTable("creator.characters")
+        .set({
+          marketplace_stats_json: nextStats,
+          updated_at: now,
+        })
+        .where("id", "=", character.id)
+        .execute();
+
+      return nextStats;
+    });
+
+    await auditEvent(this.db, {
+      actorUserId: session.userId,
+      action: "character.rating.upsert",
+      resourceType: "creator.character",
+      resourceId: characterId,
+      metadata: { score: input.score, ratingAverage: stats.ratingAverage },
+    });
+
+    return { score: input.score, stats };
+  }
 }
 
 async function ensureDefaultCharacter(db: Kysely<HanaDatabase>): Promise<void> {
@@ -556,6 +660,7 @@ async function listMarketplaceCharacters(
 
   const characters = await db
     .selectFrom("creator.characters as characters")
+    .innerJoin("identity.users as creators", "creators.id", "characters.creator_user_id")
     .innerJoin(
       "creator.character_versions as versions",
       "versions.id",
@@ -563,6 +668,9 @@ async function listMarketplaceCharacters(
     )
     .select([
       "characters.id",
+      "characters.creator_user_id",
+      "creators.display_name as creator_display_name",
+      "creators.avatar_url as creator_avatar_url",
       "characters.name",
       "characters.description",
       "characters.visibility",
@@ -601,6 +709,7 @@ async function listMarketplaceCharacters(
 async function listMarketplaceCharactersByIds(db: Kysely<HanaDatabase>, characterIds: string[]) {
   const characters = await db
     .selectFrom("creator.characters as characters")
+    .innerJoin("identity.users as creators", "creators.id", "characters.creator_user_id")
     .innerJoin(
       "creator.character_versions as versions",
       "versions.id",
@@ -608,6 +717,9 @@ async function listMarketplaceCharactersByIds(db: Kysely<HanaDatabase>, characte
     )
     .select([
       "characters.id",
+      "characters.creator_user_id",
+      "creators.display_name as creator_display_name",
+      "creators.avatar_url as creator_avatar_url",
       "characters.name",
       "characters.description",
       "characters.visibility",
@@ -645,6 +757,9 @@ async function listMarketplaceCharactersByIds(db: Kysely<HanaDatabase>, characte
 
 function toCharacterSummary(character: {
   id: string;
+  creator_user_id: string;
+  creator_display_name: string | null;
+  creator_avatar_url: string | null;
   name: string;
   description: string;
   visibility: string;
@@ -667,6 +782,11 @@ function toCharacterSummary(character: {
 }) {
   return {
     id: character.id,
+    creator: {
+      id: character.creator_user_id,
+      displayName: character.creator_display_name ?? "Creator",
+      avatarUrl: character.creator_avatar_url ?? null,
+    },
     name: character.name,
     description: character.description,
     visibility: character.visibility,

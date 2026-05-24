@@ -43,7 +43,7 @@ await check("dev admin phone bypass", async () => {
   });
 
   assert(payload.sessionToken, "dev admin did not receive a session token");
-  assert(payload.bypass === "dev_admin", "dev admin bypass was not used");
+  assert(payload.bypass === "admin_otp_bypass", "admin OTP bypass was not used");
   context.adminToken = payload.sessionToken;
 
   return "session issued with premium bypass";
@@ -147,6 +147,8 @@ await check("free phone auth and quota", async () => {
   assert(chat.accepted === true, "free chat was not accepted");
   assert(chat.usage.dailyLimit === 30, "free daily limit is not 30");
   assert(chat.usage.dailyUsed >= 1, "free daily usage was not incremented");
+  assert(chat.conversationId, "free chat did not create a conversation");
+  context.freeConversationId = chat.conversationId;
 
   return `daily ${chat.usage.dailyUsed}/${chat.usage.dailyLimit}`;
 });
@@ -189,6 +191,54 @@ await check("marketplace stats come from chat activity", async () => {
   assert(character.marketplaceStats.trendingScore > 0, "trending score did not update");
 
   return `${character.marketplaceStats.chatStarts} starts, ${character.marketplaceStats.messages} messages`;
+});
+
+await check("chat conversation delete hides room and deactivates scoped memory", async () => {
+  const memory = await postJson(
+    "/v1/memories",
+    {
+      characterId: context.freeCharacterId,
+      conversationId: context.freeConversationId,
+      text: "This temporary memory should disappear with its deleted room.",
+      kind: "event",
+      importance: 0.5,
+    },
+    context.freeToken,
+  );
+
+  const deleted = await deleteJson(
+    `/v1/chat/conversations/${encodeURIComponent(context.freeConversationId)}`,
+    context.freeToken,
+  );
+  assert(deleted.ok === true, "conversation delete did not return ok");
+
+  const conversations = await getJson("/v1/chat/conversations", context.freeToken);
+  assert(
+    !conversations.conversations.some(
+      (conversation) => conversation.id === context.freeConversationId,
+    ),
+    "deleted conversation still appears in chat list",
+  );
+
+  const messages = await requestJson(
+    "GET",
+    `/v1/chat/conversations/${encodeURIComponent(context.freeConversationId)}/messages`,
+    undefined,
+    context.freeToken,
+    { allowError: true },
+  );
+  assert(messages.status === 404, `deleted conversation messages returned HTTP ${messages.status}`);
+
+  const scopedMemories = await getJson(
+    `/v1/memories?characterId=${encodeURIComponent(
+      context.freeCharacterId,
+    )}&conversationId=${encodeURIComponent(context.freeConversationId)}`,
+    context.freeToken,
+  );
+  const deletedMemory = scopedMemories.memories.find((item) => item.id === memory.id);
+  assert(deletedMemory?.isActive === false, "deleted conversation memory stayed active");
+
+  return `${deleted.deactivatedMemoryCount} scoped memories deactivated`;
 });
 
 await check("memory write and Qdrant projection", async () => {
@@ -422,6 +472,10 @@ async function getJson(path, token) {
 
 async function postJson(path, body, token, options) {
   return requestJson("POST", path, body, token, options);
+}
+
+async function deleteJson(path, token) {
+  return requestJson("DELETE", path, undefined, token);
 }
 
 async function patchJson(path, body, token) {

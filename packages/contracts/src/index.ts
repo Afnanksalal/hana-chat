@@ -160,6 +160,12 @@ export const RecordCharacterEventRequestSchema = z.object({
 
 export type RecordCharacterEventRequest = z.infer<typeof RecordCharacterEventRequestSchema>;
 
+export const RateCharacterRequestSchema = z.object({
+  score: z.number().int().min(1).max(5),
+});
+
+export type RateCharacterRequest = z.infer<typeof RateCharacterRequestSchema>;
+
 export const MediaUploadPurposeSchema = z.enum([
   "character_avatar",
   "character_cover",
@@ -188,6 +194,15 @@ export type SendChatMessageRequest = z.infer<typeof SendChatMessageRequestSchema
 
 export const UpdateSettingsRequestSchema = z.object({
   displayName: z.string().min(1).max(80).nullable().optional(),
+  avatarUrl: z
+    .string()
+    .max(500)
+    .refine(
+      (value) => value.startsWith("/api/v1/media/") || value.startsWith("/assets/"),
+      "Avatar must be an uploaded Hana image",
+    )
+    .nullable()
+    .optional(),
   adultModeEnabled: z.boolean().optional(),
   memoryEnabled: z.boolean().optional(),
   voiceEnabled: z.boolean().optional(),
@@ -256,6 +271,12 @@ export const AdminProcessPayoutRequestSchema = z.object({
 });
 
 export type AdminProcessPayoutRequest = z.infer<typeof AdminProcessPayoutRequestSchema>;
+
+export const AdminAnalyticsQuerySchema = z.object({
+  rangeDays: z.coerce.number().int().min(7).max(90).default(30),
+});
+
+export type AdminAnalyticsQuery = z.infer<typeof AdminAnalyticsQuerySchema>;
 
 export const VerifyRazorpayPaymentRequestSchema = z.object({
   internalOrderId: z.string().min(1),

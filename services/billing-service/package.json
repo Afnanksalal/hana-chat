@@ -12,10 +12,12 @@
   "dependencies": {
     "@hana/config": "workspace:*",
     "@hana/contracts": "workspace:*",
+    "@hana/database": "workspace:*",
     "@hana/nest-core": "workspace:*",
     "@nestjs/common": "^11.1.9",
     "@nestjs/core": "^11.1.9",
     "@nestjs/platform-fastify": "^11.1.9",
+    "kysely": "^0.28.8",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2"
   },

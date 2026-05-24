@@ -7,8 +7,15 @@ import {
   type RiskAction,
 } from "@hana/contracts";
 import { DomainError } from "@hana/errors";
-import { encryptPhoneNumber, hashPhoneNumber, shouldAllowLineType } from "@hana/identity-core";
+import {
+  encryptPhoneNumber,
+  hashPhoneNumber,
+  shouldAllowLineType,
+  type PhoneLineType,
+} from "@hana/identity-core";
+import { calculateRiskScore, type RiskSignals } from "@hana/risk-core";
 import { Body, Controller, Headers, Post } from "@nestjs/common";
+import { sql } from "kysely";
 import { randomInt, randomUUID, timingSafeEqual } from "node:crypto";
 import { auditEvent, createSessionToken, hmacHex, sha256Hex } from "./session";
 
@@ -38,7 +45,8 @@ export class IdentityController {
       return this.issueAdminBypassSession(input.phoneNumber, input.deviceId, userAgent);
     }
 
-    const phoneHash = hashPhoneNumber(input.phoneNumber, this.config.PHONE_HASH_SECRET);
+    const phonePrecheck = await precheckPhoneIdentity(this.config, input.phoneNumber);
+    const phoneHash = phonePrecheck.phoneHash;
     const deviceIdHash = input.deviceId ? sha256Hex(input.deviceId) : null;
     const userAgentHash = userAgent ? sha256Hex(userAgent) : null;
     const ipAddressHash = hashClientIp(forwardedFor, realIp);
@@ -49,12 +57,42 @@ export class IdentityController {
       ipAddressHash,
     });
 
+    const riskSignals = await buildAuthRiskSignals(this.db, {
+      phoneHash,
+      deviceId: input.deviceId,
+      deviceIdHash,
+      ipAddressHash,
+      lineType: phonePrecheck.lineType,
+    });
+    const riskScore = await scoreAuthRiskWithBoundary(this.config, riskSignals);
+    const riskAction = riskActionForPhoneStart(phonePrecheck.lineTypeDecision, riskScore.action);
+
+    await persistRiskSession(this.db, {
+      phoneHash,
+      deviceIdHash,
+      ipAddressHash,
+      action: "auth.phone.start",
+      riskScore: riskScore.score,
+      riskAction,
+      signals: riskSignals,
+    });
+
+    if (riskAction === "block") {
+      await auditEvent(this.db, {
+        action: "auth.phone.blocked",
+        resourceType: "identity.phone_verification",
+        metadata: {
+          riskScore: riskScore.score,
+          reasons: riskScore.reasons,
+        },
+      });
+      throw new DomainError("AUTH_FORBIDDEN", "This phone number cannot be verified right now");
+    }
+
     const encryptedPhoneNumber = encryptPhoneNumber(
       input.phoneNumber,
       this.config.PHONE_ENCRYPTION_KEY_BASE64,
     ).value;
-    const lineTypeDecision = shouldAllowLineType("unknown");
-    const riskAction: RiskAction = lineTypeDecision === "block" ? "block" : "allow_with_limits";
     const localCode = this.config.NODE_ENV === "development" ? "000000" : randomOtpCode();
     const providerVerification = await startOtpChallenge({
       config: this.config,
@@ -89,7 +127,7 @@ export class IdentityController {
       action: "auth.phone.start",
       resourceType: "identity.phone_verification",
       resourceId: verification.id,
-      metadata: { riskAction },
+      metadata: { riskAction, riskScore: riskScore.score, riskReasons: riskScore.reasons },
     });
 
     return {
@@ -272,7 +310,7 @@ export class IdentityController {
 
     await this.db
       .updateTable("identity.users")
-      .set({ display_name: "Hana Admin", status: "active", updated_at: new Date() })
+      .set({ status: "active", updated_at: new Date() })
       .where("id", "=", userId)
       .execute();
     await this.db
@@ -429,6 +467,226 @@ function hashClientIp(forwardedFor?: string, realIp?: string): string | null {
   return candidate ? sha256Hex(candidate) : null;
 }
 
+async function precheckPhoneIdentity(
+  config: AppConfig,
+  phoneNumber: PhoneNumberE164,
+): Promise<{
+  phoneHash: string;
+  lineType: PhoneLineType;
+  lineTypeDecision: "allow" | "challenge" | "block";
+}> {
+  try {
+    const response = await fetchWithTimeout(
+      `${config.IDENTITY_SERVICE_URL.replace(/\/+$/, "")}/internal/identity/phone/risk-precheck`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phoneNumber }),
+      },
+      1_000,
+    );
+
+    if (response.ok) {
+      const payload = (await response.json()) as Record<string, unknown>;
+      const lineType = parsePhoneLineType(payload["lineType"]) ?? "unknown";
+      const lineTypeDecision = parseLineTypeDecision(payload["lineTypeDecision"]);
+
+      if (typeof payload["phoneHash"] === "string" && lineTypeDecision) {
+        return {
+          phoneHash: payload["phoneHash"],
+          lineType,
+          lineTypeDecision,
+        };
+      }
+    }
+  } catch {
+    // Identity normalization/risk-precheck is a private boundary; the gateway keeps a safe fallback.
+  }
+
+  return {
+    phoneHash: hashPhoneNumber(phoneNumber, config.PHONE_HASH_SECRET),
+    lineType: "unknown",
+    lineTypeDecision: shouldAllowLineType("unknown"),
+  };
+}
+
+async function buildAuthRiskSignals(
+  db: HanaDb,
+  input: {
+    phoneHash: string;
+    deviceId: string | undefined;
+    deviceIdHash: string | null;
+    ipAddressHash: string | null;
+    lineType: PhoneLineType;
+  },
+): Promise<RiskSignals> {
+  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+  const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const [
+    otpRequestsLastHour,
+    failedOtpAttemptsLastHour,
+    accountsOnPhone,
+    devicesOnPhone,
+    accountsOnDevice,
+    phonesOnDevice,
+    accountsOnIpLastDay,
+    otpRequestsOnIpLastHour,
+  ] = await Promise.all([
+    recentVerificationCount(db, "phone_hash", input.phoneHash, oneHourAgo),
+    failedVerificationCount(db, "phone_hash", input.phoneHash, oneHourAgo),
+    countRows(db, "identity.phone_credentials", "phone_hash", input.phoneHash),
+    input.deviceIdHash
+      ? countDistinctByFilter(db, "identity.phone_verifications", "device_id_hash", {
+          column: "phone_hash",
+          value: input.phoneHash,
+          since: oneDayAgo,
+        })
+      : Promise.resolve(0),
+    input.deviceId
+      ? countDistinctByFilter(db, "identity.sessions", "user_id", {
+          column: "device_id",
+          value: input.deviceId,
+          since: oneDayAgo,
+        })
+      : Promise.resolve(0),
+    input.deviceIdHash
+      ? countDistinctByFilter(db, "identity.phone_verifications", "phone_hash", {
+          column: "device_id_hash",
+          value: input.deviceIdHash,
+          since: oneDayAgo,
+        })
+      : Promise.resolve(0),
+    input.ipAddressHash
+      ? countDistinctByFilter(db, "identity.sessions", "user_id", {
+          column: "ip_address_hash",
+          value: input.ipAddressHash,
+          since: oneDayAgo,
+        })
+      : Promise.resolve(0),
+    input.ipAddressHash
+      ? recentVerificationCount(db, "ip_address_hash", input.ipAddressHash, oneHourAgo)
+      : Promise.resolve(0),
+  ]);
+
+  return {
+    phone: {
+      lineType: input.lineType,
+      otpRequestsLastHour,
+      failedOtpAttemptsLastHour,
+      accountsOnPhone,
+      devicesOnPhone,
+      simSwapRisk: "unknown",
+    },
+    device: {
+      accountsOnDevice,
+      phonesOnDevice,
+      isEmulator: false,
+      isRootedOrJailbroken: false,
+      automationSuspected: false,
+    },
+    network: {
+      accountsOnIpLastDay,
+      otpRequestsOnIpLastHour,
+      isDatacenter: false,
+      isVpnOrProxy: false,
+      countryMismatch: false,
+    },
+    behavior: {
+      freeQuotaExhaustionsLastWeek: 0,
+      duplicatePromptRate: 0,
+      reportRate: 0,
+    },
+    payment: {
+      accountsOnPaymentMethod: 0,
+      chargebackCount: 0,
+    },
+    graph: {
+      suspiciousClusterSize: Math.max(accountsOnPhone, accountsOnDevice, phonesOnDevice),
+      referralClusterRisk: 0,
+    },
+  };
+}
+
+async function scoreAuthRiskWithBoundary(
+  config: AppConfig,
+  signals: RiskSignals,
+): Promise<{ score: number; action: RiskAction; reasons: string[] }> {
+  try {
+    const response = await fetchWithTimeout(
+      `${config.RISK_SERVICE_URL.replace(/\/+$/, "")}/internal/risk/score`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(signals),
+      },
+      1_000,
+    );
+
+    if (response.ok) {
+      const payload = (await response.json()) as Record<string, unknown>;
+      const action = parseRiskAction(payload["action"]);
+
+      if (typeof payload["score"] === "number" && action && Array.isArray(payload["reasons"])) {
+        return {
+          score: payload["score"],
+          action,
+          reasons: payload["reasons"].filter((reason): reason is string => typeof reason === "string"),
+        };
+      }
+    }
+  } catch {
+    // Risk service is the preferred boundary; risk-core is linked for resilient auth.
+  }
+
+  return calculateRiskScore(signals);
+}
+
+async function persistRiskSession(
+  db: HanaDb,
+  input: {
+    phoneHash: string;
+    deviceIdHash: string | null;
+    ipAddressHash: string | null;
+    action: string;
+    riskScore: number;
+    riskAction: RiskAction;
+    signals: RiskSignals;
+  },
+): Promise<void> {
+  await db
+    .insertInto("identity.risk_sessions")
+    .values({
+      user_id: null,
+      phone_hash: input.phoneHash,
+      device_id: input.deviceIdHash,
+      ip_address_hash: input.ipAddressHash ?? "unknown",
+      action: input.action,
+      risk_score: input.riskScore,
+      action_taken: input.riskAction,
+      signals_json: input.signals,
+    })
+    .execute();
+}
+
+function riskActionForPhoneStart(
+  lineTypeDecision: "allow" | "challenge" | "block",
+  scoredAction: RiskAction,
+): RiskAction {
+  if (lineTypeDecision === "block" || scoredAction === "block") {
+    return "block";
+  }
+
+  if (scoredAction === "manual_review" || scoredAction === "step_up" || scoredAction === "cooldown") {
+    return scoredAction;
+  }
+
+  if (lineTypeDecision === "challenge" && scoredAction === "allow") {
+    return "allow_with_limits";
+  }
+
+  return scoredAction;
+}
+
 async function enforcePhoneVerificationRateLimits(
   db: HanaDb,
   input: {
@@ -527,6 +785,54 @@ async function recentVerificationCount(
   return Number(result?.count ?? 0);
 }
 
+async function failedVerificationCount(
+  db: HanaDb,
+  column: PhoneVerificationRateColumn,
+  value: string,
+  since: Date,
+): Promise<number> {
+  const result = await db
+    .selectFrom("identity.phone_verifications")
+    .select((eb) => eb.fn.countAll<number>().as("count"))
+    .where(column, "=", value)
+    .where("created_at", ">=", since)
+    .where("attempts", ">", 0)
+    .executeTakeFirst();
+
+  return Number(result?.count ?? 0);
+}
+
+async function countRows(
+  db: HanaDb,
+  table: "identity.phone_credentials",
+  column: "phone_hash",
+  value: string,
+): Promise<number> {
+  const result = await db
+    .selectFrom(table)
+    .select((eb) => eb.fn.countAll<number>().as("count"))
+    .where(column, "=", value)
+    .executeTakeFirst();
+
+  return Number(result?.count ?? 0);
+}
+
+async function countDistinctByFilter(
+  db: HanaDb,
+  table: "identity.phone_verifications" | "identity.sessions",
+  distinctColumn: string,
+  filter: { column: string; value: string; since: Date },
+): Promise<number> {
+  const result = await db
+    .selectFrom(table)
+    .select(sql<number>`count(distinct ${sql.ref(distinctColumn)})`.as("count"))
+    .where(sql.ref(filter.column), "=", filter.value)
+    .where("created_at", ">=", filter.since)
+    .executeTakeFirst();
+
+  return Number(result?.count ?? 0);
+}
+
 async function startOtpChallenge(input: {
   config: AppConfig;
   phoneNumber: PhoneNumberE164;
@@ -617,4 +923,43 @@ function constantTimeEqual(left: string, right: string): boolean {
   const rightBuffer = Buffer.from(right);
 
   return leftBuffer.length === rightBuffer.length && timingSafeEqual(leftBuffer, rightBuffer);
+}
+
+function parsePhoneLineType(value: unknown): PhoneLineType | null {
+  return value === "mobile" ||
+    value === "landline" ||
+    value === "fixed_voip" ||
+    value === "non_fixed_voip" ||
+    value === "toll_free" ||
+    value === "unknown"
+    ? value
+    : null;
+}
+
+function parseLineTypeDecision(value: unknown): "allow" | "challenge" | "block" | null {
+  return value === "allow" || value === "challenge" || value === "block" ? value : null;
+}
+
+function parseRiskAction(value: unknown): RiskAction | null {
+  return value === "allow" ||
+    value === "allow_with_limits" ||
+    value === "step_up" ||
+    value === "cooldown" ||
+    value === "block" ||
+    value === "manual_review"
+    ? value
+    : null;
+}
+
+async function fetchWithTimeout(
+  url: string,
+  init: RequestInit,
+  timeoutMs: number,
+): Promise<Response> {
+  const abortController = new AbortController();
+  const timeout = setTimeout(() => abortController.abort(), timeoutMs);
+
+  return fetch(url, { ...init, signal: abortController.signal }).finally(() =>
+    clearTimeout(timeout),
+  );
 }

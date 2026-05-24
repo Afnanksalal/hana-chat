@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Activity,
   ArrowRight,
   BookHeart,
   Brain,
@@ -21,6 +22,7 @@ import { apiJson } from "./api";
 interface DashboardResponse {
   user: {
     displayName: string;
+    roles?: string[];
   };
   plan: {
     id: string;
@@ -119,6 +121,7 @@ export default function AppHomePage() {
     [characters, conversations],
   );
   const recentConversations = conversations.slice(0, 4);
+  const isAdmin = dashboard.user.roles?.includes("admin") ?? false;
   const healthItems = [
     {
       label: "Messages left",
@@ -197,7 +200,9 @@ export default function AppHomePage() {
             {recentConversations.map((conversation) => (
               <Link
                 className="dashboard-room-row"
-                href={`/app/chat?characterId=${encodeURIComponent(conversation.characterId)}`}
+                href={`/app/chat?characterId=${encodeURIComponent(
+                  conversation.characterId,
+                )}&conversationId=${encodeURIComponent(conversation.id)}`}
                 key={conversation.id}
               >
                 <img
@@ -262,6 +267,15 @@ export default function AppHomePage() {
                 <small>Plan, 18+ access, voice, and memory.</small>
               </span>
             </Link>
+            {isAdmin ? (
+              <Link href="/app/admin">
+                <Activity size={18} />
+                <span>
+                  <strong>Admin command center</strong>
+                  <small>Analytics, queues, safety, and payouts.</small>
+                </span>
+              </Link>
+            ) : null}
           </div>
         </aside>
 
@@ -302,6 +316,17 @@ export default function AppHomePage() {
 
 function greetingFor(displayName: string): string {
   const firstName = displayName.trim().split(/\s+/)[0] || "there";
+  const hour = new Date().getHours();
+  const moment =
+    hour < 5
+      ? "late night"
+      : hour < 12
+        ? "morning"
+        : hour < 17
+          ? "afternoon"
+          : hour < 21
+            ? "evening"
+            : "night";
 
-  return `Your night is ready, ${firstName}.`;
+  return `Your ${moment} is ready, ${firstName}.`;
 }

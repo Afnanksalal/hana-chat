@@ -15,6 +15,7 @@
     "@hana/database": "workspace:*",
     "@hana/errors": "workspace:*",
     "@hana/identity-core": "workspace:*",
+    "@hana/memory-core": "workspace:*",
     "@hana/model-router": "workspace:*",
     "@hana/nest-core": "workspace:*",
     "@hana/risk-core": "workspace:*",

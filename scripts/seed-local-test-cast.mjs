@@ -2,9 +2,13 @@ import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import process from "node:process";
+import { loadConfig } from "../packages/config/dist/index.js";
+import { createDatabase } from "../packages/database/dist/index.js";
 
 loadDotEnv(resolve(process.cwd(), ".env"));
 
+const config = loadConfig();
+const db = createDatabase(config);
 const API_BASE_URL = stripTrailingSlash(
   process.env.API_GATEWAY_URL ?? process.env.API_BASE_URL ?? "http://localhost:4000",
 );
@@ -296,7 +300,11 @@ const localPortraitPalettes = [
   ["#111015", "#b90f52", "#ffd1df"],
 ];
 
-await main();
+try {
+  await main();
+} finally {
+  await db.destroy();
+}
 
 async function main() {
   await assertApiReady();
@@ -329,7 +337,12 @@ async function main() {
     console.log(`Seeding ${index + 1}/${characters.length}: ${character.name}`);
     const image = await generatePortrait(character, index);
     const media = await uploadMedia(character, image, token);
-    const created = await postJson("/v1/characters", characterPayload(character, media.url), token);
+    const created = await upsertSeededCharacter({
+      character,
+      imageUrl: media.url,
+      token,
+      adminUserId: admin.userId,
+    });
 
     if (!created.id) {
       throw new Error(`Character create failed for ${character.name}`);
@@ -374,6 +387,127 @@ async function main() {
 
   console.log(`Seeded ${seeded.length} characters for ${ADMIN_DISPLAY_NAME}.`);
   console.log(`Session report written to ${reportPath}`);
+}
+
+async function upsertSeededCharacter(input) {
+  const existingCharacters = await db
+    .selectFrom("creator.characters")
+    .select(["id", "created_at"])
+    .where("name", "=", input.character.name)
+    .orderBy("created_at", "asc")
+    .execute();
+
+  if (existingCharacters.length === 0) {
+    return postJson(
+      "/v1/characters",
+      characterPayload(input.character, input.imageUrl),
+      input.token,
+    );
+  }
+
+  const [primaryCharacter, ...duplicateCharacters] = existingCharacters;
+
+  if (duplicateCharacters.length > 0) {
+    await db
+      .updateTable("creator.characters")
+      .set({
+        visibility: "private",
+        moderation_status: "rejected",
+        marketplace_preview: "Retired duplicate local seed.",
+        updated_at: new Date(),
+      })
+      .where(
+        "id",
+        "in",
+        duplicateCharacters.map((character) => character.id),
+      )
+      .execute();
+  }
+
+  return updateSeededCharacter({
+    ...input,
+    characterId: primaryCharacter.id,
+  });
+}
+
+async function updateSeededCharacter(input) {
+  const payload = characterPayload(input.character, input.imageUrl);
+  const now = new Date();
+  const moderationStatus = input.character.isPrivate
+    ? "draft"
+    : moderationStatusForRating(input.character.rating);
+  const visibility =
+    !input.character.isPrivate && moderationStatus === "approved" ? "public" : "private";
+  const maxVersion = await db
+    .selectFrom("creator.character_versions")
+    .select((eb) => eb.fn.max("version").as("version"))
+    .where("character_id", "=", input.characterId)
+    .executeTakeFirst();
+  const nextVersion = Number(maxVersion?.version ?? 0) + 1;
+  const version = await db
+    .insertInto("creator.character_versions")
+    .values({
+      character_id: input.characterId,
+      version: nextVersion,
+      name: payload.name,
+      description: payload.description,
+      persona_prompt: payload.personaPrompt,
+      greeting: payload.greeting,
+      scenario_prompt: payload.scenarioPrompt || null,
+      first_message_style: payload.firstMessageStyle || null,
+      creator_notes: payload.creatorNotes || null,
+      personality_traits: payload.personalityTraits,
+      speaking_style: payload.speakingStyle || null,
+      memory_scope: "conversation",
+      example_dialogues_json: payload.exampleDialogues,
+      rating: payload.rating,
+      tags: payload.tags,
+      created_by: input.adminUserId,
+    })
+    .returning(["id"])
+    .executeTakeFirstOrThrow();
+
+  await db
+    .updateTable("creator.characters")
+    .set({
+      creator_user_id: input.adminUserId,
+      name: payload.name,
+      description: payload.description,
+      current_version_id: version.id,
+      visibility,
+      moderation_status: moderationStatus,
+      avatar_url: payload.avatarUrl,
+      cover_image_url: payload.coverImageUrl,
+      template_id: payload.templateId,
+      marketplace_category: payload.marketplaceCategory,
+      marketplace_preview: payload.marketplacePreview,
+      model_profile: payload.modelProfile,
+      price_cents: payload.priceCents,
+      monetization_enabled: payload.monetizationEnabled && payload.priceCents > 0,
+      published_at: visibility === "public" ? now : null,
+      updated_at: now,
+    })
+    .where("id", "=", input.characterId)
+    .execute();
+
+  if (visibility === "public") {
+    await postJson(
+      `/v1/characters/${encodeURIComponent(input.characterId)}/publish`,
+      {
+        priceCents: payload.priceCents,
+        monetizationEnabled: payload.monetizationEnabled,
+      },
+      input.token,
+    );
+  }
+
+  return {
+    id: input.characterId,
+    version: nextVersion,
+    status: moderationStatus,
+    visibility,
+    character: payload,
+  };
 }
 
 async function assertApiReady() {
@@ -530,6 +664,10 @@ function characterPayload(character, imageUrl) {
     priceCents: character.priceCents,
     monetizationEnabled: character.priceCents > 0,
   };
+}
+
+function moderationStatusForRating(rating) {
+  return rating === "general" || rating === "teen" ? "approved" : "pending_review";
 }
 
 async function seedConversation(input) {
