@@ -1341,6 +1341,7 @@ select:focus {
 
 .message-row {
   display: flex;
+  flex: 0 0 auto;
 }
 
 .message-row.user {
@@ -4765,10 +4766,6 @@ textarea:focus {
   .chat-composer input {
     min-width: 0;
     max-width: 100%;
-  }
-
-  .message-row {
-    overflow: hidden;
   }
 
   .message-bubble {
