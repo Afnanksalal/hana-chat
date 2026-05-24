@@ -7,6 +7,7 @@ This document is the implementation map for the current Hana Chat codebase.
 ```mermaid
 flowchart LR
   User["Web / PWA user"] --> Caddy["Caddy public edge on VPS"]
+  Android["Android TWA APK"] --> Caddy
   Caddy --> Web["Next.js web container"]
   Web --> Gateway["NestJS API Gateway"]
   Gateway --> Postgres["Postgres canonical data"]
@@ -81,6 +82,7 @@ sequenceDiagram
 ## Source Boundaries
 
 - `apps/web`: consumer web app, PWA, landing, auth, app shell, marketplace, chat, creator tools.
+- `apps/android-twa`: Bubblewrap Trusted Web Activity wrapper for Android APK/AAB builds.
 - `services/api-gateway`: product API and currently active orchestration path.
 - `services/*`: deployable NestJS service shells for future extraction.
 - `packages/contracts`: shared validation schemas and branded types.
@@ -118,6 +120,7 @@ For a Portainer-friendly explanation of every running container, see
 - Secrets: `.env` locally, VPS environment or secret manager in production. Never commit live secrets.
 - Current Playground access: `https://18.61.174.6` serves the full product through a Let's Encrypt IP-address certificate.
 - Domains when ready: `hanachat.live` for public landing/legal/crawler routes, `app.hanachat.live` for authenticated app routes, and `api.hanachat.live` for the API gateway.
+- Android TWA builds require `/.well-known/assetlinks.json` on the active HTTPS origin and the matching signing certificate fingerprint in `ANDROID_TWA_SHA256_CERT_FINGERPRINTS`.
 - Auth cookies use `AUTH_COOKIE_DOMAIN=.hanachat.live` on matching domain hosts, and fall back to host-only cookies on raw-IP access.
 - Next.js and NestJS both emit defensive security headers; production API and SSE responses redact unexpected internal error messages.
 - Production CORS origins are validated through `WEB_ORIGIN` and every entry in `WEB_ORIGINS`; localhost or non-HTTPS origins fail fast in production.

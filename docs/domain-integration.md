@@ -6,6 +6,7 @@ Production uses a clear public/app/API hierarchy:
 flowchart LR
   User["User browser"] --> Edge["Caddy on Playground VPS"]
   Edge --> Site["hanachat.live public landing / app.hanachat.live PWA"]
+  Android["Android TWA APK"] --> Site
   Site --> Api["api.hanachat.live API gateway"]
   Api --> Services["private Docker network services"]
   Services --> Data["Postgres, Redis, Qdrant, Neo4j, Redpanda, ClickHouse, Temporal"]
@@ -30,6 +31,9 @@ NEXT_PUBLIC_APP_URL=https://app.hanachat.live
 API_GATEWAY_URL=http://api-gateway:4000
 AUTH_COOKIE_NAME=hana_session
 AUTH_COOKIE_DOMAIN=.hanachat.live
+ANDROID_APK_DOWNLOAD_URL=/downloads/hana-chat-twa.apk
+ANDROID_TWA_PACKAGE_ID=com.hanachat.app
+ANDROID_TWA_SHA256_CERT_FINGERPRINTS=<release-signing-cert-sha256>
 ```
 
 VPS `.env.vps`:
@@ -51,6 +55,11 @@ User-facing web navigation should use root-relative routes such as `/auth`, `/ap
 preview deployments, and production domains debuggable. Use `NEXT_PUBLIC_SITE_URL` and
 `NEXT_PUBLIC_APP_URL` only where an absolute canonical URL is required, such as structured metadata,
 sitemaps, robots, and LLM crawler files.
+
+The Android TWA is different from a normal web link: each signed APK is built against one HTTPS
+origin and verified through `/.well-known/assetlinks.json`. Use raw IP only for internal install
+testing. Rebuild the TWA against `https://hanachat.live` or the chosen app origin after DNS and
+trusted TLS are active.
 
 ## Reverse Proxy
 

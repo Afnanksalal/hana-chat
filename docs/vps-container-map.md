@@ -10,6 +10,7 @@ Hana Chat is deployed as one Docker Compose project named `hana-chat-vps`.
 ```mermaid
 flowchart LR
   Browser["User browser"] --> Caddy["caddy public edge :80/:443"]
+  Apk["Android TWA APK"] --> Caddy
   Caddy --> Web["web Next.js :3000 internal"]
   Web --> Api["api-gateway NestJS :4000 internal"]
   Api --> Pg["postgres canonical data"]
@@ -34,7 +35,7 @@ The active product path today is intentionally simple:
 
 1. Browser opens `https://18.61.174.6`.
 2. `caddy` terminates HTTPS and proxies to `web:3000`.
-3. `web` serves the Next.js product UI and same-origin route handlers.
+3. `web` serves the Next.js product UI, same-origin route handlers, PWA/TWA metadata, and the optional mounted Android APK download.
 4. Next route handlers call `api-gateway:4000` over the private Docker network.
 5. `api-gateway` owns the current product API: auth, dashboard, marketplace, chat, memory,
    billing, wallet, admin, media, guardrails, and provider calls.
@@ -50,7 +51,7 @@ the main user-facing orchestration layer.
 | Container | Compose service | Type | Purpose | Public? |
 | --- | --- | --- | --- | --- |
 | `hana-chat-vps-caddy-1` | `caddy` | Edge | Public reverse proxy, HTTPS for raw IP, HTTP redirect, ACME challenge serving. | Yes, `80/443` only |
-| `hana-chat-vps-web-1` | `web` | Frontend | Next.js landing, auth, app shell, chat UI, creator tools, PWA, SEO/crawler routes. | No, host `127.0.0.1:3000` only |
+| `hana-chat-vps-web-1` | `web` | Frontend | Next.js landing, auth, app shell, chat UI, creator tools, PWA, Android TWA assetlinks/download, SEO/crawler routes. | No, host `127.0.0.1:3000` only |
 | `hana-chat-vps-api-gateway-1` | `api-gateway` | API | Current production API and orchestration path for auth, chat, marketplace, billing, memory, media, admin, and settings. | No, host `127.0.0.1:4000` only |
 | `hana-chat-vps-postgres-1` | `postgres` | Data | Canonical relational database: users, sessions, characters, conversations, messages, memories, billing, wallets, payouts, audit rows. | No |
 | `hana-chat-vps-redis-1` | `redis` | Data/cache | Fast cache, rate/usage state, idempotency helpers, and short-lived coordination data. | No |

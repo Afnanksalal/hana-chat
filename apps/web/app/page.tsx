@@ -1,4 +1,11 @@
-import { ArrowRight, BookHeart, Check, MessageCircleHeart, Mic2 } from "lucide-react";
+import {
+  ArrowRight,
+  BookHeart,
+  Check,
+  Download,
+  MessageCircleHeart,
+  Mic2,
+} from "lucide-react";
 import { cookies } from "next/headers";
 import Image from "next/image";
 import Link from "next/link";
@@ -59,6 +66,7 @@ export default async function LandingPage() {
   const initialAuthenticated = Boolean(
     cookieStore.get(process.env["AUTH_COOKIE_NAME"] ?? "hana_session")?.value,
   );
+  const androidApkUrl = getAndroidApkDownloadUrl();
   const structuredData = {
     "@context": "https://schema.org",
     "@type": "WebApplication",
@@ -68,6 +76,7 @@ export default async function LandingPage() {
     image: absoluteUrl("/assets/hana-hero.png"),
     applicationCategory: "EntertainmentApplication",
     operatingSystem: "Web, iOS, Android",
+    installUrl: androidApkUrl ? absoluteUrl(androidApkUrl) : absoluteAppUrl("/auth"),
     offers: pricingPlans.map((plan) => ({
       "@type": "Offer",
       name: plan.name,
@@ -129,6 +138,11 @@ export default async function LandingPage() {
             <a className="secondary-action" href="#features">
               See features <ArrowRight size={18} />
             </a>
+            {androidApkUrl ? (
+              <a className="secondary-action android-download-action" href={androidApkUrl}>
+                Android APK <Download size={18} />
+              </a>
+            ) : null}
           </div>
         </div>
       </section>
@@ -214,4 +228,26 @@ export default async function LandingPage() {
       </footer>
     </main>
   );
+}
+
+function getAndroidApkDownloadUrl(): string | undefined {
+  const value = (
+    process.env["ANDROID_APK_DOWNLOAD_URL"] ??
+    process.env["NEXT_PUBLIC_ANDROID_APK_URL"] ??
+    ""
+  ).trim();
+
+  if (!value) {
+    return undefined;
+  }
+
+  if (value.startsWith("/")) {
+    return value;
+  }
+
+  try {
+    return new URL(value).toString();
+  } catch {
+    return undefined;
+  }
 }

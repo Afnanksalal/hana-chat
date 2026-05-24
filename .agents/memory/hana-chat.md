@@ -17,6 +17,8 @@
 - Production auth cookies use `.hanachat.live` so landing CTAs can detect sessions created on the app subdomain.
 - Interactive web navigation uses root-relative current-origin paths; absolute app/site URL helpers are only for canonical metadata and crawler artifacts.
 - Frontend deploy target: Next.js container on the Playground VPS behind Caddy.
+- Android packaging uses `apps/android-twa` as a Bubblewrap Trusted Web Activity wrapper around the same PWA origin; APK binaries and signing keys stay out of git and are served from `/downloads/hana-chat-twa.apk` only when configured.
+- TWA verification uses the dynamic `/.well-known/assetlinks.json` route with `ANDROID_TWA_PACKAGE_ID` and `ANDROID_TWA_SHA256_CERT_FINGERPRINTS`.
 - VPS stack: Caddy, Next.js web, NestJS services, Postgres, Qdrant, Neo4j, Redis, Redpanda, Temporal, ClickHouse.
 - Playground raw-IP access is a supported path at `https://18.61.174.6`; auth cookies fall back to host-only cookies on IP access and use `.hanachat.live` only on matching domain hosts.
 - Raw-IP HTTPS uses Let's Encrypt IP-address certificates through Certbot with the `shortlived` profile; renewal must run daily.

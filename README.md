@@ -56,7 +56,7 @@ pnpm web:smoke
 - Chat orchestration through xAI with strict input/output guardrails, entitlement checks, usage limits, SSE streaming, durable memory injection, and an evolving per-chat relationship profile.
 - Memory scoped by `user_id + character_id + conversation_id`; no global user memories are injected into chat context.
 - Billing plans, Razorpay/mock checkout flow, creator wallet ledger, 7-day creator earning hold, payout profiles, admin payout operations, worker-owned outbox leasing, Qdrant replay, and Neo4j projection.
-- PWA, SEO metadata routes, crawler files, secure headers, raw-IP VPS access, shared `.hanachat.live` auth cookies, and fully self-hosted VPS deployment docs.
+- PWA, Android TWA packaging, SEO metadata routes, crawler files, secure headers, raw-IP VPS access, shared `.hanachat.live` auth cookies, and fully self-hosted VPS deployment docs.
 
 ## Core Docs
 
@@ -73,6 +73,7 @@ pnpm web:smoke
 - [Playground VPS Deployment](docs/playground-vps-deployment.md)
 - [VPS Container Map](docs/vps-container-map.md)
 - [Domain Integration](docs/domain-integration.md)
+- [Android TWA Packaging](docs/android-twa.md)
 - [Guardrails and SSE](docs/guardrails-and-sse.md)
 - [AI Harness](docs/ai-harness.md)
 - [Product and Market Audit](docs/product-market-audit-2026.md)

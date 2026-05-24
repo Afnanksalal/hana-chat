@@ -32,6 +32,10 @@ API_GATEWAY_PORT=4000
 ACME_EMAIL=support@hanachat.site
 CERTBOT_WEBROOT_PATH=/opt/hana-chat/shared/certbot-webroot
 LETSENCRYPT_PATH=/opt/hana-chat/shared/letsencrypt
+ANDROID_APK_DOWNLOAD_URL=/downloads/hana-chat-twa.apk
+ANDROID_DOWNLOADS_PATH=/opt/hana-chat/shared/android-downloads
+ANDROID_TWA_PACKAGE_ID=com.hanachat.app
+ANDROID_TWA_SHA256_CERT_FINGERPRINTS=<release-signing-cert-sha256>
 ```
 
 Keep domain values ready for the later switch:
@@ -100,4 +104,19 @@ curl -fsS https://18.61.174.6/manifest.webmanifest
 curl -fsS https://18.61.174.6/robots.txt
 curl -fsS https://18.61.174.6/sitemap.xml
 curl -fsS https://18.61.174.6/llms.txt
+curl -fsS https://18.61.174.6/.well-known/assetlinks.json
+curl -fsS -I https://18.61.174.6/downloads/hana-chat-twa.apk
 ```
+
+## Android APK Download
+
+The landing page shows the Android APK button only when `ANDROID_APK_DOWNLOAD_URL` is set. The
+Playground overlay mounts `ANDROID_DOWNLOADS_PATH` into the web container at
+`/app/apps/web/public/downloads`, so keep the signed TWA APK in:
+
+```bash
+/opt/hana-chat/shared/android-downloads/hana-chat-twa.apk
+```
+
+See [Android TWA Packaging](android-twa.md) for signing, Digital Asset Links, and domain cutover
+details.
