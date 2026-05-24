@@ -11,6 +11,12 @@ flowchart LR
   Caddy --> Web["Next.js web container"]
   Web --> Gateway["NestJS API Gateway"]
   Gateway --> Postgres["Postgres canonical data"]
+  Gateway --> BillingSvc["billing-service entitlements"]
+  Gateway --> ModerationSvc["moderation-service safety"]
+  Gateway --> RetrievalSvc["retrieval-service ranking"]
+  Gateway --> GraphSvc["graph-service personalization"]
+  GraphSvc --> Neo4j["Neo4j graph memory"]
+  GraphSvc --> Postgres
   Gateway --> Qdrant["Qdrant vector retrieval"]
   Gateway --> Xai["xAI chat completions"]
   Gateway --> Redis["Redis cache / rate state"]
@@ -19,11 +25,12 @@ flowchart LR
   Gateway --> Redpanda["Redpanda event log"]
   Gateway --> Temporal["Temporal workflows"]
   Gateway --> ClickHouse["ClickHouse analytics"]
-  Gateway --> Neo4j["Neo4j graph memory"]
   Redpanda --> Workers["Worker services"]
   Workers --> Qdrant
   Workers --> Neo4j
   Workers --> ClickHouse
+  Gateway --> Admin["Admin analytics API"]
+  Admin --> Postgres
 ```
 
 ## Request Flow
@@ -34,20 +41,27 @@ sequenceDiagram
   participant API as API Gateway
   participant DB as Postgres
   participant Vec as Qdrant
+  participant Graph as Graph Service
+  participant Rank as Retrieval Service
   participant Model as xAI
 
   Web->>API: POST /v1/chat/messages
   API->>DB: Validate session, entitlement, character, conversation
   API->>Vec: Search memory by user + character + conversation
-  Vec-->>API: Relevant memory IDs
+  API->>Graph: Request exact conversation graph context
+  Graph->>DB: Fallback if graph projection is cold
+  Graph-->>API: Graph hits + personalization context
+  API->>Rank: Hybrid rank vector + graph candidates
+  Rank-->>API: Ordered memory IDs
   API->>DB: Load active memory facts
   API->>DB: Upsert conversation evolution profile
-  API->>Model: Persona + scoped memory + evolution + recent messages
+  API->>Model: Persona + scoped memory + evolution + graph context + recent messages
   Model-->>API: Assistant reply
   API->>DB: Persist user/assistant messages
   API->>DB: Extract simple memory into same conversation
   API->>DB: Refresh conversation evolution profile
   API->>Vec: Upsert memory vector
+  API->>DB: Enqueue completed-turn graph projection
   API-->>Web: Assistant message + usage + safety + trial + evolution state
 ```
 
@@ -79,12 +93,31 @@ sequenceDiagram
   API->>DB: Mark paid, processing, or failed and reconcile wallet
 ```
 
+## Admin Analytics Flow
+
+```mermaid
+flowchart LR
+  AdminUser["Admin user"] --> WebAdmin["/app/admin command center"]
+  WebAdmin --> AnalyticsApi["GET /v1/admin/analytics"]
+  AnalyticsApi --> PgTruth["Postgres operational truth"]
+  AnalyticsApi --> Outbox["Outbox status by topic"]
+  ChatTurn["Chat turn"] --> ModelCall["analytics.model_calls"]
+  ChatTurn --> AnalyticsOutbox["analytics.event.created"]
+  AnalyticsOutbox --> Worker["worker-service"]
+  Worker --> ClickHouse["hana.model_calls mirror"]
+```
+
+Admin analytics is guarded by `identity.user_roles.role = admin` and reads real product data:
+users, sessions, conversations, messages, model calls, safety decisions, memories, marketplace
+engagement, billing, webhooks, outbox events, and audit rows. The dashboard avoids secrets, hidden
+prompts, raw phone data, provider credentials, and internal model payloads.
+
 ## Source Boundaries
 
 - `apps/web`: consumer web app, PWA, landing, auth, app shell, marketplace, chat, creator tools.
 - `apps/android-twa`: Bubblewrap Trusted Web Activity wrapper for Android APK/AAB builds.
-- `services/api-gateway`: product API and currently active orchestration path.
-- `services/*`: deployable NestJS service shells for future extraction.
+- `services/api-gateway`: stable public product API and request coordinator.
+- `services/*`: private NestJS bounded contexts used by the gateway, workers, or operators.
 - `packages/contracts`: shared validation schemas and branded types.
 - `packages/database`: typed Kysely database model.
 - `packages/*-core`: reusable domain logic.
@@ -93,20 +126,24 @@ sequenceDiagram
 
 ## Runtime Boundaries
 
-The deployed VPS contains more containers than the immediate request path because Hana is organized
-around production-grade bounded contexts.
+The deployed VPS contains multiple private service boundaries because Hana is organized around
+production-grade bounded contexts.
 
 - **Public edge:** `caddy` is the only public container. It owns `80/443`, TLS, ACME, redirects, and
   reverse proxying.
 - **Frontend:** `web` serves the Next.js product UI and same-origin route handlers. It is private and
   reachable through Caddy only.
-- **Active API:** `api-gateway` owns the current production API and active orchestration path.
+- **Active API:** `api-gateway` owns the public production API, session enforcement, and request
+  coordination.
 - **Domain services:** `identity-service`, `risk-service`, `chat-orchestrator`, `memory-service`,
   `retrieval-service`, `graph-service`, `moderation-service`, `billing-service`, `creator-service`,
-  and `notification-service` are private NestJS bounded-context runtimes. They are deployed from day
-  one so logic can be extracted from the gateway without reworking Docker, health checks, networking,
-  or env loading.
-- **Workers:** `batch-orchestrator` and `worker-service` process private batch/projection work.
+  and `notification-service` are private NestJS bounded-context runtimes. Auth starts call identity
+  and risk boundaries; chat turns call chat-planning, billing, moderation, memory-policy, retrieval,
+  and graph boundaries; workers lease and ack/fail outbox work through the batch boundary.
+- **Workers:** `batch-orchestrator` owns private outbox leasing semantics and `worker-service`
+  performs Qdrant, Neo4j, and ClickHouse projection work.
+- **Admin analytics:** `/app/admin` and `/v1/admin/analytics` aggregate operational metrics and show
+  bounded-context queue pressure without exposing private service ports.
 - **State:** Postgres, Redis, Qdrant, Neo4j, Redpanda, Temporal, and ClickHouse are split by storage
   workload rather than squeezed into one database.
 
@@ -119,9 +156,14 @@ For a Portainer-friendly explanation of every running container, see
 - VPS: Caddy, Next.js web, API gateway, worker services, Postgres, Qdrant, Neo4j, Redis, Redpanda, Temporal, ClickHouse.
 - Secrets: `.env` locally, VPS environment or secret manager in production. Never commit live secrets.
 - Current Playground access: `https://18.61.174.6` serves the full product through a Let's Encrypt IP-address certificate.
-- Domains when ready: `hanachat.live` for public landing/legal/crawler routes, `app.hanachat.live` for authenticated app routes, and `api.hanachat.live` for the API gateway.
+- Domains when ready: `hanachat.site` for public landing/legal/crawler routes, `app.hanachat.site` for authenticated app routes, and `api.hanachat.site` for the API gateway.
 - Android TWA builds require `/.well-known/assetlinks.json` on the active HTTPS origin and the matching signing certificate fingerprint in `ANDROID_TWA_SHA256_CERT_FINGERPRINTS`.
-- Auth cookies use `AUTH_COOKIE_DOMAIN=.hanachat.live` on matching domain hosts, and fall back to host-only cookies on raw-IP access.
+- Auth cookies use `AUTH_COOKIE_DOMAIN=.hanachat.site` on matching domain hosts, and fall back to host-only cookies on raw-IP access.
 - Next.js and NestJS both emit defensive security headers; production API and SSE responses redact unexpected internal error messages.
 - Production CORS origins are validated through `WEB_ORIGIN` and every entry in `WEB_ORIGINS`; localhost or non-HTTPS origins fail fast in production.
 - Production chat responses do not expose internal model-routing data to clients.
+- Gateway-to-service calls are private Docker-network calls. Critical boundaries use conservative
+  canonical fallbacks: identity falls back to local phone hashing, risk to `risk-core`, chat planning
+  to `model-router`, memory policy to `memory-core`, billing to Postgres, moderation to
+  `safety-core`, graph to exact-scope Postgres memories, retrieval to deterministic local ranking,
+  and batch leasing to direct outbox leasing.

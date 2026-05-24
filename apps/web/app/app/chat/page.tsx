@@ -243,6 +243,8 @@ function ChatExperience() {
   const [isSending, setIsSending] = useState(false);
   const [isUnlocking, setIsUnlocking] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [deleteArmed, setDeleteArmed] = useState(false);
+  const [isDeletingConversation, setIsDeletingConversation] = useState(false);
   const [trialStatus, setTrialStatus] = useState<TrialStatus | null>(null);
   const [evolution, setEvolution] = useState<EvolutionSummary | null>(null);
   const [typingMessageId, setTypingMessageId] = useState<string | null>(null);
@@ -286,6 +288,10 @@ function ChatExperience() {
       document.body.classList.remove("chat-room-open");
     };
   }, [selectedCharacter]);
+
+  useEffect(() => {
+    setDeleteArmed(false);
+  }, [activeConversation?.id, settingsOpen]);
 
   const filteredConversations = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -382,6 +388,7 @@ function ChatExperience() {
     setSelectedCharacterId(conversation.characterId);
     setDirectCharacter(undefined);
     setSettingsOpen(false);
+    setDeleteArmed(false);
     setStatus("");
     setTrialStatus(null);
     replaceWithConversation(conversation.id);
@@ -439,6 +446,7 @@ function ChatExperience() {
         : null,
     );
     setSettingsOpen(false);
+    setDeleteArmed(false);
     setStatus("");
   }
 
@@ -458,6 +466,50 @@ function ChatExperience() {
     } catch {
       startCharacterChat(character);
       replaceWithFreshRoom(character.id);
+    }
+  }
+
+  async function deleteCurrentConversation() {
+    if (!activeConversation || isDeletingConversation) {
+      return;
+    }
+
+    if (!deleteArmed) {
+      setDeleteArmed(true);
+      setStatus("Tap Delete forever to remove this room.");
+      return;
+    }
+
+    const deletedConversationId = activeConversation.id;
+    setIsDeletingConversation(true);
+    setStatus("Deleting chat...");
+
+    try {
+      await apiJson<{ ok: boolean; conversationId: string }>(
+        `/api/v1/chat/conversations/${encodeURIComponent(deletedConversationId)}`,
+        { method: "DELETE" },
+      );
+      resetAssistantTyping();
+      await refreshConversations();
+      setDirectCharacter(undefined);
+      setActiveConversation(undefined);
+      setSelectedCharacterId("");
+      setMessages([]);
+      setMemories([]);
+      setMemoryEdits({});
+      setMemoryDraft("");
+      setTuningDraft("");
+      setDraft("");
+      setEvolution(null);
+      setTrialStatus(null);
+      setSettingsOpen(false);
+      setDeleteArmed(false);
+      replaceChatLocation();
+      setStatus("Chat deleted.");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Could not delete this chat.");
+    } finally {
+      setIsDeletingConversation(false);
     }
   }
 
@@ -952,6 +1004,7 @@ function ChatExperience() {
                   setMemories([]);
                   setEvolution(null);
                   setTrialStatus(null);
+                  setDeleteArmed(false);
                   replaceChatLocation();
                 }}
               >
@@ -1122,19 +1175,56 @@ function ChatExperience() {
               <RotateCcw size={18} />
               <h3>Room controls</h3>
             </div>
-            <button
-              className="secondary-action compact"
-              type="button"
-              onClick={() => void startFreshRoom()}
-            >
-              <Plus size={16} /> Start fresh room
-            </button>
+            <div className="room-control-actions">
+              <button
+                className="secondary-action compact"
+                type="button"
+                onClick={() => void startFreshRoom()}
+              >
+                <Plus size={16} /> Start fresh room
+              </button>
+            </div>
             <small>
               {activeConversation
                 ? `Last active ${formatRoomTimestamp(activeConversation.updatedAt)}.`
                 : "This is a clean room until you send the first message."}
             </small>
           </section>
+
+          {activeConversation ? (
+            <section
+              className={deleteArmed ? "tuning-card danger-card armed" : "tuning-card danger-card"}
+            >
+              <div className="panel-heading">
+                <Trash2 size={18} />
+                <h3>Delete chat</h3>
+              </div>
+              <p>Remove this room from your chats and turn off the memories saved inside it.</p>
+              <div className="room-control-actions">
+                <button
+                  className={deleteArmed ? "danger-action compact" : "secondary-action compact"}
+                  type="button"
+                  disabled={isDeletingConversation}
+                  onClick={() => void deleteCurrentConversation()}
+                >
+                  <Trash2 size={16} /> {deleteArmed ? "Delete forever" : "Delete chat"}
+                </button>
+                {deleteArmed ? (
+                  <button
+                    className="secondary-action compact"
+                    type="button"
+                    disabled={isDeletingConversation}
+                    onClick={() => {
+                      setDeleteArmed(false);
+                      setStatus("");
+                    }}
+                  >
+                    <X size={16} /> Cancel
+                  </button>
+                ) : null}
+              </div>
+            </section>
+          ) : null}
 
           <section className="tuning-card">
             <div className="panel-heading">

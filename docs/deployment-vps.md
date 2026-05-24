@@ -10,12 +10,13 @@ Hana Chat runs as one self-hosted VPS deployment on the Playground host:
 
 - Current raw-IP product URL: `https://18.61.174.6`
 - Temporary HTTP entry: `http://18.61.174.6`, which redirects to HTTPS after serving ACME challenge files.
-- Future public site: `https://hanachat.live`
-- Future authenticated app: `https://app.hanachat.live`
-- Future API edge: `https://api.hanachat.live`
+- Public site: `https://hanachat.site`
+- Authenticated app: `https://app.hanachat.site`
+- API edge: `https://api.hanachat.site`
 
-The raw-IP HTTPS route uses a Let's Encrypt IP-address certificate with the `shortlived` profile.
-Keep the renewal cron from [Playground VPS Deployment](playground-vps-deployment.md) active.
+The raw-IP HTTPS route stays available for direct IP testing and uses a Let's Encrypt IP-address
+certificate with the `shortlived` profile. Keep the renewal cron from
+[Playground VPS Deployment](playground-vps-deployment.md) active.
 
 For the full Portainer/runtime breakdown of every `hana-chat-vps-*` container, see
 [VPS Container Map](vps-container-map.md).
@@ -26,7 +27,9 @@ Use `/opt/hana-chat/shared/.env.vps` on the VPS. Required public-edge values:
 
 ```bash
 VPS_PUBLIC_IP=18.61.174.6
-PUBLIC_WEB_URL=https://18.61.174.6
+PUBLIC_WEB_URL=https://hanachat.site
+NEXT_PUBLIC_SITE_URL=https://hanachat.site
+NEXT_PUBLIC_APP_URL=https://app.hanachat.site
 WEB_PORT=3000
 API_GATEWAY_PORT=4000
 ACME_EMAIL=support@hanachat.site
@@ -36,20 +39,15 @@ ANDROID_APK_DOWNLOAD_URL=/downloads/hana-chat-twa.apk
 ANDROID_DOWNLOADS_PATH=/opt/hana-chat/shared/android-downloads
 ANDROID_TWA_PACKAGE_ID=com.hanachat.app
 ANDROID_TWA_SHA256_CERT_FINGERPRINTS=<release-signing-cert-sha256>
-```
-
-Keep domain values ready for the later switch:
-
-```bash
-WEB_ORIGIN=https://app.hanachat.live
-WEB_ORIGINS=https://app.hanachat.live,https://hanachat.live,https://www.hanachat.live
-API_GATEWAY_URL=https://api.hanachat.live
-AUTH_COOKIE_DOMAIN=.hanachat.live
+WEB_ORIGIN=https://app.hanachat.site
+WEB_ORIGINS=https://app.hanachat.site,https://hanachat.site,https://www.hanachat.site
+API_GATEWAY_URL=https://api.hanachat.site
+AUTH_COOKIE_DOMAIN=.hanachat.site
 ```
 
 The web container overrides `API_GATEWAY_URL` to `http://api-gateway:4000` so web route handlers
-call the API over the private Docker network. Raw-IP auth uses host-only cookies; domain traffic uses
-`.hanachat.live`.
+call the API over the private Docker network. Domain traffic uses `.hanachat.site` cookies; direct IP
+testing remains available but is not the canonical SEO/auth host.
 
 The Playground VPS env has xAI configured. Razorpay and Twilio values are expected to remain
 placeholder/missing until the live provider accounts are added. Do not commit or paste provider
@@ -61,6 +59,22 @@ one configured number, grants admin/Ultra access, and should be removed when rea
 is live.
 
 ## Start
+
+Preferred deploy from the workstation:
+
+```powershell
+$env:PLAYGROUND_SSH_TARGET = "ubuntu@18.61.174.6"
+# Optional when ssh-agent is not already holding the key:
+# $env:PLAYGROUND_SSH_KEY = "C:\path\to\playground.pem"
+pnpm deploy:playground
+```
+
+The deploy helper packages tracked plus untracked repo files, uploads a tarball, writes the remote
+deploy script with LF-only line endings, then runs compose config/build/up/ps on the VPS. This is the
+safe path from Windows because it avoids CRLF/BOM shell-script failures during the final compose
+steps.
+
+Manual start on the VPS:
 
 ```bash
 cd /opt/hana-chat/current
@@ -99,6 +113,14 @@ docker compose \
   ps
 curl -fsS http://127.0.0.1:3000/
 curl -fsS http://127.0.0.1:4000/health
+curl -fsS -I https://hanachat.site/
+curl -fsS -I https://app.hanachat.site/app
+curl -fsS https://api.hanachat.site/health
+curl -fsS https://hanachat.site/manifest.webmanifest
+curl -fsS https://hanachat.site/robots.txt
+curl -fsS https://hanachat.site/sitemap.xml
+curl -fsS https://hanachat.site/llms.txt
+curl -fsS https://app.hanachat.site/.well-known/assetlinks.json
 curl -fsS -I https://18.61.174.6/
 curl -fsS https://18.61.174.6/manifest.webmanifest
 curl -fsS https://18.61.174.6/robots.txt

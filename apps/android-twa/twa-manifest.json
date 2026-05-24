@@ -1,6 +1,6 @@
 {
   "packageId": "com.hanachat.app",
-  "host": "18.61.174.6",
+  "host": "app.hanachat.site",
   "name": "Hana Chat",
   "launcherName": "Hana",
   "display": "standalone",
@@ -13,8 +13,8 @@
   "backgroundColor": "#000000",
   "enableNotifications": true,
   "startUrl": "/app",
-  "iconUrl": "https://18.61.174.6/assets/hana-icon-512.png",
-  "maskableIconUrl": "https://18.61.174.6/assets/hana-icon-512.png",
+  "iconUrl": "https://app.hanachat.site/assets/hana-icon-512.png",
+  "maskableIconUrl": "https://app.hanachat.site/assets/hana-icon-512.png",
   "splashScreenFadeOutDuration": 300,
   "signingKey": {
     "path": "/app/android.keystore",
@@ -24,7 +24,7 @@
   "appVersionCode": 1,
   "shortcuts": [],
   "generatorApp": "bubblewrap-cli",
-  "webManifestUrl": "https://18.61.174.6/manifest.webmanifest",
+  "webManifestUrl": "https://app.hanachat.site/manifest.webmanifest",
   "fallbackType": "customtabs",
   "features": {},
   "alphaDependencies": {
@@ -33,7 +33,7 @@
   "enableSiteSettingsShortcut": true,
   "isChromeOSOnly": false,
   "isMetaQuest": false,
-  "fullScopeUrl": "https://18.61.174.6/",
+  "fullScopeUrl": "https://app.hanachat.site/",
   "minSdkVersion": 21,
   "orientation": "portrait-primary",
   "fingerprints": [],

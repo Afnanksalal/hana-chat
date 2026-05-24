@@ -57,7 +57,7 @@ sequenceDiagram
 | `done`    | Final JSON payload matching the non-stream chat response |
 | `error`   | Stream-level failure                                     |
 
-Production reverse proxies must disable buffering for `api.hanachat.live` so tokens reach the client immediately.
+Production reverse proxies must disable buffering for `api.hanachat.site` so tokens reach the client immediately.
 
 ## Transport and Header Hardening
 

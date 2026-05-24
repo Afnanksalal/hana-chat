@@ -11,6 +11,22 @@
 	}
 }
 
+hanachat.site, www.hanachat.site, app.hanachat.site {
+	encode zstd gzip
+
+	import security_headers
+
+	reverse_proxy web:3000
+}
+
+api.hanachat.site {
+	encode zstd gzip
+
+	import security_headers
+
+	reverse_proxy api-gateway:4000
+}
+
 http://{$VPS_PUBLIC_IP} {
 	encode zstd gzip
 

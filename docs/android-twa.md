@@ -29,7 +29,7 @@ A true TWA needs:
 - a stable Android package id, currently `com.hanachat.app`.
 
 Raw-IP builds are useful for internal install testing, but the final Play/distribution build should
-target `https://hanachat.live` or the chosen production app origin once DNS and valid TLS are live.
+target the production app origin: `https://app.hanachat.site`.
 
 ## Environment
 
@@ -45,7 +45,7 @@ ANDROID_TWA_SHA256_CERT_FINGERPRINTS=DA:A7:...
 Build machine:
 
 ```bash
-ANDROID_TWA_ORIGIN=https://hanachat.live
+ANDROID_TWA_ORIGIN=https://app.hanachat.site
 ANDROID_TWA_PACKAGE_ID=com.hanachat.app
 ANDROID_TWA_VERSION_NAME=1.0.0
 ANDROID_TWA_VERSION_CODE=1

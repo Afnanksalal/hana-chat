@@ -177,7 +177,7 @@ Recommended split:
 
 - Public website: premium companion/roleplay positioning, no explicit sexual marketing.
 - App-store mobile build: general/teen/mature but policy-safe romantic roleplay, strong reporting, no explicit sexual generation, no adult keywords in listing.
-- Web/PWA at `app.hanachat.live`: age-assured mature surface, stronger disclosure, paid-only access, strict moderation, payment-provider compatibility review.
+- Web/PWA at `app.hanachat.site`: age-assured mature surface, stronger disclosure, paid-only access, strict moderation, payment-provider compatibility review.
 - Admin-controlled content flags determine what can appear in each distribution channel.
 
 Key implementation:

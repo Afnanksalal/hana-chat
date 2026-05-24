@@ -272,6 +272,12 @@ export const AdminProcessPayoutRequestSchema = z.object({
 
 export type AdminProcessPayoutRequest = z.infer<typeof AdminProcessPayoutRequestSchema>;
 
+export const AdminAnalyticsQuerySchema = z.object({
+  rangeDays: z.coerce.number().int().min(7).max(90).default(30),
+});
+
+export type AdminAnalyticsQuery = z.infer<typeof AdminAnalyticsQuerySchema>;
+
 export const VerifyRazorpayPaymentRequestSchema = z.object({
   internalOrderId: z.string().min(1),
   razorpayOrderId: z.string().min(1),

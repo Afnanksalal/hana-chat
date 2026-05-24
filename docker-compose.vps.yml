@@ -182,6 +182,18 @@ services:
         SERVICE_PATH: services/api-gateway
     environment:
       HEALTH_PORT: 4000
+      IDENTITY_SERVICE_URL: http://identity-service:4010
+      RISK_SERVICE_URL: http://risk-service:4020
+      CHAT_ORCHESTRATOR_URL: http://chat-orchestrator:4030
+      MEMORY_SERVICE_URL: http://memory-service:4040
+      RETRIEVAL_SERVICE_URL: http://retrieval-service:4050
+      GRAPH_SERVICE_URL: http://graph-service:4060
+      MODERATION_SERVICE_URL: http://moderation-service:4070
+      BILLING_SERVICE_URL: http://billing-service:4080
+      CREATOR_SERVICE_URL: http://creator-service:4090
+      NOTIFICATION_SERVICE_URL: http://notification-service:4100
+      BATCH_ORCHESTRATOR_URL: http://batch-orchestrator:4110
+      WORKER_SERVICE_URL: http://worker-service:4120
     ports:
       - "127.0.0.1:${API_GATEWAY_PORT:-4000}:4000"
     volumes:
@@ -404,7 +416,7 @@ services:
     profiles: ["ops"]
     environment:
       TEMPORAL_ADDRESS: temporal:7233
-      TEMPORAL_CORS_ORIGINS: ${WEB_ORIGIN:-https://app.hanachat.live}
+      TEMPORAL_CORS_ORIGINS: ${WEB_ORIGIN:-https://app.hanachat.site}
     ports:
       - "127.0.0.1:8233:8080"
     networks:

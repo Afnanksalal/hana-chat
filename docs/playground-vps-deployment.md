@@ -5,6 +5,22 @@ Hana Chat is deployed side-by-side on the Playground EC2 host under `/opt/hana-c
 For a Portainer-friendly explanation of every running `hana-chat-vps-*` container, see
 [VPS Container Map](vps-container-map.md).
 
+## Release From Windows
+
+Deploy from the repo root with the LF-safe helper:
+
+```powershell
+$env:PLAYGROUND_SSH_TARGET = "ubuntu@18.61.174.6"
+# Optional when ssh-agent is not already holding the Playground key:
+# $env:PLAYGROUND_SSH_KEY = "C:\path\to\playground.pem"
+pnpm deploy:playground
+```
+
+The helper uploads `tmp/deploy/hana-chat-<release>.tar`, extracts it into
+`/opt/hana-chat/releases/<release>`, flips `/opt/hana-chat/current`, sources
+`/opt/hana-chat/shared/.env.vps`, and runs compose config/build/up/ps. The generated remote shell
+script is written with LF endings only so PowerShell cannot add CRLF or a BOM.
+
 ## Compose Files
 
 Use the base VPS stack plus the Playground Caddy overlay:
@@ -24,15 +40,14 @@ inside the Docker network as `web:3000` and `api-gateway:4000`.
 
 ## Public Routing
 
-- `https://18.61.174.6` serves the full product while the domain is not ready.
+- `https://hanachat.site` serves the public landing, legal, SEO, sitemap, robots, and crawler routes.
+- `https://app.hanachat.site` serves the authenticated app/PWA surface.
+- `https://api.hanachat.site` proxies to the API gateway.
+- `https://18.61.174.6` remains available for direct-IP smoke testing.
 - `http://18.61.174.6` redirects to the HTTPS IP route except for ACME challenge files.
-- `api.hanachat.live` should point to the Playground VPS public IPv4 address when the domain is
-  bought and ready.
-- `hanachat.live`, `www.hanachat.live`, and `app.hanachat.live` should also point to the VPS for the
-  fully self-hosted deployment when those hostnames exist.
-- The active Playground Caddyfile intentionally serves the IP route only until DNS exists. Add the
-  domain host blocks from [Domain Integration](domain-integration.md) after the A records resolve to
-  avoid failed ACME attempts for unowned names.
+- `hanachat.site`, `www.hanachat.site`, `app.hanachat.site`, and `api.hanachat.site` should all
+  point to the Playground VPS public IPv4 address.
+- The active Playground Caddyfile serves both domain traffic and the raw-IP fallback.
 
 The web container overrides `API_GATEWAY_URL` to `http://api-gateway:4000`, so browser traffic stays
 same-origin through Next.js route handlers while server-to-server API calls stay inside the Docker

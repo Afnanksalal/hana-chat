@@ -20,18 +20,38 @@ Manual memory notes create or use a conversation thread for the selected charact
 flowchart TD
   Message["Incoming user message"] --> Conversation["Resolve conversation"]
   Conversation --> Vector["Qdrant search with exact user/character/conversation filter"]
-  Vector --> Hits{"Vector hits?"}
-  Hits -- yes --> LoadIds["Load matching active facts from Postgres"]
-  Hits -- no --> Fallback["Postgres exact-scope fallback"]
+  Conversation --> Graph["Graph service reads exact conversation graph"]
+  Vector --> Rank["Retrieval service hybrid ranks vector + graph candidates"]
+  Graph --> Rank
+  Rank --> LoadIds["Load matching active facts from Postgres"]
   LoadIds --> Evolve["Update conversation evolution profile"]
-  Fallback --> Evolve
-  Evolve --> Prompt["Inject scoped facts + evolution profile into prompt"]
+  Graph --> Evolve
+  Evolve --> Prompt["Inject scoped facts + evolution + graph context into prompt"]
   Prompt --> Model["xAI model call"]
   Model --> Extract["Extract simple memory from user message"]
-  Extract --> Store["Store fact with same character + conversation"]
+  Extract --> Policy["Memory service scores salience and write policy"]
+  Policy --> Store["Store fact with same character + conversation"]
   Store --> Refresh["Refresh evolution profile"]
-  Refresh --> Project["Project to Qdrant and outbox"]
+  Refresh --> Project["Project to Qdrant and Neo4j through outbox"]
 ```
+
+## Graph Personalization
+
+`graph-service` owns the private `/internal/graph/conversation-context` boundary. It reads Neo4j
+`User -> Conversation -> Character -> MemoryFact` projections for the exact current
+`user_id + character_id + conversation_id` tuple and returns graph-ranked memory hints plus a short
+prompt context. If Neo4j is cold or restarting, it falls back to exact-scope Postgres memory rows and
+does not widen memory scope.
+
+`worker-service` projects `chat.turn.completed` events into Neo4j with absolute turn and memory
+counts, so retries are idempotent. Memory facts continue to project through
+`memory.neo4j.upsert.requested`.
+
+## Memory Write Policy
+
+`memory-service` owns `/internal/memory/score-salience`. The gateway calls it before saving extracted
+conversation facts, then falls back to `memory-core` if the private service is restarting. Saved
+facts remain exact-scoped to the current user, character, and conversation.
 
 ## Conversation Evolution
 
@@ -59,9 +79,8 @@ is refreshed after chat turns and manual memory edits.
 - No cross-conversation memory bleed.
 - No safety memories are mixed into roleplay context.
 
-## Future Work
+## Hardening Backlog
 
 - LLM-based memory extraction with batch deduplication and contradiction handling.
 - Memory summarization by conversation once threads grow.
 - User-visible export/delete controls by character and thread.
-- Neo4j relationship projections for long-running story arcs.

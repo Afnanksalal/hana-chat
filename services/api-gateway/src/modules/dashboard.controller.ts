@@ -11,37 +11,44 @@ export class DashboardController {
   @Get()
   public async show(@Headers("authorization") authorization?: string) {
     const session = await requireSession(this.db, this.config, authorization);
-    const [settings, plan, messages, memories, characters, conversations] = await Promise.all([
-      this.db
-        .selectFrom("identity.user_settings")
-        .selectAll()
-        .where("user_id", "=", session.userId)
-        .executeTakeFirst(),
-      currentPlan(this.db, session.userId),
-      monthlyUserMessageCount(this.db, session.userId),
-      this.db
-        .selectFrom("memory.facts")
-        .select(["id"])
-        .where("user_id", "=", session.userId)
-        .where("is_active", "=", true)
-        .execute(),
-      this.db
-        .selectFrom("creator.characters")
-        .select(["id"])
-        .where("creator_user_id", "=", session.userId)
-        .execute(),
-      this.db
-        .selectFrom("chat.conversations")
-        .select(["id"])
-        .where("user_id", "=", session.userId)
-        .where("status", "=", "active")
-        .execute(),
-    ]);
+    const [settings, plan, messages, memories, characters, conversations, roles] =
+      await Promise.all([
+        this.db
+          .selectFrom("identity.user_settings")
+          .selectAll()
+          .where("user_id", "=", session.userId)
+          .executeTakeFirst(),
+        currentPlan(this.db, session.userId),
+        monthlyUserMessageCount(this.db, session.userId),
+        this.db
+          .selectFrom("memory.facts")
+          .select(["id"])
+          .where("user_id", "=", session.userId)
+          .where("is_active", "=", true)
+          .execute(),
+        this.db
+          .selectFrom("creator.characters")
+          .select(["id"])
+          .where("creator_user_id", "=", session.userId)
+          .execute(),
+        this.db
+          .selectFrom("chat.conversations")
+          .select(["id"])
+          .where("user_id", "=", session.userId)
+          .where("status", "=", "active")
+          .execute(),
+        this.db
+          .selectFrom("identity.user_roles")
+          .select(["role"])
+          .where("user_id", "=", session.userId)
+          .execute(),
+      ]);
 
     return {
       user: {
         id: session.userId,
         displayName: settings?.display_name ?? session.displayName ?? "Hana User",
+        roles: roles.map((role) => role.role),
       },
       plan,
       usage: {

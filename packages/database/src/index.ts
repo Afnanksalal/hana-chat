@@ -44,6 +44,19 @@ export interface IdentityPhoneVerificationsTable {
   provider_verification_id: string | null;
 }
 
+export interface IdentityRiskSessionsTable {
+  id: Generated<string>;
+  user_id: string | null;
+  phone_hash: string | null;
+  device_id: string | null;
+  ip_address_hash: string;
+  action: string;
+  risk_score: number;
+  action_taken: string;
+  signals_json: unknown;
+  created_at: TimestampColumn;
+}
+
 export interface IdentitySessionsTable {
   id: Generated<string>;
   user_id: string;
@@ -438,6 +451,7 @@ export interface HanaDatabase {
   "identity.users": IdentityUsersTable;
   "identity.phone_credentials": IdentityPhoneCredentialsTable;
   "identity.phone_verifications": IdentityPhoneVerificationsTable;
+  "identity.risk_sessions": IdentityRiskSessionsTable;
   "identity.sessions": IdentitySessionsTable;
   "identity.user_settings": IdentityUserSettingsTable;
   "identity.user_roles": IdentityUserRolesTable;

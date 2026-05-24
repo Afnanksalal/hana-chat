@@ -10,9 +10,10 @@ const rootPackage = JSON.parse(readFileSync(resolve(repoRoot, "package.json"), "
 const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
 const origin = normalizeOrigin(
   process.env["ANDROID_TWA_ORIGIN"] ??
+    process.env["NEXT_PUBLIC_APP_URL"] ??
     process.env["PUBLIC_WEB_URL"] ??
     process.env["NEXT_PUBLIC_SITE_URL"] ??
-    "https://18.61.174.6",
+    "https://app.hanachat.site",
 );
 const originUrl = new URL(origin);
 const versionName = process.env["ANDROID_TWA_VERSION_NAME"] ?? rootPackage.version ?? "0.1.0";

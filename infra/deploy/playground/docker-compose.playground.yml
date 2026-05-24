@@ -4,15 +4,15 @@ services:
       context: .
       dockerfile: infra/docker/web.Dockerfile
       args:
-        NEXT_PUBLIC_APP_URL: ${PUBLIC_WEB_URL:?Set PUBLIC_WEB_URL, for example https://18.61.174.6}
-        NEXT_PUBLIC_SITE_URL: ${PUBLIC_WEB_URL:?Set PUBLIC_WEB_URL, for example https://18.61.174.6}
+        NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:?Set NEXT_PUBLIC_APP_URL, for example https://app.hanachat.site}
+        NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:?Set NEXT_PUBLIC_SITE_URL, for example https://hanachat.site}
     restart: unless-stopped
     env_file:
       - ${HANA_ENV_FILE:?Set HANA_ENV_FILE to the production env file}
     environment:
       API_GATEWAY_URL: http://api-gateway:4000
-      NEXT_PUBLIC_APP_URL: ${PUBLIC_WEB_URL:?Set PUBLIC_WEB_URL, for example https://18.61.174.6}
-      NEXT_PUBLIC_SITE_URL: ${PUBLIC_WEB_URL:?Set PUBLIC_WEB_URL, for example https://18.61.174.6}
+      NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:?Set NEXT_PUBLIC_APP_URL, for example https://app.hanachat.site}
+      NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:?Set NEXT_PUBLIC_SITE_URL, for example https://hanachat.site}
       ANDROID_APK_DOWNLOAD_URL: ${ANDROID_APK_DOWNLOAD_URL:-}
       ANDROID_TWA_PACKAGE_ID: ${ANDROID_TWA_PACKAGE_ID:-com.hanachat.app}
       ANDROID_TWA_SHA256_CERT_FINGERPRINTS: ${ANDROID_TWA_SHA256_CERT_FINGERPRINTS:-}

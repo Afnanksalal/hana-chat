@@ -31,10 +31,12 @@ export class PhoneController {
   public riskPrecheck(@Body() body: unknown) {
     const input = HashPhoneSchema.parse(body);
     const phoneHash = hashPhoneNumber(input.phoneNumber, this.config.PHONE_HASH_SECRET);
+    const lineType = "unknown";
 
     return {
       phoneHash,
-      lineTypeDecision: shouldAllowLineType("unknown"),
+      lineType,
+      lineTypeDecision: shouldAllowLineType(lineType),
     };
   }
 }
