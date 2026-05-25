@@ -7,6 +7,15 @@ import { normalizeMarketplaceStats } from "./marketplace-stats";
 import { requireAdmin } from "./session";
 
 type Db = Kysely<HanaDatabase>;
+type ServiceHealthStatus = "ok" | "degraded";
+
+interface ServiceBoundary {
+  name: string;
+  role: string;
+  port: number;
+  topics: string[];
+  healthUrl: string;
+}
 
 interface CountRow {
   count: number | string | null;
@@ -835,60 +844,88 @@ async function serviceBoundaryHealth(db: Db, config: ReturnType<typeof loadConfi
       "Public API and active orchestration path",
       config.API_GATEWAY_PORT,
       [],
+      `http://127.0.0.1:${config.API_GATEWAY_PORT}`,
     ),
-    boundary("identity-service", "Phone auth and account identity", config.IDENTITY_SERVICE_PORT, [
-      "identity.phone.verified",
-    ]),
-    boundary("risk-service", "Risk scoring and abuse control", config.RISK_SERVICE_PORT, [
-      "risk.session.scored",
-    ]),
+    boundary(
+      "identity-service",
+      "Email auth and account identity",
+      config.IDENTITY_SERVICE_PORT,
+      ["identity.email.verified"],
+      config.IDENTITY_SERVICE_URL,
+    ),
+    boundary(
+      "risk-service",
+      "Risk scoring and abuse control",
+      config.RISK_SERVICE_PORT,
+      ["risk.session.scored"],
+      config.RISK_SERVICE_URL,
+    ),
     boundary(
       "chat-orchestrator",
       "Chat turn planning and model routing",
       config.CHAT_ORCHESTRATOR_PORT,
       ["chat.turn.created", "chat.turn.completed"],
+      config.CHAT_ORCHESTRATOR_URL,
     ),
-    boundary("memory-service", "Memory scoring and write policy", config.MEMORY_SERVICE_PORT, [
-      "memory.extraction.requested",
-      "memory.qdrant.upsert.requested",
-      "memory.neo4j.upsert.requested",
-    ]),
-    boundary("retrieval-service", "Memory and character reranking", config.RETRIEVAL_SERVICE_PORT, [
-      "creator.character.qdrant.upsert.requested",
-    ]),
-    boundary("graph-service", "Neo4j relationship projection", config.GRAPH_SERVICE_PORT, [
-      "memory.neo4j.upsert.requested",
-      "creator.character.neo4j.upsert.requested",
-    ]),
+    boundary(
+      "memory-service",
+      "Memory scoring and write policy",
+      config.MEMORY_SERVICE_PORT,
+      [
+        "memory.extraction.requested",
+        "memory.qdrant.upsert.requested",
+        "memory.neo4j.upsert.requested",
+      ],
+      config.MEMORY_SERVICE_URL,
+    ),
+    boundary(
+      "retrieval-service",
+      "Memory and character reranking",
+      config.RETRIEVAL_SERVICE_PORT,
+      ["creator.character.qdrant.upsert.requested"],
+      config.RETRIEVAL_SERVICE_URL,
+    ),
+    boundary(
+      "graph-service",
+      "Neo4j relationship projection",
+      config.GRAPH_SERVICE_PORT,
+      ["memory.neo4j.upsert.requested", "creator.character.neo4j.upsert.requested"],
+      config.GRAPH_SERVICE_URL,
+    ),
     boundary(
       "moderation-service",
       "Safety classification and review",
       config.MODERATION_SERVICE_PORT,
       ["moderation.review.requested"],
+      config.MODERATION_SERVICE_URL,
     ),
     boundary(
       "billing-service",
       "Checkout, webhooks, wallets, payouts",
       config.BILLING_SERVICE_PORT,
       ["billing.usage.metered"],
+      config.BILLING_SERVICE_URL,
     ),
     boundary(
       "creator-service",
       "Character marketplace and publishing",
       config.CREATOR_SERVICE_PORT,
       ["creator.character.qdrant.upsert.requested", "creator.character.neo4j.upsert.requested"],
+      config.CREATOR_SERVICE_URL,
     ),
     boundary(
       "notification-service",
-      "SMS, email, and push delivery",
+      "Email and push delivery",
       config.NOTIFICATION_SERVICE_PORT,
       ["notification.delivery.requested"],
+      config.NOTIFICATION_SERVICE_URL,
     ),
     boundary(
       "batch-orchestrator",
       "Outbox leases and batch coordination",
       config.BATCH_ORCHESTRATOR_PORT,
       [],
+      config.BATCH_ORCHESTRATOR_URL,
     ),
     boundary(
       "worker-service",
@@ -901,10 +938,14 @@ async function serviceBoundaryHealth(db: Db, config: ReturnType<typeof loadConfi
         "creator.character.qdrant.upsert.requested",
         "creator.character.neo4j.upsert.requested",
       ],
+      config.WORKER_SERVICE_URL,
     ),
   ];
+  const healthChecks = await Promise.all(
+    boundaries.map((item) => checkServiceHealth(new URL("/health", item.healthUrl).toString())),
+  );
 
-  return boundaries.map((item) => {
+  return boundaries.map((item, index) => {
     const openEvents = item.topics.reduce((sum, topic) => {
       const statuses = topicStatusCounts.get(topic) ?? {};
 
@@ -917,22 +958,72 @@ async function serviceBoundaryHealth(db: Db, config: ReturnType<typeof loadConfi
 
       return sum + (statuses["dead_letter"] ?? 0);
     }, 0);
+    const health = healthChecks[index] ?? {
+      healthStatus: "degraded" as const,
+      healthLatencyMs: 0,
+      healthDetail: "health check did not run",
+    };
 
     return {
-      ...item,
+      name: item.name,
+      role: item.role,
+      port: item.port,
+      topics: item.topics,
       openEvents,
       deadLetters,
-      status: deadLetters > 0 ? "needs_attention" : openEvents > 50 ? "backlog" : "ready",
+      ...health,
+      status:
+        health.healthStatus === "degraded" || deadLetters > 0
+          ? "needs_attention"
+          : openEvents > 50
+            ? "backlog"
+            : "ready",
     };
   });
 }
 
-function boundary(name: string, role: string, port: number, topics: string[]) {
+async function checkServiceHealth(url: string): Promise<{
+  healthStatus: ServiceHealthStatus;
+  healthLatencyMs: number;
+  healthDetail?: string;
+}> {
+  const startedAt = Date.now();
+
+  try {
+    const response = await fetch(url, { signal: AbortSignal.timeout(1_500) });
+    const payload = (await response.json().catch(() => null)) as { status?: unknown } | null;
+    const reportedStatus = payload?.status === "degraded" ? "degraded" : "ok";
+    const healthStatus = response.ok && reportedStatus === "ok" ? "ok" : "degraded";
+
+    return {
+      healthStatus,
+      healthLatencyMs: Date.now() - startedAt,
+      ...(healthStatus === "degraded"
+        ? { healthDetail: response.ok ? "service reported degraded" : `HTTP ${response.status}` }
+        : {}),
+    };
+  } catch (error) {
+    return {
+      healthStatus: "degraded",
+      healthLatencyMs: Date.now() - startedAt,
+      healthDetail: error instanceof Error ? error.message : "health check failed",
+    };
+  }
+}
+
+function boundary(
+  name: string,
+  role: string,
+  port: number,
+  topics: string[],
+  healthUrl: string,
+): ServiceBoundary {
   return {
     name,
     role,
     port,
     topics,
+    healthUrl,
   };
 }
 

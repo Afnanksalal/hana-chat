@@ -17,6 +17,8 @@ import type { FormEvent } from "react";
 import { apiJson, money } from "../api";
 
 interface WalletResponse {
+  monetizationEnabled: boolean;
+  comingSoon: boolean;
   wallet: {
     currency: string;
     pendingCents: number;
@@ -73,6 +75,8 @@ interface WalletResponse {
 }
 
 const emptyWallet: WalletResponse = {
+  monetizationEnabled: false,
+  comingSoon: true,
   wallet: {
     currency: "USD",
     pendingCents: 0,
@@ -168,6 +172,7 @@ export default function CreatorWalletPage() {
     [wallet.policy.platformFeeBps],
   );
   const profileStatus = wallet.payoutProfile?.status ?? "not set";
+  const monetizationComingSoon = wallet.comingSoon;
 
   return (
     <div className="app-page wallet-page">
@@ -178,9 +183,11 @@ export default function CreatorWalletPage() {
           </span>
           <h1>Earn from characters people love.</h1>
           <p>
-            Track paid unlocks, held earnings, available balance, payout requests, and buyer
-            purchases in one place.
+            {monetizationComingSoon
+              ? "Creator monetization is coming soon while we choose a payment partner."
+              : "Track paid unlocks, held earnings, available balance, payout requests, and buyer purchases in one place."}
           </p>
+          {monetizationComingSoon ? <span className="coming-soon-pill">Coming soon</span> : null}
         </div>
         <button
           className="secondary-action compact"
@@ -231,18 +238,24 @@ export default function CreatorWalletPage() {
             <input
               value={displayName}
               onChange={(event) => setDisplayName(event.target.value)}
+              disabled={monetizationComingSoon}
               required
             />
           </label>
           <label>
             Legal name
-            <input value={legalName} onChange={(event) => setLegalName(event.target.value)} />
+            <input
+              value={legalName}
+              onChange={(event) => setLegalName(event.target.value)}
+              disabled={monetizationComingSoon}
+            />
           </label>
           <label>
             UPI ID
             <input
               value={vpa}
               onChange={(event) => setVpa(event.target.value)}
+              disabled={monetizationComingSoon}
               placeholder={
                 wallet.payoutProfile?.vpaLast4
                   ? `Saved ending ${wallet.payoutProfile.vpaLast4}`
@@ -251,8 +264,8 @@ export default function CreatorWalletPage() {
               required={!wallet.payoutProfile}
             />
           </label>
-          <button className="primary-action compact" type="submit">
-            Save payout profile
+          <button className="primary-action compact" type="submit" disabled={monetizationComingSoon}>
+            {monetizationComingSoon ? "Coming soon" : "Save payout profile"}
           </button>
           <small>
             Earnings are held for {wallet.policy.earningHoldDays} day
@@ -274,11 +287,12 @@ export default function CreatorWalletPage() {
               inputMode="decimal"
               value={payoutAmount}
               onChange={(event) => setPayoutAmount(event.target.value)}
+              disabled={monetizationComingSoon}
               placeholder="25.00"
             />
           </label>
-          <button className="primary-action compact" type="submit">
-            Request payout
+          <button className="primary-action compact" type="submit" disabled={monetizationComingSoon}>
+            {monetizationComingSoon ? "Coming soon" : "Request payout"}
           </button>
           <small>
             Admin approval is required before money leaves Hana. Failed provider payouts are

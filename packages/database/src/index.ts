@@ -44,10 +44,55 @@ export interface IdentityPhoneVerificationsTable {
   provider_verification_id: string | null;
 }
 
+export interface IdentityEmailCredentialsTable {
+  id: Generated<string>;
+  user_id: string;
+  email_hash: string;
+  encrypted_email: string;
+  email_domain: string;
+  verified_at: TimestampColumn;
+  is_primary: DefaultColumn<boolean>;
+}
+
+export interface IdentityEmailVerificationsTable {
+  id: Generated<string>;
+  email_hash: string;
+  encrypted_email: string;
+  email_domain: string;
+  username: string | null;
+  code_hash: string;
+  purpose: "signup" | "signin";
+  risk_action: string;
+  attempts: DefaultColumn<number>;
+  expires_at: TimestampColumn;
+  verified_at: TimestampColumn | null;
+  created_at: TimestampColumn;
+  device_id_hash: string | null;
+  user_agent_hash: string | null;
+  ip_address_hash: string | null;
+  provider: DefaultColumn<"local" | "smtp">;
+  provider_message_id: string | null;
+}
+
+export interface IdentityAccountIpClaimsTable {
+  ip_address_hash: string;
+  user_id: string;
+  created_at: TimestampColumn;
+  last_seen_at: TimestampColumn;
+}
+
+export interface IdentityAccountDeviceClaimsTable {
+  device_id_hash: string;
+  user_id: string;
+  created_at: TimestampColumn;
+  last_seen_at: TimestampColumn;
+}
+
 export interface IdentityRiskSessionsTable {
   id: Generated<string>;
   user_id: string | null;
   phone_hash: string | null;
+  email_hash: string | null;
   device_id: string | null;
   ip_address_hash: string;
   action: string;
@@ -76,7 +121,6 @@ export interface IdentityUserSettingsTable {
   adult_verified_at: TimestampColumn | null;
   adult_mode_enabled: DefaultColumn<boolean>;
   memory_enabled: DefaultColumn<boolean>;
-  voice_enabled: DefaultColumn<boolean>;
   marketing_opt_in: DefaultColumn<boolean>;
   created_at: TimestampColumn;
   updated_at: TimestampColumn;
@@ -260,7 +304,6 @@ export interface BillingPlansTable {
   currency: string;
   monthly_message_limit: number;
   deep_memory_enabled: boolean;
-  voice_enabled: boolean;
   adult_mode_enabled: boolean;
   creator_paid_characters_enabled: boolean;
   is_active: boolean;
@@ -451,6 +494,10 @@ export interface HanaDatabase {
   "identity.users": IdentityUsersTable;
   "identity.phone_credentials": IdentityPhoneCredentialsTable;
   "identity.phone_verifications": IdentityPhoneVerificationsTable;
+  "identity.email_credentials": IdentityEmailCredentialsTable;
+  "identity.email_verifications": IdentityEmailVerificationsTable;
+  "identity.account_ip_claims": IdentityAccountIpClaimsTable;
+  "identity.account_device_claims": IdentityAccountDeviceClaimsTable;
   "identity.risk_sessions": IdentityRiskSessionsTable;
   "identity.sessions": IdentitySessionsTable;
   "identity.user_settings": IdentityUserSettingsTable;

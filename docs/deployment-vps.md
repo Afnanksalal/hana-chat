@@ -43,20 +43,31 @@ WEB_ORIGIN=https://app.hanachat.site
 WEB_ORIGINS=https://app.hanachat.site,https://hanachat.site,https://www.hanachat.site
 API_GATEWAY_URL=https://api.hanachat.site
 AUTH_COOKIE_DOMAIN=.hanachat.site
+MONETIZATION_ENABLED=false
+SMTP_HOST=smtp-relay
+SMTP_FROM=Hana Chat <no-reply@app.hanachat.site>
+SMTP_RELAY_HOSTNAME=mail.app.hanachat.site
+SMTP_RELAY_ALLOWED_SENDER_DOMAINS=app.hanachat.site
+MAIL_DKIM_KEYS_DIR=/opt/hana-chat/shared/opendkim-keys
 ```
 
 The web container overrides `API_GATEWAY_URL` to `http://api-gateway:4000` so web route handlers
 call the API over the private Docker network. Domain traffic uses `.hanachat.site` cookies; direct IP
 testing remains available but is not the canonical SEO/auth host.
 
-The Playground VPS env has xAI configured. Razorpay and Twilio values are expected to remain
-placeholder/missing until the live provider accounts are added. Do not commit or paste provider
-secrets.
+The Playground VPS env has xAI configured. Monetization remains disabled with
+`MONETIZATION_ENABLED=false` until a payment gateway that supports the product category is selected.
+Razorpay values may stay placeholder/missing while the flag is off. SMTP is handled by the
+lightweight `smtp-relay` Postfix container on the private Docker network; keep DKIM keys under
+`/opt/hana-chat/shared/opendkim-keys` and do not commit private keys.
 
-Temporary owner access before domain/Twilio completion is controlled by
-`ADMIN_OTP_BYPASS_PHONE_NUMBER` in `/opt/hana-chat/shared/.env.vps`. It bypasses OTP only for that
-one configured number, grants admin/Ultra access, and should be removed when real phone verification
-is live.
+Generate the DKIM key before first production mail send:
+
+```bash
+cd /opt/hana-chat/current
+set -a; . /opt/hana-chat/shared/.env.vps; set +a
+pnpm mail:dkim app.hanachat.site mail /opt/hana-chat/shared/opendkim-keys
+```
 
 ## Start
 
@@ -121,13 +132,12 @@ curl -fsS https://hanachat.site/robots.txt
 curl -fsS https://hanachat.site/sitemap.xml
 curl -fsS https://hanachat.site/llms.txt
 curl -fsS https://app.hanachat.site/.well-known/assetlinks.json
+curl -fsS -I https://app.hanachat.site/downloads/hana-chat-twa.apk
 curl -fsS -I https://18.61.174.6/
 curl -fsS https://18.61.174.6/manifest.webmanifest
 curl -fsS https://18.61.174.6/robots.txt
 curl -fsS https://18.61.174.6/sitemap.xml
 curl -fsS https://18.61.174.6/llms.txt
-curl -fsS https://18.61.174.6/.well-known/assetlinks.json
-curl -fsS -I https://18.61.174.6/downloads/hana-chat-twa.apk
 ```
 
 ## Android APK Download

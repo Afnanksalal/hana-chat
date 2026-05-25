@@ -1,6 +1,6 @@
 # Hana Chat Technical Blueprint
 
-Last updated: 2026-05-21
+Last updated: 2026-05-25
 
 ## 1. Product Thesis
 
@@ -8,7 +8,10 @@ Hana Chat is an enterprise-quality AI roleplay and companion platform built arou
 
 > The AI roleplay/companion app that actually remembers.
 
-The product should compete on continuity, emotional believability, fast responses, creator tooling, and monetization discipline. Adult content is a paid, age-gated product surface, but the defensible moat is memory and character quality, not shock-value explicitness.
+The product should compete on continuity, emotional believability, fast responses, creator tooling,
+and monetization discipline once payment-provider fit is settled. Adult content is an age-gated
+product surface, but the defensible moat is memory and character quality, not shock-value
+explicitness.
 
 ## 2. Non-Negotiables
 
@@ -18,7 +21,7 @@ The product should compete on continuity, emotional believability, fast response
 - Scalable memory architecture, not naive prompt stuffing.
 - Token and cost accounting at every model call.
 - Clear model-provider abstraction to prevent xAI lock-in.
-- Adult mode is hidden by default, entitlement-gated, age-gated, and heavily audited.
+- Adult mode is hidden by default, age-gated, and heavily audited; paid entitlement gates can be re-enabled once monetization is approved.
 - No public endpoint should expose autonomous tools such as shell, filesystem, browser automation, or web search unless explicitly scoped and sandboxed.
 - User memory must be inspectable, editable, and deletable.
 - Every user-visible AI message must be traceable to prompt version, model version, memory snapshot, and safety decision.
@@ -29,7 +32,8 @@ The visual and interaction direction is defined in [Hana Chat UI/UX Direction](h
 
 The onboarding, discovery, chat, creation, subscription, adult-mode, and creator journeys are defined in [Hana Chat User Flows](hana-chat-user-flows.md).
 
-Phone-first authentication, anti-alt-account strategy, OTP spend protection, and fraud graph design are defined in [Hana Chat Identity and Abuse Prevention](hana-chat-identity-and-abuse-prevention.md).
+Passwordless email authentication, anti-alt-account strategy, verification-code protection, and
+fraud graph design are defined in [Hana Chat Identity and Abuse Prevention](hana-chat-identity-and-abuse-prevention.md).
 
 ### Mobile App
 
@@ -74,7 +78,7 @@ This document does not assume a policy bypass. It assumes a high-risk but surviv
 - If adult content is in-app, the app should not target 13+.
 - Use a mature app rating from day one.
 - Adult mode is hidden by default.
-- Adult mode requires paid entitlement and age gate.
+- Adult mode requires an age gate and may require paid entitlement once monetization is re-enabled.
 - Do not promote adult content in app title, screenshots, store metadata, push notifications, onboarding, or default discovery.
 - Do not recommend mature characters before explicit opt-in.
 - Add clear report, block, delete, and content preference controls.
@@ -154,8 +158,8 @@ Store approval is still not guaranteed. Product, legal, and trust teams should t
 - Redpanda or Kafka for durable event streams and high-throughput batching.
 - Temporal for durable workflows from day one.
 - BullMQ can be used only for local/dev or low-criticality ephemeral jobs. Production memory, billing, moderation, and provider jobs should be modeled through Temporal plus event streams.
-- Phone verification provider: Twilio Verify, Stytch, or equivalent.
-- Phone intelligence provider: line type, SIM swap, carrier, country, and reachability signals.
+- SMTP/email verification provider: self-hosted SMTP, Postmark, Mailgun, AWS SES, Resend, or equivalent.
+- Email/device intelligence provider: disposable-domain, device, VPN/proxy, and fraud-farm signals.
 - Device intelligence provider: Fingerprint, Arkose, or equivalent for repeat-signup, bot, emulator, VPN/proxy, and fraud-farm detection.
 
 ### Infrastructure
@@ -264,7 +268,7 @@ export type CharacterId = Brand<string, "CharacterId">;
 export type ConversationId = Brand<string, "ConversationId">;
 export type MessageId = Brand<string, "MessageId">;
 export type MemoryId = Brand<string, "MemoryId">;
-export type PhoneNumberE164 = Brand<string, "PhoneNumberE164">;
+export type EmailAddress = Brand<string, "EmailAddress">;
 export type DeviceId = Brand<string, "DeviceId">;
 export type RiskSessionId = Brand<string, "RiskSessionId">;
 ```
@@ -276,8 +280,8 @@ export type RiskSessionId = Brand<string, "RiskSessionId">;
 - User
 - Account
 - Session
-- PhoneCredential
-- PhoneRiskProfile
+- EmailCredential
+- IdentityRiskProfile
 - DeviceFingerprint
 - RiskSession
 - RiskDecision
@@ -912,7 +916,7 @@ Redis/BullMQ can exist for local development and low-criticality ephemeral jobs,
 chat.turn.created
 chat.turn.completed
 chat.message.persisted
-identity.phone.verified
+identity.email.verified
 risk.session.scored
 risk.account.cluster.detected
 memory.extraction.requested
@@ -1093,40 +1097,33 @@ export interface SafetyDecision {
 
 ### Auth
 
-- Phone-number-first authentication.
-- Store phone numbers in E.164 format.
-- Hash phone numbers for lookups and dedupe; encrypt raw phone number separately for SMS delivery and legal/account support.
-- OTP verification through a provider with SMS pumping protection.
-- Prefer silent/network verification or WhatsApp fallback in supported regions to reduce SMS fraud and delivery failures.
-- Do not use email/password as a primary login path.
-- OAuth can be offered only as secondary account linking, not as a way to bypass phone verification.
-- Passkeys should be added after phone verification as a safer returning-login method.
+- Passwordless email authentication.
+- Normalize email addresses.
+- Hash emails for lookups and dedupe; encrypt raw email separately for support and delivery records.
+- Short-lived email verification codes through SMTP/Nodemailer or a compatible provider.
+- Do not use passwords or Google/OAuth as the public login path.
+- Passkeys should be added after email verification as a safer returning-login method.
 - Device/session management.
 - Refresh token rotation.
 - Suspicious login detection.
-- Step-up verification for risky sessions, new devices, SIM-swap risk, mature-mode enablement, payout setup, and billing changes.
+- Step-up verification for risky sessions, new devices, mature-mode enablement, payout setup, and billing changes.
 
-### Phone Identity and Anti-Alt Strategy
+### Email Identity and Anti-Alt Strategy
 
-Phone verification reduces throwaway accounts, but it does not stop serious abuse by itself. Hana should treat phone as one signal in a risk graph.
+Email verification reduces throwaway accounts, but it does not stop serious abuse by itself. Hana
+should treat email as one signal in a risk graph.
 
 Required checks at signup:
 
-- Normalize and validate phone number.
-- Verify OTP.
-- Check line type:
-  - allow mobile by default,
-  - challenge or block fixed VoIP,
-  - block known disposable/non-fixed VoIP where confidence is high,
-  - block premium-rate and high-fraud destinations.
-- Check country and carrier risk.
-- Check recent SIM-swap or porting risk where available.
-- Check phone velocity:
-  - signups per phone,
-  - OTP requests per phone,
-  - failed attempts per phone,
-  - device count per phone,
-  - IP/ASN count per phone.
+- Normalize and validate email.
+- Verify email code.
+- Check email domain and disposable-domain risk where available.
+- Check email velocity:
+  - signups per email,
+  - verification-code requests per email,
+  - failed attempts per email,
+  - device count per email,
+  - IP/ASN count per email.
 - Check device intelligence:
   - repeated account creation,
   - emulator/root/jailbreak signals,
@@ -1158,39 +1155,35 @@ medium risk:
   allow with lower free quota, no referral rewards, delayed mature-mode eligibility
 
 high risk:
-  require extra verification, cooldown OTP sends, block promo credits
+  require extra verification, cooldown code sends, block promo credits
 
 critical risk:
   block signup or send to manual review
 ```
 
-One-person-one-account should be an abuse goal, not an absolute product promise. Families, shared devices, changed phone numbers, lost phones, and legitimate privacy tools need appeal/recovery paths.
+One-person-one-account should be an abuse goal, not an absolute product promise. Families, shared
+devices, changed email addresses, lost email access, carrier NAT, and legitimate privacy tools need
+appeal/recovery paths.
 
-### OTP Abuse Controls
+### Email Verification Abuse Controls
 
-- Per-phone OTP send limits.
-- Per-IP and per-device OTP send limits.
-- Per-country spend limits.
-- Geo allowlist for launch markets.
-- OTP cooldown with exponential backoff.
+- Per-email code send limits.
+- Per-IP and per-device code send limits.
+- Code cooldown with exponential backoff.
 - Block repeated failed code attempts.
-- Separate high-risk verification provider configuration.
-- Real-time alerting for SMS spend spikes.
-- Daily hard caps on SMS spend by region.
-- Use provider fraud guard features and monitor blocked verification logs.
+- SMTP bounce/complaint monitoring.
+- Separate high-risk verification provider configuration when needed.
 
 ### Account Linking and Recovery
 
-- Primary identity: verified phone number.
+- Primary identity: verified email.
 - Secondary recovery:
   - passkey,
-  - email,
-  - Apple/Google account,
   - support-assisted recovery for paid users.
-- Phone number changes require:
+- Email changes require:
   - current session,
-  - OTP on old number if available,
-  - OTP on new number,
+  - code on old email if available,
+  - code on new email,
   - risk check,
   - cooldown before creator payout or mature-mode changes.
 
@@ -1198,7 +1191,7 @@ One-person-one-account should be an abuse goal, not an absolute product promise.
 
 Use Neo4j to project an abuse graph:
 
-- `(:Phone)-[:VERIFIED_BY]->(:User)`
+- `(:Email)-[:VERIFIED_BY]->(:User)`
 - `(:Device)-[:USED_BY]->(:User)`
 - `(:IpAddress)-[:SEEN_ON]->(:Session)`
 - `(:PaymentMethod)-[:PAYS_FOR]->(:Account)`
@@ -1208,7 +1201,7 @@ Use Neo4j to project an abuse graph:
 This graph should identify clusters:
 
 - many accounts on one device,
-- many phone numbers on one device,
+- many emails on one device,
 - many accounts on one payment method,
 - many accounts on one IP/ASN,
 - repeated free-tier exhaustion patterns,
@@ -1247,10 +1240,10 @@ This graph should identify clusters:
 
 ### Abuse Prevention
 
-- Rate limit by user, phone, IP, ASN, device, payment method, and model cost.
-- Detect account farming through phone, device, payment, referral, and network graph clusters.
+- Rate limit by user, email, IP, ASN, device, payment method, and model cost.
+- Detect account farming through email, device, payment, referral, and network graph clusters.
 - Detect scripted message generation and free-quota draining.
-- Detect OTP pumping and region-based SMS spend spikes.
+- Detect verification-code pumping and sender reputation spikes.
 - Delay, step-up, or block suspicious free-tier traffic.
 - Reduce free quota for medium-risk users instead of only hard-blocking.
 - Add proof-of-work, CAPTCHA, or Arkose-style challenges for risky sessions and active attacks.
@@ -1538,14 +1531,14 @@ Pipeline:
 - Add migrations.
 - Add transactional outbox.
 - Add event publisher and batch consumer skeletons.
-- Add phone-first auth skeleton.
+- Add email auth skeleton.
 - Add risk-session and device-intelligence skeleton.
 - Add typed API contracts.
 
 ### Phase 1: Chat Core
 
-- Phone OTP signup/login.
-- Line-type and OTP abuse controls.
+- Email code signup/login.
+- Email-code abuse controls.
 - Device/session tracking.
 - Character CRUD.
 - Conversation CRUD.
@@ -1666,9 +1659,9 @@ packages/risk-core/
 - RevenueCat-only vs RevenueCat + direct Stripe from day one.
 - Adult mode in mobile app vs web-only mature mode.
 - Age assurance vendor.
-- Phone verification provider.
+- Email verification provider.
 - Device intelligence / fraud challenge provider.
-- Launch-country allowlist for SMS OTP.
+- Payment gateway compatible with the product category.
 - Whether to self-host any Hermes/NouS model for memory extraction.
 - Managed vs self-hosted Qdrant.
 - Managed vs self-hosted Neo4j.
@@ -1683,8 +1676,10 @@ packages/risk-core/
 - Hermes Agent memory: https://hermes-agent.nousresearch.com/docs/user-guide/features/memory/
 - Hermes Agent memory providers: https://github.com/NousResearch/hermes-agent/blob/main/website/docs/user-guide/features/memory-providers.md
 - Hermes Agent license: https://github.com/NousResearch/hermes-agent/blob/main/LICENSE
-- Twilio Verify Fraud Guard: https://www.twilio.com/docs/verify/preventing-toll-fraud/sms-fraud-guard/
-- Twilio Lookup line type intelligence: https://www.twilio.com/docs/lookup/quickstart
+- OWASP Authentication Cheat Sheet: https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html
+- OWASP Forgot Password Cheat Sheet: https://cheatsheetseries.owasp.org/cheatsheets/Forgot_Password_Cheat_Sheet.html
+- NIST SP 800-63B Digital Identity Guidelines: https://pages.nist.gov/800-63-4/sp800-63b.html
+- Nodemailer SMTP transport: https://nodemailer.com/smtp/
 - Fingerprint new account fraud guide: https://docs.fingerprint.com/docs/new-account-fraud-use-case-tutorial
 - Arkose human fraud farm protection: https://www.arkoselabs.com/solutions/human-fraud-farm-protection
 - Apple App Review Guidelines: https://developer.apple.com/app-store/review/guidelines/

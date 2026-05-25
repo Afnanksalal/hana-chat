@@ -42,6 +42,11 @@ interface MediaAssetResponse {
   fileName: string;
 }
 
+interface BillingAvailabilityResponse {
+  monetizationEnabled: boolean;
+  comingSoon: boolean;
+}
+
 interface CharacterTemplate {
   id: string;
   name: string;
@@ -174,6 +179,7 @@ export default function CreatePage() {
   const [rating, setRating] = useState<Rating>("teen");
   const [isPrivate, setIsPrivate] = useState(true);
   const [monetizationEnabled, setMonetizationEnabled] = useState(false);
+  const [monetizationAvailable, setMonetizationAvailable] = useState(false);
   const [priceDollars, setPriceDollars] = useState(0);
   const [status, setStatus] = useState("Loading creator studio...");
   const [avatarUploadStatus, setAvatarUploadStatus] = useState("PNG, JPG, or WebP up to 5MB.");
@@ -189,8 +195,12 @@ export default function CreatePage() {
 
   async function loadCharacters() {
     try {
-      const payload = await apiJson<{ characters: CharacterSummary[] }>("/api/v1/characters/mine");
+      const [payload, billing] = await Promise.all([
+        apiJson<{ characters: CharacterSummary[] }>("/api/v1/characters/mine"),
+        apiJson<BillingAvailabilityResponse>("/api/v1/billing/plans"),
+      ]);
       setCharacters(payload.characters);
+      setMonetizationAvailable(billing.monetizationEnabled && !billing.comingSoon);
       setStatus("");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Could not load your characters.");
@@ -242,8 +252,9 @@ export default function CreatePage() {
           rating,
           tags: parseList(tagsText),
           isPrivate,
-          monetizationEnabled,
-          priceCents: monetizationEnabled ? Math.round(priceDollars * 100) : 0,
+          monetizationEnabled: monetizationAvailable && monetizationEnabled,
+          priceCents:
+            monetizationAvailable && monetizationEnabled ? Math.round(priceDollars * 100) : 0,
         }),
       });
       setName("");
@@ -342,8 +353,8 @@ export default function CreatePage() {
         </span>
         <h1>Build a character people come back to.</h1>
         <p>
-          Start from a proven archetype, tune the voice, add a profile image, and publish with a
-          marketplace-ready preview.
+          Start from a proven archetype, tune the speaking style, add a profile image, and publish
+          with a marketplace-ready preview.
         </p>
       </section>
 
@@ -445,7 +456,7 @@ export default function CreatePage() {
           <Wand2 size={18} />
           <div>
             <h2>Persona</h2>
-            <p>Define the character, voice, opening scene, and continuity style.</p>
+            <p>Define the character, speaking style, opening scene, and continuity style.</p>
           </div>
         </div>
 
@@ -582,6 +593,7 @@ export default function CreatePage() {
               type="number"
               value={priceDollars}
               onChange={(event) => setPriceDollars(Number(event.target.value))}
+              disabled={!monetizationAvailable}
             />
           </label>
           <label>
@@ -599,11 +611,12 @@ export default function CreatePage() {
         </label>
         <label className="toggle-row">
           <input
-            checked={monetizationEnabled}
+            checked={monetizationAvailable && monetizationEnabled}
             onChange={(event) => setMonetizationEnabled(event.target.checked)}
+            disabled={!monetizationAvailable}
             type="checkbox"
           />
-          Enable paid access
+          {monetizationAvailable ? "Enable paid access" : "Paid access coming soon"}
         </label>
         <button className="primary-action full-width" type="submit" disabled={isSubmitting}>
           <Plus size={18} /> Save character
@@ -625,7 +638,9 @@ export default function CreatePage() {
           </div>
           <h2>{name || "New character"}</h2>
           <p>
-            {marketplacePreview || description || "A memorable companion with a distinct voice."}
+            {marketplacePreview ||
+              description ||
+              "A memorable companion with a distinct speaking style."}
           </p>
           <div className="chip-row">
             {previewTags.map((tag) => (

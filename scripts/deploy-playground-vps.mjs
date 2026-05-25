@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import process from "node:process";
 import { spawnSync } from "node:child_process";
@@ -109,6 +109,7 @@ function listDeployFiles() {
     .split("\0")
     .map((file) => file.trim())
     .filter(Boolean)
+    .filter((file) => existsSync(resolve(root, file)))
     .filter((file) => !file.startsWith("tmp/"))
     .filter((file) => !file.startsWith(".turbo/"))
     .filter((file) => !file.includes("/dist/"))
@@ -153,6 +154,7 @@ set -a
 . "\${env_file}"
 set +a
 export HANA_ENV_FILE="\${env_file}"
+mkdir -p "\${MAIL_DKIM_KEYS_DIR:-\${base}/shared/opendkim-keys}"
 
 docker compose "\${compose_files[@]}" --project-name "\${project_name}" config >/tmp/hana-chat-compose-\${release}.yml
 docker compose "\${compose_files[@]}" --project-name "\${project_name}" up -d --build

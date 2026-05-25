@@ -34,6 +34,8 @@ export class BillingController {
     ]);
 
     return {
+      monetizationEnabled: this.config.MONETIZATION_ENABLED,
+      comingSoon: !this.config.MONETIZATION_ENABLED,
       plans: plans.map((plan) => ({
         id: plan.id,
         name: plan.name,
@@ -41,9 +43,9 @@ export class BillingController {
         currency: plan.currency,
         monthlyMessageLimit: plan.monthly_message_limit,
         deepMemoryEnabled: plan.deep_memory_enabled,
-        voiceEnabled: plan.voice_enabled,
         adultModeEnabled: plan.adult_mode_enabled,
         creatorPaidCharactersEnabled: plan.creator_paid_characters_enabled,
+        comingSoon: !this.config.MONETIZATION_ENABLED && plan.id !== "free",
       })),
       subscription,
     };
@@ -53,6 +55,11 @@ export class BillingController {
   public async checkout(@Body() body: unknown, @Headers("authorization") authorization?: string) {
     const session = await requireSession(this.db, this.config, authorization);
     const input = CheckoutPlanRequestSchema.parse(body);
+
+    if (!this.config.MONETIZATION_ENABLED) {
+      throw new DomainError("ENTITLEMENT_REQUIRED", "Paid plans are coming soon.");
+    }
+
     const plan = await this.db
       .selectFrom("billing.plans")
       .selectAll()

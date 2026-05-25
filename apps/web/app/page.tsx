@@ -4,7 +4,7 @@ import {
   Check,
   Download,
   MessageCircleHeart,
-  Mic2,
+  ShieldCheck,
 } from "lucide-react";
 import { cookies } from "next/headers";
 import Image from "next/image";
@@ -25,9 +25,9 @@ const features = [
     copy: "Design personalities, opening scenes, private lore, relationship style, and long-running stories you can keep refining.",
   },
   {
-    icon: Mic2,
-    title: "Voice for premium moments",
-    copy: "Bring favorite characters closer with voice, longer conversations, richer memory, and subscriber-only experiences.",
+    icon: ShieldCheck,
+    title: "Private spaces with clear controls",
+    copy: "Keep conversations text-first with memory, account access, mature-space controls, and subscriber-only room depth.",
   },
 ];
 
@@ -43,7 +43,7 @@ const pricingPlans = [
     name: "Hana Plus",
     price: "$9.99",
     note: "For daily roleplay",
-    perks: ["More messages", "Deeper memory", "Voice previews", "Private character drafts"],
+    perks: ["More messages", "Deeper memory", "Private character drafts", "Creator tools"],
     cta: "Go Plus",
     featured: true,
   },
@@ -53,9 +53,9 @@ const pricingPlans = [
     note: "For power users",
     perks: [
       "Priority replies",
-      "Premium voices",
       "18+ spaces after age confirmation",
       "Advanced memory controls",
+      "Higher monthly message limits",
     ],
     cta: "Unlock Ultra",
   },

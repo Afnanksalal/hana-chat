@@ -1,10 +1,13 @@
 # Creator Monetization and Payouts
 
-Hana monetization is a marketplace ledger, not a UI-only price flag. A paid character gives each buyer a 30-message trial first; after checkout, the paid unlock creates an auditable purchase, moves creator net revenue through a 7-day hold window, and lets the creator request payout from an available wallet balance.
+Hana monetization is a marketplace ledger, not a UI-only price flag. It is currently disabled by
+default with `MONETIZATION_ENABLED=false` while payment-provider fit is evaluated for the product
+category. The codebase still contains the full purchase, ledger, wallet, and payout model so it can
+be re-enabled behind the server flag once a provider is approved.
 
 ## Provider Model
 
-- Razorpay Orders are used for paid character checkout when live credentials are configured.
+- Razorpay Orders are used for paid character checkout only when `MONETIZATION_ENABLED=true` and live credentials are configured.
 - Local development can use mock checkout; production rejects mock checkout and mock payouts.
 - RazorpayX payouts use contacts, UPI fund accounts, idempotency keys, and the configured RazorpayX account number.
 - Razorpay Route is the long-term split-payment option if/when the account is eligible. Until then, Hana maintains an internal creator ledger and pays creators from available wallet balances.
@@ -14,6 +17,17 @@ References:
 - Razorpay Route marketplace split payments: <https://razorpay.com/docs/payments/route/?locale=en-US>
 - RazorpayX payouts API: <https://razorpay.com/docs/api/x/payouts/?locale=en-US>
 - Razorpay webhooks: <https://razorpay.com/docs/webhooks/?preferred-country=IN>
+
+## Provider Compliance
+
+- Razorpay supports Individual/Unregistered Business onboarding paths, but live mode and settlements
+  require KYC approval, bank verification, and category approval.
+- Razorpay terms list adult-oriented goods/services and mature/friend-finder style businesses as
+  prohibited or high-risk categories. Do not assume live processing is approved until Razorpay has
+  explicitly accepted the final product category and content policy.
+- Marketplace payouts can run through Hana's internal ledger before provider approval, but money
+  should not leave the platform through RazorpayX until the master merchant, payout profile review,
+  tax, and sub-merchant obligations are confirmed.
 
 ## Data Model
 
@@ -70,7 +84,7 @@ flowchart TD
 - The trial is counted by persisted user messages for the exact buyer and character, so refreshing the app cannot reset it.
 - Razorpay signatures are verified server-side before `status = paid`.
 - Webhook events are stored idempotently before processing.
-- Payout destination data is encrypted with `PHONE_ENCRYPTION_KEY_BASE64`; only the last four characters of the UPI ID are returned to the UI.
+- Payout destination data is encrypted with `PAYOUT_ENCRYPTION_KEY_BASE64`; only the last four characters of the UPI ID are returned to the UI.
 - Admin payout/profile routes require `identity.user_roles.role = admin`.
 - Failed payout refreshes return reserved funds through ledger entries instead of mutating balances silently.
 
@@ -78,6 +92,7 @@ flowchart TD
 
 - Creator wallet UI: `/app/wallet`.
 - Admin monetization UI: `/app/admin`.
+- While `MONETIZATION_ENABLED=false`, checkout, paid-character purchase, payout profile, and payout request endpoints return "coming soon" and the web UI disables paid controls.
 - Mandatory paid-character trial length is configured by `CREATOR_PAID_CHARACTER_TRIAL_MESSAGES` and defaults to 30.
 - Minimum payout and hold window are configured by `CREATOR_MIN_PAYOUT_CENTS` and `CREATOR_EARNING_HOLD_DAYS`; the product default is a 7-day creator earning hold.
 - Platform fee is configured by `CREATOR_PLATFORM_FEE_BPS`.

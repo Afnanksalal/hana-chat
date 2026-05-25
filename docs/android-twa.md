@@ -28,8 +28,9 @@ A true TWA needs:
 - the exact SHA-256 certificate fingerprint of the APK signing key,
 - a stable Android package id, currently `com.hanachat.app`.
 
-Raw-IP builds are useful for internal install testing, but the final Play/distribution build should
-target the production app origin: `https://app.hanachat.site`.
+Hana Chat TWA builds must target the production app origin only:
+`https://app.hanachat.site`. Do not build or distribute a raw-IP APK; Android verifies the signed
+package against one HTTPS origin, and the domain is the canonical production app.
 
 ## Environment
 
@@ -49,16 +50,13 @@ ANDROID_TWA_ORIGIN=https://app.hanachat.site
 ANDROID_TWA_PACKAGE_ID=com.hanachat.app
 ANDROID_TWA_VERSION_NAME=1.0.0
 ANDROID_TWA_VERSION_CODE=1
+ANDROID_TWA_ACCEPT_ANDROID_SDK_LICENSES=1
 BUBBLEWRAP_KEYSTORE_PASSWORD=...
 BUBBLEWRAP_KEY_PASSWORD=...
 ```
 
-For raw-IP internal testing only, set:
-
-```bash
-ANDROID_TWA_ORIGIN=https://18.61.174.6
-NODE_TLS_REJECT_UNAUTHORIZED=0
-```
+The build script rejects any `ANDROID_TWA_ORIGIN` or asset origin that is not
+`https://app.hanachat.site`.
 
 ## Build
 

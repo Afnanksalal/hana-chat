@@ -1,92 +1,46 @@
 import { createCipheriv, createDecipheriv, createHmac, randomBytes } from "node:crypto";
-import { E164PhoneNumberSchema, type PhoneNumberE164 } from "@hana/contracts";
+import { EmailAddressSchema, type EmailAddress } from "@hana/contracts";
 import { DomainError } from "@hana/errors";
-import { parsePhoneNumberFromString, type CountryCode } from "libphonenumber-js";
 
-export type PhoneLineType =
-  | "mobile"
-  | "landline"
-  | "fixed_voip"
-  | "non_fixed_voip"
-  | "toll_free"
-  | "unknown";
-
-export interface PhoneCredential {
-  id: string;
-  userId: string;
-  phoneHash: string;
-  encryptedPhoneNumber: string;
-  countryCode: string;
-  lineType: PhoneLineType;
-  carrierName?: string;
-  verifiedAt: string;
-  lastRiskCheckedAt?: string;
-  isPrimary: boolean;
+export function normalizeEmailAddress(input: string): EmailAddress {
+  return EmailAddressSchema.parse(input);
 }
 
-export interface StartVerificationInput {
-  phoneNumber: PhoneNumberE164;
-  deviceId?: string;
-  riskSessionId?: string;
-}
+export function emailDomain(email: EmailAddress): string {
+  const domain = email.split("@")[1];
 
-export interface VerifyCodeInput extends StartVerificationInput {
-  code: string;
-}
-
-export interface PhoneVerificationProvider {
-  start(input: StartVerificationInput): Promise<{ verificationId: string }>;
-  verify(input: VerifyCodeInput): Promise<{ verified: boolean; providerUserId?: string }>;
-}
-
-export interface PhoneIntelligence {
-  lineType: PhoneLineType;
-  carrierName?: string;
-  countryCode?: string;
-  simSwapRisk?: "unknown" | "low" | "medium" | "high";
-  portingRisk?: "unknown" | "low" | "medium" | "high";
-  isReachable?: boolean;
-}
-
-export interface PhoneIntelligenceProvider {
-  lookup(phoneNumber: PhoneNumberE164): Promise<PhoneIntelligence>;
-}
-
-export function normalizePhoneNumber(input: string, defaultCountry?: CountryCode): PhoneNumberE164 {
-  const parsed = parsePhoneNumberFromString(input, defaultCountry);
-
-  if (!parsed?.isValid()) {
-    throw new DomainError("VALIDATION_FAILED", "Invalid phone number");
+  if (!domain) {
+    throw new DomainError("VALIDATION_FAILED", "Invalid email address");
   }
 
-  return E164PhoneNumberSchema.parse(parsed.number);
+  return domain;
 }
 
-export function hashPhoneNumber(phoneNumber: PhoneNumberE164, secret: string): string {
+export function hashEmailAddress(email: EmailAddress, secret: string): string {
   if (secret.length < 16) {
-    throw new DomainError("INTERNAL", "Phone hash secret is too short");
+    throw new DomainError("INTERNAL", "Email hash secret is too short");
   }
 
-  return createHmac("sha256", secret).update(phoneNumber).digest("hex");
+  return createHmac("sha256", secret).update(email).digest("hex");
 }
 
-export interface EncryptedPhoneNumber {
+export interface EncryptedEmailAddress {
   value: string;
   algorithm: "aes-256-gcm";
 }
 
-export function encryptPhoneNumber(
-  phoneNumber: PhoneNumberE164,
+export function encryptEmailAddress(
+  email: EmailAddress,
   base64Key: string,
-): EncryptedPhoneNumber {
+): EncryptedEmailAddress {
   const key = Buffer.from(base64Key, "base64");
   if (key.length !== 32) {
-    throw new DomainError("INTERNAL", "Phone encryption key must be 32 bytes base64");
+    throw new DomainError("INTERNAL", "Email encryption key must be 32 bytes base64");
   }
 
   const iv = randomBytes(12);
   const cipher = createCipheriv("aes-256-gcm", key, iv);
-  const encrypted = Buffer.concat([cipher.update(phoneNumber, "utf8"), cipher.final()]);
+  const encrypted = Buffer.concat([cipher.update(email, "utf8"), cipher.final()]);
   const tag = cipher.getAuthTag();
 
   return {
@@ -95,15 +49,15 @@ export function encryptPhoneNumber(
   };
 }
 
-export function decryptPhoneNumber(encryptedValue: string, base64Key: string): PhoneNumberE164 {
+export function decryptEmailAddress(encryptedValue: string, base64Key: string): EmailAddress {
   const key = Buffer.from(base64Key, "base64");
   if (key.length !== 32) {
-    throw new DomainError("INTERNAL", "Phone encryption key must be 32 bytes base64");
+    throw new DomainError("INTERNAL", "Email encryption key must be 32 bytes base64");
   }
 
   const [ivPart, tagPart, encryptedPart] = encryptedValue.split(".");
   if (!ivPart || !tagPart || !encryptedPart) {
-    throw new DomainError("VALIDATION_FAILED", "Malformed encrypted phone number");
+    throw new DomainError("VALIDATION_FAILED", "Malformed encrypted email address");
   }
 
   const decipher = createDecipheriv("aes-256-gcm", key, Buffer.from(ivPart, "base64"));
@@ -113,19 +67,5 @@ export function decryptPhoneNumber(encryptedValue: string, base64Key: string): P
     decipher.final(),
   ]).toString("utf8");
 
-  return E164PhoneNumberSchema.parse(decrypted);
-}
-
-export function shouldAllowLineType(lineType: PhoneLineType): "allow" | "challenge" | "block" {
-  switch (lineType) {
-    case "mobile":
-      return "allow";
-    case "unknown":
-    case "fixed_voip":
-      return "challenge";
-    case "landline":
-    case "non_fixed_voip":
-    case "toll_free":
-      return "block";
-  }
+  return EmailAddressSchema.parse(decrypted);
 }

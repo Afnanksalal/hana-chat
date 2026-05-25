@@ -2,6 +2,7 @@ import "reflect-metadata";
 import {
   ArgumentsHost,
   Catch,
+  HttpException,
   Logger,
   ValidationPipe,
   type ExceptionFilter,
@@ -129,8 +130,10 @@ function normalizeException(
   message: string;
   details?: unknown;
 } {
-  if (exception instanceof DomainError) {
-    if (redactUnexpectedErrors && exception.code === "INTERNAL") {
+  const domainError = getDomainError(exception);
+
+  if (domainError) {
+    if (redactUnexpectedErrors && domainError.code === "INTERNAL") {
       return {
         statusCode: 500,
         code: "INTERNAL",
@@ -139,10 +142,10 @@ function normalizeException(
     }
 
     return {
-      statusCode: statusCodeForDomainError(exception.code),
-      code: exception.code,
-      message: exception.message,
-      details: exception.details,
+      statusCode: statusCodeForDomainError(domainError.code),
+      code: domainError.code,
+      message: domainError.message,
+      details: domainError.details,
     };
   }
 
@@ -152,6 +155,21 @@ function normalizeException(
       code: "VALIDATION_FAILED",
       message: "Request validation failed",
       details: exception.flatten(),
+    };
+  }
+
+  if (exception instanceof HttpException) {
+    const statusCode = exception.getStatus();
+    const body = exception.getResponse();
+    const message =
+      typeof body === "object" && body && "message" in body
+        ? formatHttpExceptionMessage((body as { message?: unknown }).message)
+        : exception.message;
+
+    return {
+      statusCode,
+      code: statusCode === 404 ? "RESOURCE_NOT_FOUND" : "HTTP_ERROR",
+      message,
     };
   }
 
@@ -167,6 +185,52 @@ function normalizeException(
     statusCode: 500,
     code: "INTERNAL",
     message: "Unexpected error",
+  };
+}
+
+function formatHttpExceptionMessage(message: unknown): string {
+  if (Array.isArray(message)) {
+    return message.filter((entry): entry is string => typeof entry === "string").join(", ");
+  }
+
+  return typeof message === "string" && message ? message : "Request failed";
+}
+
+function getDomainError(
+  exception: unknown,
+): { code: string; message: string; details?: Record<string, unknown> } | null {
+  if (exception instanceof DomainError) {
+    return {
+      code: exception.code,
+      message: exception.message,
+      details: exception.details,
+    };
+  }
+
+  if (!(exception instanceof Error) || exception.name !== "DomainError") {
+    return null;
+  }
+
+  const maybeDomainError = exception as Error & {
+    code?: unknown;
+    details?: unknown;
+  };
+
+  if (typeof maybeDomainError.code !== "string") {
+    return null;
+  }
+
+  const details =
+    maybeDomainError.details &&
+    typeof maybeDomainError.details === "object" &&
+    !Array.isArray(maybeDomainError.details)
+      ? (maybeDomainError.details as Record<string, unknown>)
+      : undefined;
+
+  return {
+    code: maybeDomainError.code,
+    message: exception.message,
+    ...(details ? { details } : {}),
   };
 }
 

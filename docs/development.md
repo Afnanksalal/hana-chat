@@ -72,12 +72,12 @@ pnpm infra:bootstrap
 pnpm seed:local
 ```
 
-The seed resets local media generated for the test run, signs in with `DEV_ADMIN_PHONE_NUMBER`,
+The seed resets local media generated for the test run, signs in with `ADMIN_EMAIL`,
 updates the account to `Afnan K Salal`, uploads generated character images through `/v1/media`, and
-creates ten creator-owned conversations with scoped memories and conversation evolution rows.
+creates fourteen creator-owned conversations with scoped memories and conversation evolution rows.
 Mature/adult personas remain private creator-owned rooms, while general/teen personas appear in
-Discover. `Rin Kuroha` is the seeded public paid character used by product smoke for the mandatory
-30-message trial and creator-hold payout path.
+Discover. Product smoke expects monetization to be gated by default and verifies paid plans,
+paid-character unlocks, and creator payout setup return "coming soon."
 
 Product smoke, web smoke, and the AI harness use the seeded cast. They should not create persistent
 `Smoke`, `Web Smoke`, or `Harness` marketplace characters.

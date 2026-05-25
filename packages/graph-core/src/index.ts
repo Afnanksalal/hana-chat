@@ -1,6 +1,6 @@
 export type GraphNodeLabel =
   | "User"
-  | "Phone"
+  | "Email"
   | "Device"
   | "IpAddress"
   | "Asn"
@@ -21,7 +21,7 @@ export type GraphNodeLabel =
 export interface GraphProjectionEvent {
   id: string;
   type:
-    | "phone_verified"
+    | "email_verified"
     | "device_seen"
     | "risk_decision_created"
     | "memory_fact_written"
@@ -61,21 +61,20 @@ export interface GraphConversationContext {
 
 export const GRAPH_CONSTRAINTS = [
   "CREATE CONSTRAINT user_id IF NOT EXISTS FOR (n:User) REQUIRE n.id IS UNIQUE",
-  "CREATE CONSTRAINT phone_hash IF NOT EXISTS FOR (n:Phone) REQUIRE n.hash IS UNIQUE",
+  "CREATE CONSTRAINT email_hash IF NOT EXISTS FOR (n:Email) REQUIRE n.hash IS UNIQUE",
   "CREATE CONSTRAINT device_id IF NOT EXISTS FOR (n:Device) REQUIRE n.id IS UNIQUE",
   "CREATE CONSTRAINT character_id IF NOT EXISTS FOR (n:Character) REQUIRE n.id IS UNIQUE",
   "CREATE CONSTRAINT conversation_id IF NOT EXISTS FOR (n:Conversation) REQUIRE n.id IS UNIQUE",
   "CREATE CONSTRAINT memory_fact_id IF NOT EXISTS FOR (n:MemoryFact) REQUIRE n.id IS UNIQUE",
 ] as const;
 
-export function buildPhoneVerifiedCypher(): string {
+export function buildEmailVerifiedCypher(): string {
   return `
 MERGE (u:User {id: $userId})
-MERGE (p:Phone {hash: $phoneHash})
-SET p.countryCode = $countryCode,
-    p.lineType = $lineType,
-    p.updatedAt = $occurredAt
-MERGE (u)-[r:VERIFIED_PHONE]->(p)
+MERGE (e:Email {hash: $emailHash})
+SET e.domain = $emailDomain,
+    e.updatedAt = $occurredAt
+MERGE (u)-[r:VERIFIED_EMAIL]->(e)
 SET r.verifiedAt = $occurredAt
 `;
 }

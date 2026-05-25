@@ -14,12 +14,34 @@ flowchart LR
 
 ## DNS
 
-| Host                | Target                   | Purpose                                                           |
-| ------------------- | ------------------------ | ----------------------------------------------------------------- |
-| `hanachat.site`     | VPS reverse proxy A/AAAA | Public product landing, legal, sitemap, robots, LLM crawler files |
-| `www.hanachat.site` | VPS reverse proxy A/AAAA | Optional alias for the public product site                        |
-| `app.hanachat.site` | VPS reverse proxy A/AAAA | Authenticated web app, PWA, account, chat, character builder      |
-| `api.hanachat.site` | VPS reverse proxy A/AAAA | NestJS API gateway only                                           |
+| Host                     | Target                   | Purpose                                                           |
+| ------------------------ | ------------------------ | ----------------------------------------------------------------- |
+| `hanachat.site`          | VPS reverse proxy A/AAAA | Public product landing, legal, sitemap, robots, LLM crawler files |
+| `www.hanachat.site`      | VPS reverse proxy A/AAAA | Optional alias for the public product site                        |
+| `app.hanachat.site`      | VPS reverse proxy A/AAAA | Authenticated web app, PWA, account, chat, character builder      |
+| `api.hanachat.site`      | VPS reverse proxy A/AAAA | NestJS API gateway only                                           |
+| `mail.app.hanachat.site` | VPS public IP A/AAAA     | SMTP relay hostname and reverse-DNS target for outbound mail      |
+
+Outbound mail also requires sender-domain authentication:
+
+| Host                                | Type | Value                                                        |
+| ----------------------------------- | ---- | ------------------------------------------------------------ |
+| `app.hanachat.site`                 | TXT  | `v=spf1 ip4:18.61.174.6 -all`                                |
+| `mail._domainkey.app.hanachat.site` | TXT  | Value printed by `pnpm mail:dkim app.hanachat.site mail ...` |
+| `_dmarc.app.hanachat.site`          | TXT  | `v=DMARC1; p=none; adkim=s; aspf=s`                          |
+
+Set reverse DNS/PTR for `18.61.174.6` to `mail.app.hanachat.site` in AWS EC2, not GoDaddy and not
+Caddy. In AWS, open **EC2 -> Elastic IPs**, select the Elastic IP, choose **Actions -> Update
+reverse DNS**, and enter `mail.app.hanachat.site`. The forward `A mail.app.hanachat.site ->
+18.61.174.6` record must exist first. Caddy only terminates HTTP/HTTPS and is not involved in SMTP
+reverse DNS.
+
+The DKIM TXT value must be the generated `v=DKIM1; k=rsa; p=...` record, not the placeholder command
+text. Generate it on the VPS with:
+
+```bash
+pnpm mail:dkim app.hanachat.site mail /opt/hana-chat/shared/opendkim-keys
+```
 
 ## Required Environment
 
@@ -43,6 +65,11 @@ WEB_ORIGIN=https://app.hanachat.site
 WEB_ORIGINS=https://app.hanachat.site,https://hanachat.site,https://www.hanachat.site
 API_GATEWAY_URL=https://api.hanachat.site
 AUTH_COOKIE_DOMAIN=.hanachat.site
+MONETIZATION_ENABLED=false
+SMTP_HOST=smtp-relay
+SMTP_FROM=Hana Chat <no-reply@app.hanachat.site>
+SMTP_RELAY_HOSTNAME=mail.app.hanachat.site
+MAIL_DKIM_KEYS_DIR=/opt/hana-chat/shared/opendkim-keys
 ```
 
 `AUTH_COOKIE_DOMAIN=.hanachat.site` is intentional for domain traffic: it lets `hanachat.site`,
@@ -57,8 +84,8 @@ preview deployments, and production domains debuggable. Use `NEXT_PUBLIC_SITE_UR
 sitemaps, robots, and LLM crawler files.
 
 The Android TWA is different from a normal web link: each signed APK is built against one HTTPS
-origin and verified through `/.well-known/assetlinks.json`. Use raw IP only for internal install
-testing. Rebuild the TWA against `https://app.hanachat.site` after DNS and trusted TLS are active.
+origin and verified through `/.well-known/assetlinks.json`. Build and distribute the APK against
+`https://app.hanachat.site` only; raw-IP TWA packages are not supported.
 
 ## Reverse Proxy
 

@@ -2,7 +2,6 @@
 
 import {
   ArrowRight,
-  Bell,
   Camera,
   Check,
   CreditCard,
@@ -24,7 +23,6 @@ interface SettingsResponse {
   avatarUrl: string | null;
   adultModeEnabled: boolean;
   memoryEnabled: boolean;
-  voiceEnabled: boolean;
   marketingOptIn: boolean;
 }
 
@@ -35,12 +33,14 @@ interface BillingPlan {
   currency: string;
   monthlyMessageLimit: number;
   adultModeEnabled: boolean;
-  voiceEnabled: boolean;
   deepMemoryEnabled: boolean;
   creatorPaidCharactersEnabled: boolean;
+  comingSoon?: boolean;
 }
 
 interface BillingResponse {
+  monetizationEnabled: boolean;
+  comingSoon: boolean;
   plans: BillingPlan[];
   subscription: {
     planId: PlanId;
@@ -91,7 +91,6 @@ const fallbackSettings: SettingsResponse = {
   avatarUrl: null,
   adultModeEnabled: false,
   memoryEnabled: true,
-  voiceEnabled: false,
   marketingOptIn: false,
 };
 
@@ -263,6 +262,7 @@ export default function SettingsPage() {
 
   const activePlanId = billing?.subscription.planId ?? "free";
   const activePlan = billing?.plans.find((plan) => plan.id === activePlanId);
+  const monetizationComingSoon = billing?.comingSoon ?? true;
   const toggles = [
     {
       label: "18+ mode",
@@ -278,13 +278,6 @@ export default function SettingsPage() {
       detail: "Let characters keep private context inside each chat.",
       action: () => patchSettings({ memoryEnabled: !settings.memoryEnabled }),
     },
-    {
-      label: "Voice",
-      value: settings.voiceEnabled,
-      icon: Bell,
-      detail: "Use voice features when your plan supports them.",
-      action: () => patchSettings({ voiceEnabled: !settings.voiceEnabled }),
-    },
   ];
 
   return (
@@ -298,7 +291,7 @@ export default function SettingsPage() {
             <UserRound size={15} /> Account
           </span>
           <h1>Make Hana feel yours.</h1>
-          <p>Profile, access, voice, and plan controls for your private space.</p>
+          <p>Profile, access, memory, and plan controls for your private space.</p>
         </div>
         {status ? <p className="form-status">{status}</p> : null}
       </section>
@@ -391,7 +384,11 @@ export default function SettingsPage() {
             <CreditCard size={19} />
             <div>
               <h2>Current plan</h2>
-              <p>{activePlan?.name ?? "Free"} is active on this account.</p>
+              <p>
+                {monetizationComingSoon
+                  ? "Paid plans are coming soon."
+                  : `${activePlan?.name ?? "Free"} is active on this account.`}
+              </p>
             </div>
           </div>
           <strong>
@@ -414,7 +411,11 @@ export default function SettingsPage() {
             <WalletCards size={19} />
             <div>
               <h2>Creator wallet</h2>
-              <p>Manage paid unlock revenue and payout requests.</p>
+              <p>
+                {monetizationComingSoon
+                  ? "Creator monetization is coming soon."
+                  : "Manage paid unlock revenue and payout requests."}
+              </p>
             </div>
           </div>
           <Link className="secondary-action compact" href="/app/wallet">
@@ -447,6 +448,7 @@ export default function SettingsPage() {
             >
               <WalletCards size={22} />
               <h3>{plan.name}</h3>
+              {plan.comingSoon ? <span className="coming-soon-pill">Coming soon</span> : null}
               <strong>
                 {money(plan.monthlyPriceCents, plan.currency)}
                 <span>/mo</span>
@@ -459,9 +461,6 @@ export default function SettingsPage() {
                   <Check size={15} /> {plan.deepMemoryEnabled ? "Deep memory" : "Basic memory"}
                 </li>
                 <li>
-                  <Check size={15} /> {plan.voiceEnabled ? "Voice enabled" : "Text chat"}
-                </li>
-                <li>
                   <Check size={15} /> {plan.adultModeEnabled ? "18+ spaces" : "Default spaces"}
                 </li>
               </ul>
@@ -469,10 +468,14 @@ export default function SettingsPage() {
                 <button
                   className="primary-action"
                   type="button"
-                  disabled={paidPlanId === activePlanId}
+                  disabled={monetizationComingSoon || paidPlanId === activePlanId}
                   onClick={() => void checkout(paidPlanId)}
                 >
-                  {paidPlanId === activePlanId ? "Current plan" : "Upgrade"}
+                  {monetizationComingSoon
+                    ? "Coming soon"
+                    : paidPlanId === activePlanId
+                      ? "Current plan"
+                      : "Upgrade"}
                 </button>
               ) : null}
             </article>

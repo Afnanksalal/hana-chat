@@ -2,7 +2,7 @@
 
 Hana Chat is a private, production-oriented AI companion platform: Next.js web app, NestJS API gateway, typed TypeScript packages, Postgres, Qdrant, Neo4j, Redis, Redpanda, Temporal, and ClickHouse.
 
-The product centers on creator-owned characters, a premium marketplace, phone-based identity, paid access with mandatory paid-character trials, safety gates, and per-character/per-chat memory.
+The product centers on creator-owned characters, a premium marketplace, passwordless email identity, safety gates, and per-character/per-chat memory. Paid plans and creator monetization remain in the codebase but are server-gated as "coming soon" until a payment gateway is approved for the product category.
 
 ## Quick Start
 
@@ -26,7 +26,7 @@ The API gateway defaults to `http://localhost:4000`.
 ## Local Test Cast
 
 For manual end-to-end testing with a clean database, bring the stack up, bootstrap infra, then seed
-the admin account and ten generated characters:
+the admin account and fourteen generated characters:
 
 ```powershell
 pnpm infra:up
@@ -34,7 +34,7 @@ pnpm infra:bootstrap
 pnpm seed:local
 ```
 
-The seed uses the dev admin phone from `.env`, updates that account to `Afnan K Salal`, creates ten
+The seed uses `ADMIN_EMAIL` from `.env`, updates that account to `Afnan K Salal`, creates fourteen
 creator-owned characters, uploads generated media through the real media API, opens one conversation
 per character, and writes per-conversation memories for multi-persona testing.
 
@@ -52,10 +52,11 @@ pnpm web:smoke
 ## Current Product Surface
 
 - Character builder with profile image, cover image, templates, persona, scenario, speaking style, model profile, tags, rating, pricing, and publish controls.
-- Marketplace with category filters, search, image-led cards, pricing, stats, tags, 30-message paid-character trials, paid unlock, and fresh-room starts into chat.
+- Marketplace with category filters, search, image-led cards, stats, tags, monetization-ready character records, and fresh-room starts into chat.
 - Chat orchestration through xAI with private identity, risk, chat-planning, billing, moderation, memory-policy, retrieval, graph, and batch boundaries, strict input/output guardrails, entitlement checks, usage limits, SSE streaming, durable memory injection, and an evolving per-chat relationship profile.
 - Memory scoped by `user_id + character_id + conversation_id`; no global user memories are injected into chat context.
-- Billing plans, Razorpay/mock checkout flow, creator wallet ledger, 7-day creator earning hold, payout profiles, admin payout operations, batch-orchestrator outbox leasing, Qdrant replay, and Neo4j chat-turn plus memory projection.
+- Billing plans, Razorpay/mock checkout flow, creator wallet ledger, 7-day creator earning hold, payout profiles, and admin payout operations are preserved behind `MONETIZATION_ENABLED`; current public billing and creator monetization copy shows "coming soon."
+- Batch-orchestrator outbox leasing, Qdrant replay, and Neo4j chat-turn plus memory projection.
 - Admin command center with real analytics for growth, marketplace momentum, model latency, safety pressure, memory depth, queue health, service-boundary backlogs, payout ops, and audit events.
 - PWA, Android TWA packaging, SEO metadata routes, crawler files, secure headers, raw-IP VPS access, shared `.hanachat.site` auth cookies, and fully self-hosted VPS deployment docs.
 
@@ -70,6 +71,7 @@ pnpm web:smoke
 - [User Flows](docs/hana-chat-user-flows.md)
 - [UI/UX Direction](docs/hana-chat-ui-ux-direction.md)
 - [Identity and Abuse Prevention](docs/hana-chat-identity-and-abuse-prevention.md)
+- [Email Auth and Admin Access](docs/auth-email-setup.md)
 - [Development Guide](docs/development.md)
 - [VPS Deployment](docs/deployment-vps.md)
 - [Playground VPS Deployment](docs/playground-vps-deployment.md)

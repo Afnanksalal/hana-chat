@@ -10,7 +10,7 @@ record, not a marketing or roadmap document.
 
 - Auth start/verify routes, session cookie handling, API proxying, and production error behavior.
 - Chat orchestration, SSE error payloads, model route disclosure, and guardrail failure handling.
-- Billing, Razorpay order creation, Twilio Verify calls, creator payout surfaces, and mock-provider
+- Billing, payment-provider order creation, email verification delivery, creator payout surfaces, and mock-provider
   production guards.
 - Production config validation, CORS origin parsing, security headers, Docker Compose defaults, and
   crawler/PWA asset references.
@@ -20,17 +20,17 @@ record, not a marketing or roadmap document.
 
 ## Findings Fixed
 
-- Replaced OTP fallback generation with `crypto.randomInt` so local/development OTPs are not based on
+- Replaced verification-code fallback generation with `crypto.randomInt` so local/development codes are not based on
   `Math.random`.
 - Added production redaction for `DomainError` instances with `INTERNAL` code in the shared NestJS
   exception filter.
 - Added production redaction for SSE unexpected/internal errors.
 - Stopped exposing `modelRoute` in production chat responses while keeping it visible in development
   and harness runs.
-- Removed raw Razorpay and Twilio provider response bodies from thrown app errors; only HTTP status is
+- Removed raw payment-provider and email-delivery response bodies from thrown app errors; only HTTP status is
   carried forward.
 - Redacted more sensitive log fields including session tokens, cookies, Razorpay credentials,
-  RazorpayX account numbers, phone encryption/hash secrets, and session secrets.
+  payout account numbers, email encryption/hash secrets, and session secrets.
 - Added production validation for every comma-separated `WEB_ORIGINS` entry, not only the primary
   `WEB_ORIGIN`.
 - Escaped landing-page JSON-LD before `dangerouslySetInnerHTML` so future structured-data strings

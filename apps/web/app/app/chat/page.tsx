@@ -7,7 +7,6 @@ import {
   Clock3,
   Lock,
   MessageSquareText,
-  Mic2,
   Pencil,
   Plus,
   RotateCcw,
@@ -24,6 +23,7 @@ import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { HanaLogo } from "../../components/hana-logo";
 import { apiJson, money } from "../api";
+import { renderRoleplayPreview } from "../roleplay-preview";
 
 type MemoryKind = "preference" | "boundary" | "relationship" | "canon" | "event" | "style";
 
@@ -34,6 +34,7 @@ interface CharacterSummary {
   rating: "general" | "teen" | "mature" | "adult";
   avatarUrl?: string;
   coverImageUrl?: string;
+  greeting?: string;
   marketplacePreview?: string;
   marketplaceCategory?: string;
   tags?: string[];
@@ -46,6 +47,10 @@ interface CharacterSummary {
     trialUsed: number;
     trialRemaining: number;
   };
+}
+
+interface SettingsResponse {
+  adultModeEnabled: boolean;
 }
 
 interface ConversationSummary {
@@ -243,6 +248,7 @@ function ChatExperience() {
   const [isSending, setIsSending] = useState(false);
   const [isUnlocking, setIsUnlocking] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [adultModeEnabled, setAdultModeEnabled] = useState(false);
   const [deleteArmed, setDeleteArmed] = useState(false);
   const [isDeletingConversation, setIsDeletingConversation] = useState(false);
   const [trialStatus, setTrialStatus] = useState<TrialStatus | null>(null);
@@ -313,15 +319,17 @@ function ChatExperience() {
   }, [conversations, search]);
   async function loadChatShell(isCancelled: () => boolean) {
     try {
-      const conversationPayload = await apiJson<{ conversations: ConversationSummary[] }>(
-        "/api/v1/chat/conversations",
-      );
+      const [conversationPayload, settingsPayload] = await Promise.all([
+        apiJson<{ conversations: ConversationSummary[] }>("/api/v1/chat/conversations"),
+        apiJson<SettingsResponse>("/api/v1/settings"),
+      ]);
 
       if (isCancelled()) {
         return;
       }
 
       setConversations(conversationPayload.conversations);
+      setAdultModeEnabled(settingsPayload.adultModeEnabled);
       setStatus("");
 
       if (requestedConversationId) {
@@ -427,7 +435,9 @@ function ChatExperience() {
       {
         id: "intro",
         role: "assistant",
-        content: `I am ${character.name}. Tell me where you want the scene to begin.`,
+        content:
+          character.greeting?.trim() ||
+          `*${character.name} settles into the room with you.* Tell me where you want the scene to begin.`,
       },
     ]);
     setMemories([]);
@@ -565,7 +575,7 @@ function ChatExperience() {
           characterId: selectedCharacter.id,
           content,
           clientMessageId: userMessage.id,
-          adultModeRequested: false,
+          adultModeRequested: shouldRequestAdultMode(selectedCharacter, adultModeEnabled),
         }),
       });
 
@@ -974,7 +984,9 @@ function ChatExperience() {
                   <strong>{conversation.character.name}</strong>
                   <em>{formatRoomTimestamp(conversation.updatedAt)}</em>
                 </div>
-                <small>{conversation.lastMessage?.content ?? "No messages yet"}</small>
+                <small>
+                  {renderRoleplayPreview(conversation.lastMessage?.content ?? "No messages yet")}
+                </small>
               </div>
               <Clock3 size={14} />
             </button>
@@ -1032,14 +1044,6 @@ function ChatExperience() {
                   onClick={() => void startFreshRoom()}
                 >
                   <RotateCcw size={18} />
-                </button>
-                <button
-                  className="icon-control"
-                  type="button"
-                  aria-label="Voice"
-                  onClick={() => setStatus("Voice is managed from your account plan.")}
-                >
-                  <Mic2 size={18} />
                 </button>
                 <button
                   className={settingsOpen ? "icon-control active" : "icon-control"}
@@ -1453,6 +1457,25 @@ function renderRoleplayContent(content: string) {
       </span>
     ));
   });
+}
+
+function shouldRequestAdultMode(character: CharacterSummary, enabledInSettings: boolean): boolean {
+  if (!enabledInSettings) {
+    return false;
+  }
+
+  if (character.rating === "mature" || character.rating === "adult") {
+    return true;
+  }
+
+  const adultTags = new Set(["adult", "nsfw", "spicy", "naughty", "sexual", "18+"]);
+  const adultTextSignals = ["nsfw", "spicy", "naughty", "sexual", "18+", "explicit"];
+  const freeformSignals = `${character.description} ${character.marketplacePreview ?? ""}`.toLowerCase();
+
+  return (
+    character.tags?.some((tag) => adultTags.has(tag.trim().toLowerCase())) ||
+    adultTextSignals.some((signal) => freeformSignals.includes(signal))
+  );
 }
 
 function isPaidLocked(character: CharacterSummary, trialStatus: TrialStatus | null): boolean {

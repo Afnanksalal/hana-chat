@@ -1,78 +1,64 @@
 # Hana Chat Identity and Abuse Prevention
 
-Last updated: 2026-05-21
+Last updated: 2026-05-25
 
 ## 1. Goal
 
-Hana should use phone-number-first authentication to reduce fake accounts, bot accounts, alt accounts, free-tier farming, referral abuse, and mature-mode abuse.
+Hana uses passwordless email authentication with layered abuse controls. Email alone is not a strong
+proof of one real person, so signup is protected with credential velocity, device claims, IP claims,
+risk scoring, audit logs, and support-ready recovery paths.
 
-Phone verification is useful, but it is not enough by itself. Attackers can use VoIP numbers, SIM farms, rented OTP services, compromised devices, residential proxies, and human fraud farms. The right strategy is layered risk scoring.
+The current launch posture is intentionally strict: one account per hashed IP and one account per
+hashed app-generated device id by default. This reduces free-tier farming and throwaway abuse, but
+shared homes, offices, schools, VPNs, carrier NAT, and device resets need an operator appeal path.
 
 ## 2. Identity Principles
 
-- Phone number is the primary account identifier.
-- Email/password is not a primary login method.
-- Apple/Google login can exist only after phone verification as recovery/account linking.
-- Passkeys should be supported for trusted returning login.
-- Phone numbers are normalized to E.164.
-- Raw phone numbers are encrypted.
-- Phone hashes are used for lookup, dedupe, and abuse joins.
+- Email is the primary account identifier.
+- Public auth is passwordless; no password and no Google/OAuth login.
+- Signup collects username and email. Signin collects email.
+- Verification codes are short-lived, random, HMAC-hashed at rest, and delivered by SMTP.
+- Emails are normalized, HMAC-hashed for lookup, and encrypted separately for support/delivery.
 - Never trust client-side risk claims.
-- Every signup/login produces a `RiskSession`.
-- Risk decisions must be auditable and explainable internally.
+- Every auth attempt can produce a risk/audit trail.
+- Browser clients cannot expose a trustworthy MAC address; use server IP and app-generated device id
+  instead.
 
 ## 3. Signup Flow
 
 ```mermaid
 flowchart TD
-  A["Enter phone"] --> B["Normalize E.164"]
-  B --> C["Pre-check risk"]
-  C --> D{"Can send OTP?"}
-  D -->|No| E["Cooldown / block / support"]
-  D -->|Yes| F["Send OTP"]
-  F --> G["Verify OTP"]
-  G --> H["Phone intelligence"]
-  H --> I["Device intelligence"]
-  I --> J["Risk score"]
-  J --> K{"Decision"}
-  K -->|Allow| L["Create account"]
-  K -->|Allow with limits| M["Create limited account"]
-  K -->|Step-up| N["Extra verification"]
-  K -->|Block| O["Reject"]
+  A["Enter username and email"] --> B["Normalize email"]
+  B --> C["Check email, IP, and device rate limits"]
+  C --> D["Check one-account IP/device claims"]
+  D --> E["Score risk"]
+  E --> F{"Can send code?"}
+  F -->|No| G["Cooldown / block / support"]
+  F -->|Yes| H["Send email code"]
+  H --> I["Verify code"]
+  I --> J["Create user and email credential"]
+  J --> K["Claim IP and device"]
+  K --> L["Issue session"]
 ```
 
 ## 4. Signals
 
-### Phone Signals
+### Credential Signals
 
-- Line type:
-  - mobile,
-  - landline,
-  - fixed VoIP,
-  - non-fixed VoIP,
-  - toll-free,
-  - unknown.
-- Carrier.
-- Country.
-- Number validity.
-- Reachability.
-- Recent SIM swap or porting signal where available.
-- OTP request velocity.
-- OTP failure velocity.
-- Number reused across accounts.
-- Number used with many devices.
-- Number used with many IPs/ASNs.
+- Verification-code request velocity by email.
+- Failed verification-code attempts by email.
+- Existing account count for the email hash.
+- Email domain reputation where available.
+- Disposable or suspicious email domain intelligence when a provider is added.
 
 ### Device Signals
 
-- Stable device ID.
-- Browser/device fingerprint.
-- App install identifier.
-- Emulator signals.
-- Root/jailbreak signals.
+- Stable app-generated device id.
+- Browser/device fingerprint provider if added later.
+- App install identifier for Android TWA/native shells.
 - Automation signals.
 - Repeated signup attempts.
-- Many phone numbers on one device.
+- Many credentials on one device.
 - Many accounts on one device.
 - Reset/reinstall patterns.
 
@@ -81,10 +67,9 @@ flowchart TD
 - IP reputation.
 - ASN.
 - Datacenter/proxy/VPN/Tor.
-- Country mismatch.
 - Signup velocity by IP/subnet.
-- OTP request velocity by IP/subnet.
-- Suspicious region/cost spikes.
+- Verification-code request velocity by IP/subnet.
+- One-account-per-IP claim conflicts.
 
 ### Behavior Signals
 
@@ -96,15 +81,7 @@ flowchart TD
 - Referral behavior.
 - Rating manipulation.
 - Report/block rate.
-- Chargeback risk.
-
-### Payment Signals
-
-- Many users on one payment method.
-- Payment method country mismatch.
-- Chargeback history.
-- Failed payment velocity.
-- Gift card/prepaid patterns where available.
+- Chargeback risk when monetization is re-enabled.
 
 ## 5. Risk Score
 
@@ -112,7 +89,7 @@ Example scoring:
 
 ```text
 risk_score =
-  0.25 * phone_risk +
+  0.25 * identity_risk +
   0.25 * device_risk +
   0.15 * network_risk +
   0.15 * behavior_risk +
@@ -130,18 +107,19 @@ Decision bands:
 90-100: block account creation or suspend cluster
 ```
 
-Medium-risk users should usually be allowed with lower limits instead of immediately blocked. Hard blocks should be reserved for obvious abuse or legal/safety risk.
+Medium-risk users should usually be allowed with lower limits instead of immediately blocked. Hard
+blocks should be reserved for obvious abuse or legal/safety risk.
 
 ## 6. Anti-Alt Controls
 
 ### Signup Controls
 
-- One active account per phone number.
-- Block high-confidence disposable/VoIP numbers.
-- Lower trust for unknown line type.
-- Limit OTP sends per phone, IP, device, and country.
-- Require step-up for risky device/IP combinations.
-- Launch with country allowlist to control SMS cost and abuse.
+- One active account per email hash.
+- One account per hashed IP when `AUTH_ONE_ACCOUNT_PER_IP=true`.
+- One account per hashed app-generated device id when `AUTH_ONE_ACCOUNT_PER_DEVICE=true`.
+- Limit email verification sends per email, IP, and device.
+- Limit failed verification attempts per verification id.
+- Require step-up/support for risky device/IP combinations.
 
 ### Free-Tier Controls
 
@@ -154,47 +132,34 @@ Medium-risk users should usually be allowed with lower limits instead of immedia
 ### Device Graph Controls
 
 - One normal free account per device by default.
-- Multiple accounts on one device trigger risk limits.
-- Many phone numbers on one device trigger review.
-- Many devices on one phone trigger step-up.
+- Multiple accounts on one device trigger risk limits or blocking.
+- Many credentials on one device trigger review.
+- New devices on an existing account can be logged and reviewed.
 
-### Referral and Promo Controls
+### Referral, Rating, and Creator Controls
 
 - Referral rewards delayed until recipient shows real usage.
-- No rewards for linked device/phone/IP clusters.
-- No rewards for accounts that churn immediately after quota use.
-- Creator/rating actions from linked clusters are discounted.
+- No rewards for linked device/email/IP clusters.
+- Creator/rating actions from linked clusters are discounted or reviewed.
+- Mature-mode and creator publishing should require low/medium-low risk.
 
-### Mature-Mode Controls
+## 7. Email Abuse Protection
 
-- Mature mode requires low/medium-low risk.
-- High-risk accounts cannot enable mature mode immediately.
-- Phone changes trigger cooldown.
-- SIM-swap risk triggers cooldown.
-- New device plus mature-mode attempt requires step-up.
+Email verification can become a deliverability and abuse problem. Protect it aggressively:
 
-## 7. OTP Spend Protection
-
-SMS verification can become an attack cost center. Protect it aggressively.
-
-Required:
-
-- Provider fraud guard enabled.
-- Geo permissions/launch-country allowlist.
-- Daily spend caps by country.
-- Per-phone cooldown.
+- SPF, DKIM, and DMARC on the sender domain.
+- Per-email cooldown.
 - Per-IP and per-device cooldown.
 - Max failed code attempts.
-- Prefix/country anomaly alerts.
-- Separate dashboard for OTP spend.
-- DLQ/audit log for blocked sends.
+- SMTP provider bounce/complaint monitoring.
+- Separate audit visibility for blocked sends.
+- No production dev-code response.
 
 Fallbacks:
 
-- WhatsApp OTP where regionally strong.
-- Voice OTP only for trusted users because voice can bypass some SMS protections.
-- Passkey login for returning users.
-- Support flow for paid users who lose phone access.
+- Passkeys for trusted returning users in a later phase.
+- Support flow for users who lose email access.
+- Manual review for shared network/device false positives.
 
 ## 8. Neo4j Abuse Graph
 
@@ -203,7 +168,7 @@ The risk service should project identity and abuse relationships into Neo4j.
 Nodes:
 
 - `User`
-- `Phone`
+- `Email`
 - `Device`
 - `IpAddress`
 - `Asn`
@@ -215,7 +180,7 @@ Nodes:
 
 Relationships:
 
-- `(:User)-[:VERIFIED_PHONE]->(:Phone)`
+- `(:User)-[:VERIFIED_EMAIL]->(:Email)`
 - `(:User)-[:USED_DEVICE]->(:Device)`
 - `(:Session)-[:FROM_IP]->(:IpAddress)`
 - `(:IpAddress)-[:BELONGS_TO]->(:Asn)`
@@ -227,8 +192,8 @@ Relationships:
 Queries to support:
 
 - users per device,
-- phones per device,
-- devices per phone,
+- emails per device,
+- devices per email,
 - accounts per payment method,
 - signups per IP/ASN,
 - referral clusters,
@@ -241,33 +206,26 @@ The product should feel secure, not hostile.
 
 Good UX:
 
-- Ask for phone once.
-- Use passkeys for returning login.
+- Ask for email once.
+- Make code entry fast and clear.
 - Explain cooldowns briefly.
-- Provide recovery for paid users.
+- Provide recovery for legitimate users.
 - Let users view active devices.
 - Let users log out other devices.
 
 Avoid:
 
-- Making every login require SMS.
+- Making every screen sound like fraud enforcement.
 - Blocking legitimate families/shared devices with no appeal.
 - Overusing CAPTCHA for normal users.
-- Showing scary fraud language to regular users.
+- Showing scary internal risk language to regular users.
 
 ## 10. Provider Candidates
 
-Phone verification:
+Email delivery:
 
-- Twilio Verify.
-- Stytch.
-- Firebase Auth phone as a simpler but less custom option.
-
-Phone intelligence:
-
-- Twilio Lookup.
-- Telesign.
-- Vonage Number Insight.
+- Self-hosted SMTP on the VPS/subdomain when deliverability is proven.
+- Postmark, Mailgun, AWS SES, or Resend if provider reputation and content policy fit.
 
 Device and fraud intelligence:
 
@@ -278,25 +236,22 @@ Device and fraud intelligence:
 
 Choose providers based on:
 
-- India/US delivery quality.
-- SMS pumping protection.
-- Line-type and SIM-swap coverage.
-- Mobile SDK quality.
+- Adult-content policy compatibility.
+- Delivery quality.
+- Abuse controls and webhooks.
 - Privacy posture.
 - Cost per verification.
-- Webhook/event support.
+- Operational visibility.
 
 ## 11. Data Model Draft
 
 ```ts
-export interface PhoneCredential {
+export interface EmailCredential {
   id: string;
   userId: UserId;
-  phoneHash: string;
-  encryptedPhoneNumber: string;
-  countryCode: string;
-  lineType: "mobile" | "landline" | "fixed_voip" | "non_fixed_voip" | "toll_free" | "unknown";
-  carrierName?: string;
+  emailHash: string;
+  encryptedEmail: string;
+  emailDomain: string;
   verifiedAt: string;
   lastRiskCheckedAt?: string;
   isPrimary: boolean;
@@ -305,10 +260,10 @@ export interface PhoneCredential {
 export interface RiskSession {
   id: RiskSessionId;
   userId?: UserId;
-  phoneHash?: string;
+  emailHash?: string;
   deviceId?: DeviceId;
   ipAddressHash: string;
-  action: "signup" | "login" | "phone_change" | "adult_mode" | "payment" | "creator_publish";
+  action: "auth.email.start" | "auth.email.verify" | "adult_mode" | "payment" | "creator_publish";
   riskScore: number;
   actionTaken: "allow" | "allow_with_limits" | "step_up" | "cooldown" | "block" | "manual_review";
   signals: Record<string, unknown>;
@@ -320,25 +275,25 @@ export interface RiskSession {
 
 ### Phase 0
 
-- Phone number normalization.
-- OTP provider adapter.
-- Phone credential table.
-- OTP rate limits.
-- Country allowlist.
-- Basic device ID.
+- Email normalization.
+- SMTP verification-code delivery.
+- Email credential table.
+- Email, IP, and device rate limits.
+- One-account IP/device claims.
+- Basic app-generated device ID.
 
 ### Phase 1
 
-- Line-type intelligence.
+- Email domain intelligence.
 - Device intelligence provider.
-- Risk session table.
 - Risk score v1.
 - Neo4j abuse graph projection.
+- Admin risk review surface.
 
 ### Phase 2
 
 - Passkeys.
-- Phone change workflow.
+- Email change workflow.
 - Recovery flow.
 - Referral abuse controls.
 - Free quota risk tiers.
@@ -346,14 +301,15 @@ export interface RiskSession {
 ### Phase 3
 
 - Fraud challenge provider.
-- SIM-swap cooldowns.
 - Creator/rating manipulation detection.
 - Mature-mode risk gating.
-- Admin risk console.
+- Advanced trust tiers for shared networks.
 
 ## 13. References
 
-- Twilio Verify Fraud Guard: https://www.twilio.com/docs/verify/preventing-toll-fraud/sms-fraud-guard/
-- Twilio Lookup line type intelligence: https://www.twilio.com/docs/lookup/quickstart
+- OWASP Authentication Cheat Sheet: https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html
+- OWASP Forgot Password Cheat Sheet: https://cheatsheetseries.owasp.org/cheatsheets/Forgot_Password_Cheat_Sheet.html
+- NIST SP 800-63B Digital Identity Guidelines: https://pages.nist.gov/800-63-4/sp800-63b.html
+- Nodemailer SMTP transport: https://nodemailer.com/smtp/
 - Fingerprint new account fraud guide: https://docs.fingerprint.com/docs/new-account-fraud-use-case-tutorial
 - Arkose human fraud farm protection: https://www.arkoselabs.com/solutions/human-fraud-farm-protection

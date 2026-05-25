@@ -16,7 +16,7 @@ The strongest commercial wedge remains:
 
 That line is good because it attacks the category's most visible pain: characters forget, reset, contradict themselves, or feel generic after the first session. The product should make memory not only technically real, but visible, controllable, and emotionally useful.
 
-The current repo already has a serious spine: Next.js app, NestJS API gateway, typed contracts, Postgres, Qdrant, Neo4j projection targets, Redis/Redpanda/Temporal/ClickHouse infrastructure, phone auth, SSE chat, per-conversation memory, character creation, marketplace ranking, creator wallet, paid character trials, Razorpay/RazorpayX paths, legal pages, PWA/SEO, and an AI harness.
+The current repo already has a serious spine: Next.js app, NestJS API gateway, typed contracts, Postgres, Qdrant, Neo4j projection targets, Redis/Redpanda/Temporal/ClickHouse infrastructure, passwordless email auth, SSE chat, per-conversation memory, character creation, marketplace ranking, creator wallet, paid character trials, payment-provider paths, legal pages, PWA/SEO, and an AI harness.
 
 The biggest gaps are not "more pages." The biggest gaps are trust operations:
 
@@ -77,7 +77,7 @@ This is beyond MVP scaffolding. The product now needs operational depth.
 | Area                           | Current State                                                                                                                                                                            | Risk                                                                                                        | Priority |
 | ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- | -------- |
 | Report/block/moderation ops    | Legal copy says users should report content. The schema/API scan did not show first-class report, block, appeal, reviewer queue, or enforcement tables/controllers.                      | App-store rejection, abuse loops, creator impersonation, unsafe public marketplace.                         | P0       |
-| Age assurance                  | Phone auth and adult toggle exist. Phone number is anti-alt friction, not age assurance.                                                                                                 | Mature access by minors, regulatory risk, app-store risk.                                                   | P0       |
+| Age assurance                  | Email auth and adult toggle exist. Email/device/IP friction is anti-alt friction, not age assurance.                                                                                     | Mature access by minors, regulatory risk, app-store risk.                                                   | P0       |
 | Mature distribution            | Product wants 18+ experiences. App-store policies are hostile to apps primarily intended for sexual gratification.                                                                       | Store rejection or takedown if the app markets or enables explicit adult content directly in mobile builds. | P0       |
 | Self-harm and crisis protocols | Guardrails exist, but SB 243-style published protocol, crisis referral logging, minor reminders, and annual reporting readiness are not obvious.                                         | Regulatory and reputational risk in the exact category Hana occupies.                                       | P0       |
 | Refunds/disputes               | Ledger supports reversals and purchases can be refunded, but full dispute evidence, chargeback state machine, refund admin queue, and creator hold adjustments need completion.          | Creator overpayment, payment processor risk, user support gaps.                                             | P0       |
@@ -251,7 +251,7 @@ P0 security work before wider launch:
 - Add creator KYC and payout risk tiering before meaningful creator payouts.
 - Add refund/dispute state machine with ledger reversal and payout hold extension.
 - Add webhook replay tests and chargeback simulations.
-- Add abuse graph signals: phone reuse, device clusters, payment clusters, creator-buyer collusion, self-purchase farming.
+- Add abuse graph signals: email reuse, device clusters, payment clusters, creator-buyer collusion, self-purchase farming.
 
 Guardrail improvements:
 

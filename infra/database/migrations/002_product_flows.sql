@@ -30,7 +30,6 @@ CREATE TABLE IF NOT EXISTS identity.user_settings (
   adult_mode_enabled BOOLEAN NOT NULL DEFAULT false,
   adult_verified_at TIMESTAMPTZ,
   memory_enabled BOOLEAN NOT NULL DEFAULT true,
-  voice_enabled BOOLEAN NOT NULL DEFAULT false,
   marketing_opt_in BOOLEAN NOT NULL DEFAULT false,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -43,7 +42,6 @@ CREATE TABLE IF NOT EXISTS billing.plans (
   currency TEXT NOT NULL DEFAULT 'USD',
   monthly_message_limit INTEGER NOT NULL,
   deep_memory_enabled BOOLEAN NOT NULL DEFAULT false,
-  voice_enabled BOOLEAN NOT NULL DEFAULT false,
   adult_mode_enabled BOOLEAN NOT NULL DEFAULT false,
   creator_paid_characters_enabled BOOLEAN NOT NULL DEFAULT false,
   is_active BOOLEAN NOT NULL DEFAULT true,
@@ -142,21 +140,19 @@ INSERT INTO billing.plans (
   currency,
   monthly_message_limit,
   deep_memory_enabled,
-  voice_enabled,
   adult_mode_enabled,
   creator_paid_characters_enabled
 )
 VALUES
-  ('free', 'Free', 0, 'USD', 900, false, false, false, false),
-  ('plus', 'Hana Plus', 999, 'USD', 6000, true, true, false, true),
-  ('ultra', 'Hana Ultra', 1999, 'USD', 20000, true, true, true, true)
+  ('free', 'Free', 0, 'USD', 900, false, false, false),
+  ('plus', 'Hana Plus', 999, 'USD', 6000, true, false, true),
+  ('ultra', 'Hana Ultra', 1999, 'USD', 20000, true, true, true)
 ON CONFLICT (id) DO UPDATE SET
   name = EXCLUDED.name,
   monthly_price_cents = EXCLUDED.monthly_price_cents,
   currency = EXCLUDED.currency,
   monthly_message_limit = EXCLUDED.monthly_message_limit,
   deep_memory_enabled = EXCLUDED.deep_memory_enabled,
-  voice_enabled = EXCLUDED.voice_enabled,
   adult_mode_enabled = EXCLUDED.adult_mode_enabled,
   creator_paid_characters_enabled = EXCLUDED.creator_paid_characters_enabled,
   is_active = true;

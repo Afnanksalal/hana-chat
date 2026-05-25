@@ -10,7 +10,8 @@ const API_BASE_URL = stripTrailingSlash(
 );
 const WEB_BASE_URL = stripTrailingSlash(process.env.WEB_BASE_URL ?? "http://localhost:3000");
 const AUTH_COOKIE_NAME = process.env.AUTH_COOKIE_NAME ?? "hana_session";
-const DEV_ADMIN_PHONE_NUMBER = process.env.DEV_ADMIN_PHONE_NUMBER ?? "+15550000000";
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL ?? "admin@local.hana.test";
+const ADMIN_STATIC_OTP = process.env.ADMIN_STATIC_OTP;
 const screenshotDir = resolve(process.cwd(), "tmp", "web-smoke");
 const avatarUploadFixture = resolve(
   process.cwd(),
@@ -38,16 +39,31 @@ const consoleErrors = [];
 let browser;
 
 try {
-  await check("issue dev admin browser session", async () => {
-    const payload = await apiJson("/v1/auth/phone/start", {
+  await check("issue admin browser session", async () => {
+    const start = await apiJson("/v1/auth/email/start", {
       method: "POST",
       body: {
-        phoneNumber: DEV_ADMIN_PHONE_NUMBER,
+        mode: "signin",
+        email: ADMIN_EMAIL,
+        deviceId: "hana-web-smoke-admin",
+      },
+    });
+    const code = start.devCode ?? ADMIN_STATIC_OTP;
+
+    assert(start.verificationId, "admin email verification was not created");
+    assert(code, "admin email code was not available for web smoke verification");
+
+    const payload = await apiJson("/v1/auth/email/verify", {
+      method: "POST",
+      body: {
+        email: ADMIN_EMAIL,
+        verificationId: start.verificationId,
+        code,
         deviceId: "hana-web-smoke-admin",
       },
     });
 
-    assert(payload.sessionToken, "dev admin auth did not return a session token");
+    assert(payload.sessionToken, "admin auth did not return a session token");
     globalThis.adminSessionToken = payload.sessionToken;
 
     return "session ready";
@@ -176,7 +192,12 @@ try {
     await page.getByLabel("Greeting").fill("You made it back. I kept the scene warm.");
     await page.getByRole("button", { name: /Rating/ }).click();
     await page.getByRole("option", { name: "Teen" }).click();
-    await page.getByLabel("Paid price").fill("0");
+    const paidPrice = page.getByLabel("Paid price");
+    if (await paidPrice.isEnabled()) {
+      await paidPrice.fill("0");
+    } else {
+      await expectVisible(page.getByText("Paid access coming soon"));
+    }
     await assertNoHorizontalOverflow(page);
     await screenshot(page, "creator-studio-controls.png");
 
@@ -228,8 +249,10 @@ try {
       () => !document.querySelector('button[aria-label="Send message"]')?.hasAttribute("disabled"),
       { timeout: 30_000 },
     );
-    await page.getByRole("button", { name: "Voice", exact: true }).click();
-    await expectVisible(page.getByText("Voice is managed from your account plan."));
+    assert(
+      (await page.getByRole("button", { name: "Voice", exact: true }).count()) === 0,
+      "chat still renders voice control",
+    );
     await page.getByRole("button", { name: "Chat settings" }).click();
     await expectVisible(page.getByRole("heading", { name: "Evolving profile" }));
     await expectVisible(page.getByRole("heading", { name: "Private tuning prompt" }));
@@ -323,14 +346,24 @@ try {
     const displayName = `Web Tester ${Date.now().toString().slice(-5)}`;
     await page.goto(`${WEB_BASE_URL}/app/settings`, { waitUntil: "load" });
     await page.getByLabel("Display name").fill(displayName);
-    await page.getByRole("button", { name: "Save profile" }).click();
+    await Promise.all([
+      page.waitForResponse(
+        (response) =>
+          response.url().includes("/api/v1/settings") &&
+          response.request().method() === "PATCH" &&
+          response.ok(),
+        { timeout: 15_000 },
+      ),
+      page.getByRole("button", { name: "Save profile" }).click(),
+    ]);
+    await expectVisible(page.getByText("Saved."));
     await waitForDisplayName(displayName);
 
     await page.getByRole("button", { name: "View plans" }).click();
     await expectVisible(page.getByRole("heading", { name: "Hana Plus" }));
 
     const switchCount = await page.locator('[role="switch"]').count();
-    assert(switchCount === 3, `expected 3 account switches, got ${switchCount}`);
+    assert(switchCount === 2, `expected 2 account switches, got ${switchCount}`);
 
     return "profile saves, plan scrolls, switches render";
   });
@@ -453,8 +486,19 @@ try {
   wireConsoleCapture(tabletPage);
 
   await check("tablet chat settings and admin metrics layout", async () => {
-    await tabletPage.goto(`${WEB_BASE_URL}/app/chat`, { waitUntil: "load" });
-    await tabletPage.locator(".chat-thread").first().click();
+    await tabletPage.goto(
+      `${WEB_BASE_URL}/app/chat?characterId=${encodeURIComponent(globalThis.createdCharacterId)}&new=1`,
+      { waitUntil: "load" },
+    );
+    await expectVisible(tabletPage.getByRole("heading", { name: characterName }));
+    await tabletPage
+      .getByLabel(`Message ${characterName}`)
+      .fill("Tablet settings smoke room for layout QA.");
+    await tabletPage.getByRole("button", { name: "Send message" }).click();
+    await tabletPage.waitForFunction(
+      () => new URL(window.location.href).searchParams.has("conversationId"),
+      { timeout: 60_000 },
+    );
     await expectVisible(tabletPage.getByRole("button", { name: "Chat settings", exact: true }));
     await tabletPage.getByRole("button", { name: "Chat settings", exact: true }).click();
     await expectVisible(tabletPage.getByRole("heading", { name: "Delete chat" }));
@@ -464,12 +508,12 @@ try {
     await screenshot(tabletPage, "chat-settings-tablet.png");
 
     await tabletPage.goto(`${WEB_BASE_URL}/app/admin`, { waitUntil: "domcontentloaded" });
-    await expectVisible(tabletPage.getByRole("heading", { name: "Daily product pulse" }));
-    await expectVisible(tabletPage.locator(".admin-day-card").first());
+    await expectVisible(tabletPage.getByRole("heading", { name: "Product pulse", exact: true }));
+    await expectVisible(tabletPage.locator(".admin-pulse-board").first());
     await assertNoHorizontalOverflow(tabletPage);
     await screenshot(tabletPage, "admin-tablet.png");
 
-    return "settings sheet is viewport-bound; admin day cards fit tablet";
+    return "settings sheet is viewport-bound; admin pulse bento fits tablet";
   });
 
   await tabletContext.close();

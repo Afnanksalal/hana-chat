@@ -18,6 +18,7 @@ import {
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { apiJson } from "./api";
+import { renderRoleplayPreview } from "./roleplay-preview";
 
 interface DashboardResponse {
   user: {
@@ -211,7 +212,9 @@ export default function AppHomePage() {
                 />
                 <span>
                   <strong>{conversation.character.name}</strong>
-                  <small>{conversation.lastMessage?.content ?? "No messages yet"}</small>
+                  <small>
+                    {renderRoleplayPreview(conversation.lastMessage?.content ?? "No messages yet")}
+                  </small>
                 </span>
                 <ArrowRight size={16} />
               </Link>
@@ -250,7 +253,7 @@ export default function AppHomePage() {
               <WalletCards size={18} />
               <span>
                 <strong>Creator wallet</strong>
-                <small>Paid unlocks, balances, and payout requests.</small>
+                <small>Monetization setup and payout readiness.</small>
               </span>
             </Link>
             <Link href="/app/discover">
@@ -264,7 +267,7 @@ export default function AppHomePage() {
               <ShieldCheck size={18} />
               <span>
                 <strong>Account controls</strong>
-                <small>Plan, 18+ access, voice, and memory.</small>
+                <small>Plan, 18+ access, memory, and profile.</small>
               </span>
             </Link>
             {isAdmin ? (

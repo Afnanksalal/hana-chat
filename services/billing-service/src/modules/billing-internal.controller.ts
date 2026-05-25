@@ -20,7 +20,6 @@ export class BillingInternalController implements OnModuleDestroy {
         "plans.id",
         "plans.monthly_message_limit",
         "plans.deep_memory_enabled",
-        "plans.voice_enabled",
         "plans.adult_mode_enabled",
         "plans.creator_paid_characters_enabled",
       ])
@@ -36,7 +35,6 @@ export class BillingInternalController implements OnModuleDestroy {
         monthlyMessageLimit: subscription.monthly_message_limit,
         dailyMessageLimit: null,
         deepMemoryEnabled: subscription.deep_memory_enabled,
-        voiceEnabled: subscription.voice_enabled,
         adultModeEnabled: subscription.adult_mode_enabled,
         creatorPaidCharactersEnabled: subscription.creator_paid_characters_enabled,
       };
@@ -48,7 +46,6 @@ export class BillingInternalController implements OnModuleDestroy {
         "id",
         "monthly_message_limit",
         "deep_memory_enabled",
-        "voice_enabled",
         "adult_mode_enabled",
         "creator_paid_characters_enabled",
       ])
@@ -60,7 +57,6 @@ export class BillingInternalController implements OnModuleDestroy {
       monthlyMessageLimit: freePlan.monthly_message_limit,
       dailyMessageLimit: 30,
       deepMemoryEnabled: freePlan.deep_memory_enabled,
-      voiceEnabled: freePlan.voice_enabled,
       adultModeEnabled: freePlan.adult_mode_enabled,
       creatorPaidCharactersEnabled: freePlan.creator_paid_characters_enabled,
     };

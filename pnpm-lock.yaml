@@ -124,9 +124,6 @@ importers:
       '@hana/errors':
         specifier: workspace:*
         version: link:../errors
-      libphonenumber-js:
-        specifier: ^1.12.31
-        version: 1.13.2
 
   packages/logger:
     dependencies:
@@ -251,6 +248,9 @@ importers:
       kysely:
         specifier: ^0.28.8
         version: 0.28.17
+      nodemailer:
+        specifier: ^8.0.8
+        version: 8.0.8
       reflect-metadata:
         specifier: ^0.2.2
         version: 0.2.2
@@ -261,6 +261,9 @@ importers:
         specifier: ^4.2.1
         version: 4.4.3
     devDependencies:
+      '@types/nodemailer':
+        specifier: ^8.0.0
+        version: 8.0.0
       tsx:
         specifier: ^4.21.0
         version: 4.22.3
@@ -1399,6 +1402,9 @@ packages:
   '@types/node@20.19.41':
     resolution: {integrity: sha512-ECymXOukMnOoVkC2bb1Vc/w/836DXncOg5m8Xj1RH7xSHZJWNYY6Zh7EH477vcnD5egKNNfy2RpNOmuChhFPgQ==}
 
+  '@types/nodemailer@8.0.0':
+    resolution: {integrity: sha512-fyf8jWULsCo0d0BuoQ75i6IeoHs47qcqxWc7yUdUcV0pOZGjUTTOvwdG1PRXUDqN/8A64yQdQdnA2pZgcdi+cA==}
+
   '@types/pg@8.20.0':
     resolution: {integrity: sha512-bEPFOaMAHTEP1EzpvHTbmwR8UsFyHSKsRisLIHVMXnpNefSbGA1bD6CVy+qKjGSqmZqNqBDV2azOBo8TgkcVow==}
 
@@ -2026,6 +2032,10 @@ packages:
         optional: true
       sass:
         optional: true
+
+  nodemailer@8.0.8:
+    resolution: {integrity: sha512-p+XsnzXGdtIHXUu2ugxdfG+eX2nehsGhMjW9h0CWj1BhE30hrFz0kh0yIM0/VjUgVsRrDj+80ZO+I1nSkGE4tA==}
+    engines: {node: '>=6.0.0'}
 
   obug@2.1.1:
     resolution: {integrity: sha512-uTqF9MuPraAQ+IsnPf366RG4cP9RtUi7MLO1N3KEc+wb0a6yKpeL0lmk2IB1jY5KHPAlTc6T/JRdC/YqxHNwkQ==}
@@ -2979,6 +2989,10 @@ snapshots:
     dependencies:
       undici-types: 6.21.0
 
+  '@types/nodemailer@8.0.0':
+    dependencies:
+      '@types/node': 20.19.41
+
   '@types/pg@8.20.0':
     dependencies:
       '@types/node': 20.19.41
@@ -3636,6 +3650,8 @@ snapshots:
     transitivePeerDependencies:
       - '@babel/core'
       - babel-plugin-macros
+
+  nodemailer@8.0.8: {}
 
   obug@2.1.1: {}
 
