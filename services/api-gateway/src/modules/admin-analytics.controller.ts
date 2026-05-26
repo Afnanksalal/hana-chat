@@ -7,6 +7,15 @@ import { normalizeMarketplaceStats } from "./marketplace-stats";
 import { requireAdmin } from "./session";
 
 type Db = Kysely<HanaDatabase>;
+type ServiceHealthStatus = "ok" | "degraded";
+
+interface ServiceBoundary {
+  name: string;
+  role: string;
+  port: number;
+  topics: string[];
+  healthUrl: string;
+}
 
 interface CountRow {
   count: number | string | null;
@@ -407,7 +416,7 @@ async function memorySystemSummary(db: Db, since: Date) {
 }
 
 async function marketplaceActivitySummary(db: Db, since: Date) {
-  const [events, publicCharacters, pendingReviewCharacters, ratings] = await Promise.all([
+  const [events, characterInventory, ratings] = await Promise.all([
     db
       .selectFrom("creator.character_engagement_events")
       .select([
@@ -423,17 +432,36 @@ async function marketplaceActivitySummary(db: Db, since: Date) {
       ])
       .where("created_at", ">=", since)
       .executeTakeFirstOrThrow(),
-    db
-      .selectFrom("creator.characters")
-      .select((eb) => eb.fn.countAll<number>().as("count"))
-      .where("visibility", "=", "public")
-      .where("moderation_status", "=", "approved")
-      .executeTakeFirst(),
-    db
-      .selectFrom("creator.characters")
-      .select((eb) => eb.fn.countAll<number>().as("count"))
-      .where("moderation_status", "=", "pending_review")
-      .executeTakeFirst(),
+    sql<{
+      total_characters: number | string | null;
+      public_characters: number | string | null;
+      private_characters: number | string | null;
+      pending_review_characters: number | string | null;
+      adult_characters: number | string | null;
+    }>`
+      SELECT
+        COUNT(*) FILTER (
+          WHERE characters.moderation_status <> 'rejected'
+        )::integer AS total_characters,
+        COUNT(*) FILTER (
+          WHERE characters.visibility = 'public'
+            AND characters.moderation_status = 'approved'
+        )::integer AS public_characters,
+        COUNT(*) FILTER (
+          WHERE characters.visibility <> 'public'
+            AND characters.moderation_status <> 'rejected'
+        )::integer AS private_characters,
+        COUNT(*) FILTER (
+          WHERE characters.moderation_status = 'pending_review'
+        )::integer AS pending_review_characters,
+        COUNT(*) FILTER (
+          WHERE versions.rating IN ('mature', 'adult')
+            AND characters.moderation_status <> 'rejected'
+        )::integer AS adult_characters
+      FROM creator.characters AS characters
+      LEFT JOIN creator.character_versions AS versions
+        ON versions.id = characters.current_version_id
+    `.execute(db),
     db
       .selectFrom("creator.character_ratings")
       .select([
@@ -452,14 +480,35 @@ async function marketplaceActivitySummary(db: Db, since: Date) {
     messages: toInt(events.messages),
     likes: toInt(events.likes),
     saves: toInt(events.saves),
-    publicCharacters: toInt(publicCharacters?.count),
-    pendingReviewCharacters: toInt(pendingReviewCharacters?.count),
+    totalCharacters: toInt(characterInventory.rows[0]?.total_characters),
+    publicCharacters: toInt(characterInventory.rows[0]?.public_characters),
+    privateCharacters: toInt(characterInventory.rows[0]?.private_characters),
+    pendingReviewCharacters: toInt(characterInventory.rows[0]?.pending_review_characters),
+    adultCharacters: toInt(characterInventory.rows[0]?.adult_characters),
     ratings: toInt(ratings.count),
     averageRating: toFloat(ratings.average),
   };
 }
 
 async function topMarketplaceCharacters(db: Db, since: Date) {
+  const messageCounts = db
+    .selectFrom("chat.messages")
+    .select(["character_id", sql<number>`COUNT(*)::integer`.as("messages")])
+    .where("created_at", ">=", since)
+    .where("role", "=", "user")
+    .groupBy("character_id")
+    .as("message_counts");
+  const purchaseCounts = db
+    .selectFrom("billing.character_purchases")
+    .select([
+      "character_id",
+      sql<number>`COUNT(*)::integer`.as("paid_unlocks"),
+      sql<number>`COALESCE(SUM(amount_cents), 0)::integer`.as("revenue_cents"),
+    ])
+    .where("created_at", ">=", since)
+    .where("status", "=", "paid")
+    .groupBy("character_id")
+    .as("purchase_counts");
   const characters = await db
     .selectFrom("creator.characters as characters")
     .innerJoin("identity.users as creators", "creators.id", "characters.creator_user_id")
@@ -468,6 +517,8 @@ async function topMarketplaceCharacters(db: Db, since: Date) {
       "versions.id",
       "characters.current_version_id",
     )
+    .leftJoin(messageCounts, "message_counts.character_id", "characters.id")
+    .leftJoin(purchaseCounts, "purchase_counts.character_id", "characters.id")
     .select([
       "characters.id",
       "characters.name",
@@ -475,79 +526,46 @@ async function topMarketplaceCharacters(db: Db, since: Date) {
       "characters.marketplace_stats_json",
       "characters.price_cents",
       "characters.monetization_enabled",
+      "characters.visibility",
+      "characters.moderation_status",
       "creators.display_name as creator_display_name",
       "versions.rating",
+      sql<number>`COALESCE(message_counts.messages, 0)::integer`.as("messages"),
+      sql<number>`COALESCE(purchase_counts.paid_unlocks, 0)::integer`.as("paid_unlocks"),
+      sql<number>`COALESCE(purchase_counts.revenue_cents, 0)::integer`.as("revenue_cents"),
       sql<number>`COALESCE((characters.marketplace_stats_json->>'trendingScore')::double precision, 0)`.as(
         "trending_score",
       ),
     ])
-    .where("characters.visibility", "=", "public")
-    .where("characters.moderation_status", "=", "approved")
+    .where("characters.moderation_status", "!=", "rejected")
+    .orderBy(sql<number>`COALESCE(message_counts.messages, 0)`, "desc")
     .orderBy("trending_score", "desc")
-    .orderBy("characters.published_at", "desc")
-    .limit(10)
+    .orderBy("characters.updated_at", "desc")
+    .limit(24)
     .execute();
-  const characterIds = characters.map((character) => character.id);
-  const [messageRows, purchaseRows] =
-    characterIds.length > 0
-      ? await Promise.all([
-          db
-            .selectFrom("chat.messages")
-            .select(["character_id", sql<number>`COUNT(*)::integer`.as("messages")])
-            .where("character_id", "in", characterIds)
-            .where("created_at", ">=", since)
-            .where("role", "=", "user")
-            .groupBy("character_id")
-            .execute(),
-          db
-            .selectFrom("billing.character_purchases")
-            .select([
-              "character_id",
-              sql<number>`COUNT(*)::integer`.as("paid_unlocks"),
-              sql<number>`COALESCE(SUM(amount_cents), 0)::integer`.as("revenue_cents"),
-            ])
-            .where("character_id", "in", characterIds)
-            .where("created_at", ">=", since)
-            .where("status", "=", "paid")
-            .groupBy("character_id")
-            .execute(),
-        ])
-      : [[], []];
-  const messagesByCharacter = new Map(
-    messageRows.map((row) => [row.character_id, toInt(row.messages)]),
-  );
-  const purchasesByCharacter = new Map(
-    purchaseRows.map((row) => [
-      row.character_id,
-      {
-        paidUnlocks: toInt(row.paid_unlocks),
-        revenueCents: toInt(row.revenue_cents),
-      },
-    ]),
-  );
 
   return characters.map((character) => {
     const stats = normalizeMarketplaceStats(character.marketplace_stats_json);
-    const purchases = purchasesByCharacter.get(character.id) ?? {
-      paidUnlocks: 0,
-      revenueCents: 0,
-    };
+    const rating = character.rating ?? "teen";
 
     return {
       id: character.id,
       name: character.name,
       creatorName: character.creator_display_name ?? "Creator",
       category: character.marketplace_category,
-      rating: character.rating ?? "teen",
+      rating,
+      visibility: character.visibility,
+      moderationStatus: character.moderation_status,
+      isAdult: rating === "mature" || rating === "adult",
       monetizationEnabled: character.monetization_enabled,
       priceCents: character.price_cents,
       trendingScore: stats.trendingScore,
       ratingAverage: stats.ratingAverage,
       ratingCount: stats.ratingCount,
       interactions: stats.interactions,
-      messages: messagesByCharacter.get(character.id) ?? 0,
-      paidUnlocks: purchases.paidUnlocks,
-      revenueCents: purchases.revenueCents,
+      messages: toInt(character.messages),
+      paidUnlocks: toInt(character.paid_unlocks),
+      revenueCents: toInt(character.revenue_cents),
     };
   });
 }
@@ -835,60 +853,88 @@ async function serviceBoundaryHealth(db: Db, config: ReturnType<typeof loadConfi
       "Public API and active orchestration path",
       config.API_GATEWAY_PORT,
       [],
+      `http://127.0.0.1:${config.API_GATEWAY_PORT}`,
     ),
-    boundary("identity-service", "Phone auth and account identity", config.IDENTITY_SERVICE_PORT, [
-      "identity.phone.verified",
-    ]),
-    boundary("risk-service", "Risk scoring and abuse control", config.RISK_SERVICE_PORT, [
-      "risk.session.scored",
-    ]),
+    boundary(
+      "identity-service",
+      "Email auth and account identity",
+      config.IDENTITY_SERVICE_PORT,
+      ["identity.email.verified"],
+      config.IDENTITY_SERVICE_URL,
+    ),
+    boundary(
+      "risk-service",
+      "Risk scoring and abuse control",
+      config.RISK_SERVICE_PORT,
+      ["risk.session.scored"],
+      config.RISK_SERVICE_URL,
+    ),
     boundary(
       "chat-orchestrator",
       "Chat turn planning and model routing",
       config.CHAT_ORCHESTRATOR_PORT,
       ["chat.turn.created", "chat.turn.completed"],
+      config.CHAT_ORCHESTRATOR_URL,
     ),
-    boundary("memory-service", "Memory scoring and write policy", config.MEMORY_SERVICE_PORT, [
-      "memory.extraction.requested",
-      "memory.qdrant.upsert.requested",
-      "memory.neo4j.upsert.requested",
-    ]),
-    boundary("retrieval-service", "Memory and character reranking", config.RETRIEVAL_SERVICE_PORT, [
-      "creator.character.qdrant.upsert.requested",
-    ]),
-    boundary("graph-service", "Neo4j relationship projection", config.GRAPH_SERVICE_PORT, [
-      "memory.neo4j.upsert.requested",
-      "creator.character.neo4j.upsert.requested",
-    ]),
+    boundary(
+      "memory-service",
+      "Memory scoring and write policy",
+      config.MEMORY_SERVICE_PORT,
+      [
+        "memory.extraction.requested",
+        "memory.qdrant.upsert.requested",
+        "memory.neo4j.upsert.requested",
+      ],
+      config.MEMORY_SERVICE_URL,
+    ),
+    boundary(
+      "retrieval-service",
+      "Memory and character reranking",
+      config.RETRIEVAL_SERVICE_PORT,
+      ["creator.character.qdrant.upsert.requested"],
+      config.RETRIEVAL_SERVICE_URL,
+    ),
+    boundary(
+      "graph-service",
+      "Neo4j relationship projection",
+      config.GRAPH_SERVICE_PORT,
+      ["memory.neo4j.upsert.requested", "creator.character.neo4j.upsert.requested"],
+      config.GRAPH_SERVICE_URL,
+    ),
     boundary(
       "moderation-service",
       "Safety classification and review",
       config.MODERATION_SERVICE_PORT,
       ["moderation.review.requested"],
+      config.MODERATION_SERVICE_URL,
     ),
     boundary(
       "billing-service",
       "Checkout, webhooks, wallets, payouts",
       config.BILLING_SERVICE_PORT,
       ["billing.usage.metered"],
+      config.BILLING_SERVICE_URL,
     ),
     boundary(
       "creator-service",
       "Character marketplace and publishing",
       config.CREATOR_SERVICE_PORT,
       ["creator.character.qdrant.upsert.requested", "creator.character.neo4j.upsert.requested"],
+      config.CREATOR_SERVICE_URL,
     ),
     boundary(
       "notification-service",
-      "SMS, email, and push delivery",
+      "Email and push delivery",
       config.NOTIFICATION_SERVICE_PORT,
       ["notification.delivery.requested"],
+      config.NOTIFICATION_SERVICE_URL,
     ),
     boundary(
       "batch-orchestrator",
       "Outbox leases and batch coordination",
       config.BATCH_ORCHESTRATOR_PORT,
       [],
+      config.BATCH_ORCHESTRATOR_URL,
     ),
     boundary(
       "worker-service",
@@ -901,10 +947,14 @@ async function serviceBoundaryHealth(db: Db, config: ReturnType<typeof loadConfi
         "creator.character.qdrant.upsert.requested",
         "creator.character.neo4j.upsert.requested",
       ],
+      config.WORKER_SERVICE_URL,
     ),
   ];
+  const healthChecks = await Promise.all(
+    boundaries.map((item) => checkServiceHealth(new URL("/health", item.healthUrl).toString())),
+  );
 
-  return boundaries.map((item) => {
+  return boundaries.map((item, index) => {
     const openEvents = item.topics.reduce((sum, topic) => {
       const statuses = topicStatusCounts.get(topic) ?? {};
 
@@ -917,22 +967,72 @@ async function serviceBoundaryHealth(db: Db, config: ReturnType<typeof loadConfi
 
       return sum + (statuses["dead_letter"] ?? 0);
     }, 0);
+    const health = healthChecks[index] ?? {
+      healthStatus: "degraded" as const,
+      healthLatencyMs: 0,
+      healthDetail: "health check did not run",
+    };
 
     return {
-      ...item,
+      name: item.name,
+      role: item.role,
+      port: item.port,
+      topics: item.topics,
       openEvents,
       deadLetters,
-      status: deadLetters > 0 ? "needs_attention" : openEvents > 50 ? "backlog" : "ready",
+      ...health,
+      status:
+        health.healthStatus === "degraded" || deadLetters > 0
+          ? "needs_attention"
+          : openEvents > 50
+            ? "backlog"
+            : "ready",
     };
   });
 }
 
-function boundary(name: string, role: string, port: number, topics: string[]) {
+async function checkServiceHealth(url: string): Promise<{
+  healthStatus: ServiceHealthStatus;
+  healthLatencyMs: number;
+  healthDetail?: string;
+}> {
+  const startedAt = Date.now();
+
+  try {
+    const response = await fetch(url, { signal: AbortSignal.timeout(1_500) });
+    const payload = (await response.json().catch(() => null)) as { status?: unknown } | null;
+    const reportedStatus = payload?.status === "degraded" ? "degraded" : "ok";
+    const healthStatus = response.ok && reportedStatus === "ok" ? "ok" : "degraded";
+
+    return {
+      healthStatus,
+      healthLatencyMs: Date.now() - startedAt,
+      ...(healthStatus === "degraded"
+        ? { healthDetail: response.ok ? "service reported degraded" : `HTTP ${response.status}` }
+        : {}),
+    };
+  } catch (error) {
+    return {
+      healthStatus: "degraded",
+      healthLatencyMs: Date.now() - startedAt,
+      healthDetail: error instanceof Error ? error.message : "health check failed",
+    };
+  }
+}
+
+function boundary(
+  name: string,
+  role: string,
+  port: number,
+  topics: string[],
+  healthUrl: string,
+): ServiceBoundary {
   return {
     name,
     role,
     port,
     topics,
+    healthUrl,
   };
 }
 

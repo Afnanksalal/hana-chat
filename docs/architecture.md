@@ -20,8 +20,8 @@ flowchart LR
   Gateway --> Qdrant["Qdrant vector retrieval"]
   Gateway --> Xai["xAI chat completions"]
   Gateway --> Redis["Redis cache / rate state"]
-  Gateway --> Razorpay["Razorpay Orders"]
-  Gateway --> RazorpayX["RazorpayX Payouts"]
+  Gateway --> Mail["SMTP email"]
+  Gateway --> Payments["Payment providers (flag gated)"]
   Gateway --> Redpanda["Redpanda event log"]
   Gateway --> Temporal["Temporal workflows"]
   Gateway --> ClickHouse["ClickHouse analytics"]
@@ -72,24 +72,24 @@ sequenceDiagram
   participant Web as Next.js app
   participant API as API Gateway
   participant DB as Postgres ledger
-  participant Razorpay as Razorpay Orders
+  participant Payments as Payment provider
   participant Admin as Admin dashboard
-  participant RazorpayX as RazorpayX Payouts
+  participant Payouts as Payout provider
 
   Web->>API: POST /v1/monetization/character-purchases
   API->>DB: Check paid unlock and 30-message character trial
   API-->>Web: Open trial chat while trial remains
   Web->>API: POST /v1/monetization/character-purchases
   API->>DB: Create idempotent purchase row after trial exhaustion
-  API->>Razorpay: Create checkout order when provider is live
-  Razorpay-->>Web: Checkout completes
+  API->>Payments: Create checkout order when provider is live and monetization enabled
+  Payments-->>Web: Checkout completes
   Web->>API: POST /v1/monetization/character-purchases/verify
   API->>DB: Verify signature, mark paid, write creator ledger
   API->>DB: Hold net earnings until 7-day release window
   Web->>API: POST /v1/monetization/payouts
   API->>DB: Reserve available wallet balance
   Admin->>API: POST /v1/admin/monetization/payouts/:id/process
-  API->>RazorpayX: Send idempotent payout when selected
+  API->>Payouts: Send idempotent payout when selected
   API->>DB: Mark paid, processing, or failed and reconcile wallet
 ```
 
@@ -110,7 +110,7 @@ flowchart LR
 Admin analytics is guarded by `identity.user_roles.role = admin` and reads real product data:
 users, sessions, conversations, messages, model calls, safety decisions, memories, marketplace
 engagement, billing, webhooks, outbox events, and audit rows. The dashboard avoids secrets, hidden
-prompts, raw phone data, provider credentials, and internal model payloads.
+prompts, raw identity data, provider credentials, and internal model payloads.
 
 ## Source Boundaries
 
@@ -163,7 +163,7 @@ For a Portainer-friendly explanation of every running container, see
 - Production CORS origins are validated through `WEB_ORIGIN` and every entry in `WEB_ORIGINS`; localhost or non-HTTPS origins fail fast in production.
 - Production chat responses do not expose internal model-routing data to clients.
 - Gateway-to-service calls are private Docker-network calls. Critical boundaries use conservative
-  canonical fallbacks: identity falls back to local phone hashing, risk to `risk-core`, chat planning
+  canonical fallbacks: email identity is coordinated by the gateway, risk falls back to `risk-core`, chat planning
   to `model-router`, memory policy to `memory-core`, billing to Postgres, moderation to
   `safety-core`, graph to exact-scope Postgres memories, retrieval to deterministic local ranking,
   and batch leasing to direct outbox leasing.

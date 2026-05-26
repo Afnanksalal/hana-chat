@@ -4,7 +4,7 @@ export const EventTopicSchema = z.enum([
   "chat.turn.created",
   "chat.turn.completed",
   "chat.message.persisted",
-  "identity.phone.verified",
+  "identity.email.verified",
   "risk.session.scored",
   "risk.account.cluster.detected",
   "memory.extraction.requested",

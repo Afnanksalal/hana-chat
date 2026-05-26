@@ -12,7 +12,7 @@ export async function POST(request: Request) {
   try {
     const body = (await request.json()) as unknown;
     const headers = forwardAuthHeaders(request);
-    const response = await fetch(new URL("/v1/auth/phone/start", apiBaseUrl), {
+    const response = await fetch(new URL("/v1/auth/email/start", apiBaseUrl), {
       method: "POST",
       headers,
       body: JSON.stringify(body),

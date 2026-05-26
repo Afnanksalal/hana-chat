@@ -7,8 +7,9 @@ import {
   Banknote,
   BarChart3,
   Brain,
-  CalendarDays,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
   Clock,
   Database,
   DollarSign,
@@ -25,6 +26,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { apiJson, money } from "../api";
+import { renderRoleplayPreview } from "../roleplay-preview";
 
 interface AdminMonetizationResponse {
   summary: {
@@ -67,6 +69,28 @@ interface AdminMonetizationResponse {
     pendingCents: number;
     lifetimeEarnedCents: number;
     lifetimePaidCents: number;
+  }>;
+}
+
+interface AdminCharacterReviewsResponse {
+  characters: Array<{
+    id: string;
+    name: string;
+    creatorName: string;
+    description: string;
+    marketplacePreview: string;
+    category: string;
+    rating: string;
+    isAdult: boolean;
+    tags: string[];
+    traits: string[];
+    speakingStyle: string | null;
+    greeting: string;
+    visibility: string;
+    moderationStatus: string;
+    avatarUrl: string | null;
+    coverImageUrl: string | null;
+    updatedAt: string;
   }>;
 }
 
@@ -119,8 +143,11 @@ interface AdminAnalyticsResponse {
     messages: number;
     likes: number;
     saves: number;
+    totalCharacters: number;
     publicCharacters: number;
+    privateCharacters: number;
     pendingReviewCharacters: number;
+    adultCharacters: number;
     ratings: number;
     averageRating: number;
     topCharacters: Array<{
@@ -129,6 +156,9 @@ interface AdminAnalyticsResponse {
       creatorName: string;
       category: string;
       rating: string;
+      visibility: string;
+      moderationStatus: string;
+      isAdult: boolean;
       monetizationEnabled: boolean;
       priceCents: number;
       trendingScore: number;
@@ -214,6 +244,9 @@ interface AdminAnalyticsResponse {
     topics: string[];
     openEvents: number;
     deadLetters: number;
+    healthStatus: "ok" | "degraded";
+    healthLatencyMs: number;
+    healthDetail?: string;
     status: "ready" | "backlog" | "needs_attention";
   }>;
   auditTrail: Array<{
@@ -239,6 +272,10 @@ const emptyAdmin: AdminMonetizationResponse = {
   pendingPayouts: [],
   pendingProfiles: [],
   topCreators: [],
+};
+
+const emptyReviews: AdminCharacterReviewsResponse = {
+  characters: [],
 };
 
 const emptyAnalytics: AdminAnalyticsResponse = {
@@ -279,8 +316,11 @@ const emptyAnalytics: AdminAnalyticsResponse = {
     messages: 0,
     likes: 0,
     saves: 0,
+    totalCharacters: 0,
     publicCharacters: 0,
+    privateCharacters: 0,
     pendingReviewCharacters: 0,
+    adultCharacters: 0,
     ratings: 0,
     averageRating: 0,
     topCharacters: [],
@@ -340,12 +380,59 @@ const emptyAnalytics: AdminAnalyticsResponse = {
   auditTrail: [],
 };
 
-type AdminTab = "analytics" | "ops" | "safety";
+type AdminTab = "analytics" | "reviews" | "ops" | "safety";
+type PulseDay = AdminAnalyticsResponse["growth"]["timeSeries"][number];
+type MarketplaceCharacter = AdminAnalyticsResponse["marketplace"]["topCharacters"][number];
+
+const pulseMetrics: Array<{
+  id: string;
+  label: string;
+  shortLabel: string;
+  color: string;
+  getValue: (day: PulseDay) => number;
+}> = [
+  {
+    id: "messages",
+    label: "Messages",
+    shortLabel: "Msgs",
+    color: "#ff1f6d",
+    getValue: (day) => day.messages,
+  },
+  {
+    id: "marketplaceInteractions",
+    label: "Marketplace",
+    shortLabel: "Market",
+    color: "#b81758",
+    getValue: (day) => day.marketplaceInteractions,
+  },
+  {
+    id: "modelCalls",
+    label: "Model calls",
+    shortLabel: "Model",
+    color: "#f6a6c5",
+    getValue: (day) => day.modelCalls,
+  },
+  {
+    id: "safetyBlocks",
+    label: "Safety blocks",
+    shortLabel: "Safety",
+    color: "#f59e0b",
+    getValue: (day) => day.safetyBlocks,
+  },
+];
+
+function marketplaceCharacterMeta(character: MarketplaceCharacter) {
+  const adultLabel = character.isAdult ? " - 18+" : "";
+  return `${character.creatorName} - ${character.category} - ${character.rating}${adultLabel} - ${character.visibility}/${character.moderationStatus}`;
+}
 
 export default function AdminPage() {
   const [payload, setPayload] = useState<AdminMonetizationResponse>(emptyAdmin);
   const [analytics, setAnalytics] = useState<AdminAnalyticsResponse>(emptyAnalytics);
+  const [reviews, setReviews] = useState<AdminCharacterReviewsResponse>(emptyReviews);
   const [activeTab, setActiveTab] = useState<AdminTab>("analytics");
+  const [showAllBoundaries, setShowAllBoundaries] = useState(false);
+  const [hasLiveData, setHasLiveData] = useState(false);
   const [status, setStatus] = useState("Loading admin command center...");
 
   useEffect(() => {
@@ -354,13 +441,16 @@ export default function AdminPage() {
 
   async function load() {
     try {
-      const [analyticsData, monetizationData] = await Promise.all([
+      const [analyticsData, monetizationData, reviewData] = await Promise.all([
         apiJson<AdminAnalyticsResponse>("/api/v1/admin/analytics?rangeDays=30"),
         apiJson<AdminMonetizationResponse>("/api/v1/admin/monetization"),
+        apiJson<AdminCharacterReviewsResponse>("/api/v1/admin/characters/reviews"),
       ]);
 
       setAnalytics(analyticsData);
       setPayload(monetizationData);
+      setReviews(reviewData);
+      setHasLiveData(true);
       setStatus("");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Admin dashboard unavailable.");
@@ -411,6 +501,28 @@ export default function AdminPage() {
     }
   }
 
+  async function reviewCharacter(characterId: string, action: "approve" | "reject") {
+    if (
+      action === "reject" &&
+      !window.confirm("Reject this character and keep it out of Discover?")
+    ) {
+      return;
+    }
+
+    setStatus(action === "approve" ? "Approving character..." : "Rejecting character...");
+
+    try {
+      await apiJson(`/api/v1/admin/characters/${encodeURIComponent(characterId)}/review`, {
+        method: "POST",
+        body: JSON.stringify({ action }),
+      });
+      await load();
+      setStatus(action === "approve" ? "Character approved." : "Character rejected.");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Could not review character.");
+    }
+  }
+
   const topKpis = [
     {
       label: "Active users",
@@ -451,19 +563,31 @@ export default function AdminPage() {
   ];
   const tabs: Array<{ id: AdminTab; label: string; icon: typeof Activity }> = [
     { id: "analytics", label: "Analytics", icon: BarChart3 },
+    { id: "reviews", label: "Reviews", icon: UserCheck },
     { id: "ops", label: "Payout ops", icon: WalletCards },
     { id: "safety", label: "Safety", icon: AlertTriangle },
   ];
-  const maxSeriesValue = useMemo(
-    () =>
-      Math.max(
-        1,
-        ...analytics.growth.timeSeries.map(
-          (day) => day.messages + day.marketplaceInteractions + day.modelCalls,
-        ),
-      ),
-    [analytics.growth.timeSeries],
-  );
+  const boundaryStats = useMemo(() => {
+    const statusCounts = analytics.boundaries.reduce(
+      (counts, boundary) => ({
+        ...counts,
+        [boundary.status]: counts[boundary.status] + 1,
+      }),
+      { ready: 0, backlog: 0, needs_attention: 0 },
+    );
+
+    return {
+      ...statusCounts,
+      openEvents: analytics.boundaries.reduce((sum, boundary) => sum + boundary.openEvents, 0),
+      deadLetters: analytics.boundaries.reduce((sum, boundary) => sum + boundary.deadLetters, 0),
+    };
+  }, [analytics.boundaries]);
+  const visibleBoundaries = showAllBoundaries
+    ? analytics.boundaries
+    : analytics.boundaries.slice(0, 6);
+  const safetyDecisionTotal = Math.max(0, analytics.safety.decisions);
+  const safetyActionMax = Math.max(1, ...analytics.safety.actions.map((item) => item.count));
+  const safetyCategoryMax = Math.max(1, ...analytics.safety.categories.map((item) => item.count));
 
   return (
     <div className="app-page admin-page">
@@ -496,7 +620,13 @@ export default function AdminPage() {
         ))}
       </nav>
 
-      {activeTab === "analytics" ? (
+      {!hasLiveData ? (
+        <section className="admin-panel compact-empty">
+          <EmptyState icon={Activity} title="Loading live admin data" />
+        </section>
+      ) : null}
+
+      {hasLiveData && activeTab === "analytics" ? (
         <>
           <section className="admin-kpi-grid" aria-label="Product overview">
             {topKpis.map((card) => (
@@ -509,88 +639,59 @@ export default function AdminPage() {
             ))}
           </section>
 
-          <section className="admin-analytics-grid">
-            <article className="admin-panel wide">
-              <div className="panel-heading split">
+          <section className="admin-overview-grid">
+            <article className="admin-panel admin-pulse-panel">
+              <div className="panel-heading split admin-pulse-heading">
                 <div>
                   <span className="section-label">
-                    <CalendarDays size={15} /> Last {analytics.rangeDays} days
+                    <BarChart3 size={15} /> Last {analytics.rangeDays} days
                   </span>
-                  <h2>Daily product pulse</h2>
+                  <h2>Product pulse</h2>
                 </div>
                 <small>Updated {formatTime(analytics.generatedAt)}</small>
               </div>
-              <div className="admin-day-pulse premium-scroll" role="list">
-                {analytics.growth.timeSeries.map((day) => {
-                  const total = day.messages + day.marketplaceInteractions + day.modelCalls;
-                  const intensity = Math.max(4, Math.round((total / maxSeriesValue) * 100));
-
-                  return (
-                    <article
-                      aria-label={`${day.day}: ${day.messages} messages, ${day.marketplaceInteractions} marketplace interactions, ${day.modelCalls} model calls`}
-                      className={
-                        total === maxSeriesValue ? "admin-day-card peak" : "admin-day-card"
-                      }
-                      key={day.day}
-                      role="listitem"
-                    >
-                      <div className="admin-day-top">
-                        <span>{weekdayLabel(day.day)}</span>
-                        <strong>{shortDate(day.day)}</strong>
-                      </div>
-                      <div className="admin-day-meter" aria-hidden="true">
-                        <span style={{ width: `${intensity}%` }} />
-                      </div>
-                      <div className="admin-day-stats">
-                        <span>
-                          <i /> {day.messages.toLocaleString()} msgs
-                        </span>
-                        <span>
-                          <b /> {day.marketplaceInteractions.toLocaleString()} market
-                        </span>
-                        <span>
-                          <em /> {day.modelCalls.toLocaleString()} model
-                        </span>
-                      </div>
-                      {day.revenueCents > 0 ? (
-                        <small>{money(day.revenueCents, "USD")} revenue</small>
-                      ) : null}
-                    </article>
-                  );
-                })}
-              </div>
-              <div className="admin-chart-legend">
-                <span>
-                  <i /> Messages
-                </span>
-                <span>
-                  <b /> Marketplace
-                </span>
-                <span>
-                  <em /> Model calls
-                </span>
-              </div>
+              <ProductPulse data={analytics.growth.timeSeries} metrics={pulseMetrics} />
             </article>
 
-            <article className="admin-panel">
-              <div className="panel-heading">
-                <span className="section-label">
-                  <UsersRound size={15} /> Growth
-                </span>
-                <h2>Users and plans</h2>
-              </div>
-              <MetricLine label="Total users" value={analytics.kpis.totalUsers} />
-              <MetricLine label="New users" value={analytics.kpis.newUsers} />
-              <MetricLine label="Active rooms" value={analytics.kpis.activeConversations} />
-              <div className="admin-pill-list">
-                {analytics.growth.planDistribution.map((plan) => (
-                  <span key={plan.planId}>
-                    {plan.planId} <b>{plan.users}</b>
+            <aside className="admin-side-stack" aria-label="Core operating groups">
+              <article className="admin-panel compact">
+                <div className="panel-heading">
+                  <span className="section-label">
+                    <UsersRound size={15} /> Growth
                   </span>
-                ))}
-              </div>
-            </article>
+                  <h2>Users and plans</h2>
+                </div>
+                <MetricLine label="Total users" value={analytics.kpis.totalUsers} />
+                <MetricLine label="New users" value={analytics.kpis.newUsers} />
+                <MetricLine label="Active rooms" value={analytics.kpis.activeConversations} />
+                <div className="admin-pill-list">
+                  {analytics.growth.planDistribution.map((plan) => (
+                    <span key={plan.planId}>
+                      {plan.planId} <b>{plan.users}</b>
+                    </span>
+                  ))}
+                </div>
+              </article>
 
+              <article className="admin-panel compact">
+                <div className="panel-heading">
+                  <span className="section-label">
+                    <Activity size={15} /> Queue
+                  </span>
+                  <h2>Outbox health</h2>
+                </div>
+                <MetricLine label="Published in 24h" value={analytics.queues.published24h} />
+                <MetricLine label="Failed" value={analytics.queues.failed} />
+                <MetricLine label="Dead letters" value={analytics.queues.deadLetter} />
+                <MetricLine
+                  label="Oldest open"
+                  value={formatDuration(analytics.queues.oldestOpenAgeSeconds)}
+                />
+              </article>
+            </aside>
+          </section>
+
+          <section className="admin-bento-grid">
             <article className="admin-panel">
               <div className="panel-heading">
                 <span className="section-label">
@@ -615,16 +716,18 @@ export default function AdminPage() {
                   </span>
                   <h2>Characters pulling attention</h2>
                 </div>
-                <small>{analytics.marketplace.publicCharacters} public</small>
+                <small>
+                  {analytics.marketplace.totalCharacters.toLocaleString()} total |{" "}
+                  {analytics.marketplace.publicCharacters.toLocaleString()} public |{" "}
+                  {analytics.marketplace.adultCharacters.toLocaleString()} 18+
+                </small>
               </div>
               <div className="admin-table compact-table">
                 {analytics.marketplace.topCharacters.map((character) => (
                   <div className="admin-table-row" key={character.id}>
                     <span>
                       <strong>{character.name}</strong>
-                      <small>
-                        {character.creatorName} - {character.category} - {character.rating}
-                      </small>
+                      <small>{marketplaceCharacterMeta(character)}</small>
                     </span>
                     <b>{character.messages.toLocaleString()} msgs</b>
                     <b>{money(character.revenueCents, "USD")}</b>
@@ -637,21 +740,47 @@ export default function AdminPage() {
               </div>
             </article>
 
-            <article className="admin-panel">
-              <div className="panel-heading">
-                <span className="section-label">
-                  <Server size={15} /> Boundaries
-                </span>
-                <h2>Service pressure</h2>
+            <article className="admin-panel wide">
+              <div className="panel-heading split">
+                <div>
+                  <span className="section-label">
+                    <Server size={15} /> Boundaries
+                  </span>
+                  <h2>Service pressure</h2>
+                </div>
+                <button
+                  className="secondary-action compact icon-right"
+                  type="button"
+                  onClick={() => setShowAllBoundaries((current) => !current)}
+                >
+                  {showAllBoundaries ? "Show less" : "Show all"}
+                  {showAllBoundaries ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+                </button>
               </div>
-              <div className="boundary-list">
-                {analytics.boundaries.map((boundary) => (
+              <div className="admin-pressure-summary">
+                <span>
+                  Ready <b>{boundaryStats.ready}</b>
+                </span>
+                <span>
+                  Backlog <b>{boundaryStats.backlog}</b>
+                </span>
+                <span>
+                  Attention <b>{boundaryStats.needs_attention}</b>
+                </span>
+                <span>
+                  Open events <b>{boundaryStats.openEvents}</b>
+                </span>
+              </div>
+              <div className="boundary-list compact">
+                {visibleBoundaries.map((boundary) => (
                   <div className="boundary-row" key={boundary.name}>
                     <span className={`boundary-dot ${boundary.status}`} />
                     <span>
                       <strong>{boundary.name}</strong>
                       <small>
-                        {boundary.openEvents} open - {boundary.deadLetters} dead
+                        {boundary.healthStatus === "ok" ? "live" : "degraded"} -{" "}
+                        {boundary.healthLatencyMs}ms - {boundary.openEvents} open -{" "}
+                        {boundary.deadLetters} dead
                       </small>
                     </span>
                   </div>
@@ -662,23 +791,30 @@ export default function AdminPage() {
             <article className="admin-panel">
               <div className="panel-heading">
                 <span className="section-label">
-                  <Activity size={15} /> Queue
+                  <Gauge size={15} /> Model
                 </span>
-                <h2>Outbox health</h2>
+                <h2>Model health</h2>
               </div>
-              <MetricLine label="Published in 24h" value={analytics.queues.published24h} />
-              <MetricLine label="Failed" value={analytics.queues.failed} />
-              <MetricLine label="Dead letters" value={analytics.queues.deadLetter} />
+              <MetricLine label="Calls" value={analytics.modelHealth.calls} />
+              <MetricLine label="P95 latency" value={`${analytics.modelHealth.p95LatencyMs}ms`} />
+              <MetricLine label="Output tokens" value={analytics.modelHealth.outputTokens} />
               <MetricLine
-                label="Oldest open"
-                value={formatDuration(analytics.queues.oldestOpenAgeSeconds)}
+                label="Est. cost"
+                value={`$${analytics.modelHealth.estimatedCostUsd.toFixed(4)}`}
               />
+              <div className="admin-pill-list stacked">
+                {analytics.modelHealth.routes.slice(0, 3).map((route) => (
+                  <span key={`${route.provider}:${route.model}`}>
+                    {route.model} <b>{route.calls}</b>
+                  </span>
+                ))}
+              </div>
             </article>
           </section>
         </>
       ) : null}
 
-      {activeTab === "ops" ? (
+      {hasLiveData && activeTab === "ops" ? (
         <>
           <section className="wallet-metric-grid">
             <SummaryCard
@@ -850,82 +986,250 @@ export default function AdminPage() {
         </>
       ) : null}
 
-      {activeTab === "safety" ? (
-        <section className="admin-analytics-grid">
-          <article className="admin-panel">
+      {hasLiveData && activeTab === "reviews" ? (
+        <section className="wallet-table-panel admin-character-review-panel">
+          <div className="panel-heading split">
+            <div>
+              <span className="section-label">
+                <UserCheck size={15} /> Character review
+              </span>
+              <h2>Pending marketplace approvals</h2>
+            </div>
+            <small>
+              {reviews.characters.length.toLocaleString()} waiting |{" "}
+              {reviews.characters.filter((character) => character.isAdult).length.toLocaleString()}{" "}
+              18+
+            </small>
+          </div>
+          <div className="admin-character-review-list">
+            {reviews.characters.map((character) => (
+              <article className="admin-character-review-card" key={character.id}>
+                <div className="admin-character-review-main">
+                  {character.avatarUrl ? (
+                    <img src={character.avatarUrl} alt={`${character.name} avatar`} />
+                  ) : null}
+                  <div className="admin-character-review-copy">
+                    <div className="admin-character-review-title">
+                      <span>
+                        <strong>{character.name}</strong>
+                        <small>
+                          {character.creatorName} - {character.category} - {character.rating}
+                          {character.isAdult ? " - 18+" : ""} - {character.visibility}/
+                          {character.moderationStatus}
+                        </small>
+                      </span>
+                    </div>
+                    <p>
+                      {renderRoleplayPreview(character.marketplacePreview || character.description)}
+                    </p>
+                    <small>{renderRoleplayPreview(character.greeting)}</small>
+                    <div className="admin-review-tags">
+                      {character.tags.slice(0, 6).map((tag) => (
+                        <span key={`${character.id}:${tag}`}>{tag}</span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+                <div className="admin-action-row">
+                  <button
+                    className="primary-action compact"
+                    type="button"
+                    onClick={() => void reviewCharacter(character.id, "approve")}
+                  >
+                    <CheckCircle2 size={15} /> Approve
+                  </button>
+                  <button
+                    className="secondary-action compact"
+                    type="button"
+                    onClick={() => void reviewCharacter(character.id, "reject")}
+                  >
+                    <AlertTriangle size={15} /> Reject
+                  </button>
+                </div>
+              </article>
+            ))}
+            {reviews.characters.length === 0 ? (
+              <EmptyState
+                icon={CheckCircle2}
+                title="No character reviews"
+                text="Mature, adult, or manually held characters will appear here before they enter Discover."
+              />
+            ) : null}
+          </div>
+        </section>
+      ) : null}
+
+      {hasLiveData && activeTab === "safety" ? (
+        <section className="admin-safety-grid">
+          <article className="admin-panel admin-safety-summary">
             <div className="panel-heading">
               <span className="section-label">
-                <AlertTriangle size={15} /> Decisions
+                <ShieldCheck size={15} /> Last 30 days
               </span>
-              <h2>Guardrail load</h2>
+              <h2>Safety overview</h2>
+              <p className="admin-panel-helper">
+                Real moderation decisions from chat input checks and model-output checks.
+              </p>
             </div>
-            <MetricLine label="All decisions" value={analytics.safety.decisions} />
-            <MetricLine label="Blocks" value={analytics.safety.blockedDecisions} />
-            <MetricLine label="Transformations" value={analytics.safety.transformedDecisions} />
-            <MetricLine label="Output catches" value={analytics.safety.outputBlocks} />
+            <div className="admin-safety-metrics">
+              <div className="admin-safety-tile">
+                <span>Total checks</span>
+                <strong>{analytics.safety.decisions.toLocaleString()}</strong>
+                <small>Every recorded safety decision.</small>
+              </div>
+              <div className="admin-safety-tile">
+                <span>Blocked messages</span>
+                <strong>{analytics.safety.blockedDecisions.toLocaleString()}</strong>
+                <small>{formatPercent(analytics.safety.blockedDecisions, safetyDecisionTotal)} of checks.</small>
+              </div>
+              <div className="admin-safety-tile">
+                <span>Rewritten messages</span>
+                <strong>{analytics.safety.transformedDecisions.toLocaleString()}</strong>
+                <small>
+                  {formatPercent(analytics.safety.transformedDecisions, safetyDecisionTotal)} of
+                  checks.
+                </small>
+              </div>
+              <div className="admin-safety-tile">
+                <span>Blocked replies</span>
+                <strong>{analytics.safety.outputBlocks.toLocaleString()}</strong>
+                <small>Unsafe model replies caught before users saw them.</small>
+              </div>
+            </div>
           </article>
 
-          <article className="admin-panel">
+          <article className="admin-panel admin-safety-card">
             <div className="panel-heading">
               <span className="section-label">
-                <ShieldCheck size={15} /> Categories
+                <Activity size={15} /> Outcomes
               </span>
-              <h2>Top pressure points</h2>
+              <h2>Outcome mix</h2>
+              <p className="admin-panel-helper">
+                What the safety layer did after evaluating messages.
+              </p>
             </div>
-            <div className="admin-pill-list stacked">
-              {analytics.safety.categories.map((category) => (
-                <span key={category.category}>
-                  {category.category} <b>{category.count}</b>
-                </span>
+            <div className="admin-safety-list">
+              {analytics.safety.actions.map((item) => (
+                <SafetyBar
+                  key={item.action}
+                  label={formatSafetyLabel(item.action)}
+                  value={item.count}
+                  max={safetyActionMax}
+                />
               ))}
+              {analytics.safety.actions.length === 0 ? (
+                <div className="admin-safety-empty">
+                  <EmptyState
+                    icon={ShieldCheck}
+                    title="No safety outcomes yet"
+                    text="Outcome counts appear after moderation decisions are recorded."
+                  />
+                </div>
+              ) : null}
             </div>
           </article>
 
-          <article className="admin-panel wide">
+          <article className="admin-panel admin-safety-card">
             <div className="panel-heading">
               <span className="section-label">
-                <Clock size={15} /> Recent
+                <AlertTriangle size={15} /> Categories
               </span>
-              <h2>Latest blocked or transformed events</h2>
+              <h2>Flag categories</h2>
+              <p className="admin-panel-helper">
+                The reason groups behind blocks or rewrites.
+              </p>
+            </div>
+            <div className="admin-safety-list">
+              {analytics.safety.categories.map((category) => (
+                <SafetyBar
+                  key={category.category}
+                  label={formatSafetyLabel(category.category)}
+                  value={category.count}
+                  max={safetyCategoryMax}
+                />
+              ))}
+              {analytics.safety.categories.length === 0 ? (
+                <div className="admin-safety-empty">
+                  <EmptyState
+                    icon={ShieldCheck}
+                    title="No flag categories"
+                    text="No blocked or rewritten messages had category tags in this range."
+                  />
+                </div>
+              ) : null}
+            </div>
+          </article>
+
+          <article className="admin-panel admin-safety-wide">
+            <div className="panel-heading">
+              <span className="section-label">
+                <Clock size={15} /> Safety events
+              </span>
+              <h2>Blocked and rewritten messages</h2>
+              <p className="admin-panel-helper">
+                Recent messages where the system blocked content or rewrote it before delivery.
+              </p>
             </div>
             <div className="admin-table compact-table">
               {analytics.safety.recentBlocks.map((item) => (
                 <div className="admin-table-row" key={item.id}>
                   <span>
-                    <strong>{item.reasonCode}</strong>
+                    <strong>{formatSafetyLabel(item.reasonCode)}</strong>
                     <small>
-                      {item.userDisplayName} - {item.stage} - {formatTime(item.createdAt)}
+                      {item.userDisplayName} - {formatSafetyLabel(item.stage)} -{" "}
+                      {formatTime(item.createdAt)}
                     </small>
                   </span>
-                  <b>{item.action}</b>
-                  <small>{item.categories.join(", ") || "uncategorized"}</small>
+                  <b>{formatSafetyLabel(item.action)}</b>
+                  <small>
+                    {item.categories.map(formatSafetyLabel).join(", ") || "Uncategorized"}
+                  </small>
                 </div>
               ))}
               {analytics.safety.recentBlocks.length === 0 ? (
-                <EmptyState icon={ShieldCheck} title="No recent safety pressure" />
+                <div className="admin-safety-empty">
+                  <EmptyState
+                    icon={ShieldCheck}
+                    title="No blocked or rewritten messages"
+                    text="Nothing in this 30-day window needed a block, rewrite, or output catch."
+                  />
+                </div>
               ) : null}
             </div>
           </article>
 
-          <article className="admin-panel wide">
+          <article className="admin-panel admin-safety-side">
             <div className="panel-heading">
               <span className="section-label">
                 <Activity size={15} /> Audit
               </span>
-              <h2>Operator and system trail</h2>
+              <h2>Admin activity log</h2>
+              <p className="admin-panel-helper">
+                Recent admin or system actions that may matter during review.
+              </p>
             </div>
             <div className="admin-table compact-table">
               {analytics.auditTrail.map((item) => (
                 <div className="admin-table-row" key={item.id}>
                   <span>
-                    <strong>{item.action}</strong>
+                    <strong>{formatSafetyLabel(item.action)}</strong>
                     <small>
-                      {item.actorDisplayName} - {item.resourceType} - {formatTime(item.createdAt)}
+                      {item.actorDisplayName} - {formatSafetyLabel(item.resourceType)} -{" "}
+                      {formatTime(item.createdAt)}
                     </small>
                   </span>
                   <small>{item.resourceId ?? "n/a"}</small>
                 </div>
               ))}
+              {analytics.auditTrail.length === 0 ? (
+                <div className="admin-safety-empty">
+                  <EmptyState
+                    icon={Activity}
+                    title="No audit events"
+                    text="Admin and system actions will show here."
+                  />
+                </div>
+              ) : null}
             </div>
           </article>
         </section>
@@ -936,6 +1240,127 @@ export default function AdminPage() {
           {status}
         </p>
       ) : null}
+    </div>
+  );
+}
+
+function ProductPulse(props: { data: PulseDay[]; metrics: typeof pulseMetrics }) {
+  const [activeMetricId, setActiveMetricId] = useState(props.metrics[0]?.id ?? "messages");
+
+  if (props.data.length === 0) {
+    return (
+      <div className="admin-pulse-empty">
+        <EmptyState icon={BarChart3} title="No product pulse yet" />
+      </div>
+    );
+  }
+
+  const activeMetric =
+    props.metrics.find((metric) => metric.id === activeMetricId) ?? props.metrics[0]!;
+  const values = props.data.map((day) => activeMetric.getValue(day));
+  const total = values.reduce((sum, value) => sum + value, 0);
+  const average = props.data.length > 0 ? total / props.data.length : 0;
+  const peakValue = Math.max(0, ...values);
+  const maxValue = Math.max(1, peakValue);
+  const width = 900;
+  const height = 280;
+  const padding = { top: 12, right: 18, bottom: 38, left: 52 };
+  const innerWidth = width - padding.left - padding.right;
+  const innerHeight = height - padding.top - padding.bottom;
+  const barStep = props.data.length > 0 ? innerWidth / props.data.length : innerWidth;
+  const barWidth = Math.max(3, Math.min(14, barStep * 0.34));
+  const labelEvery = Math.max(1, Math.ceil(props.data.length / 6));
+
+  return (
+    <div className="admin-pulse-board">
+      <div className="admin-pulse-toolbar">
+        <div className="admin-pulse-summary">
+          <span>
+            Total <b>{formatCompactNumber(total)}</b>
+          </span>
+          <span>
+            Average <b>{formatPulseAverage(average)}</b>
+          </span>
+          <span>
+            Peak <b>{formatCompactNumber(peakValue)}</b>
+          </span>
+        </div>
+        <div className="admin-pulse-toggle" aria-label="Product pulse metric">
+          {props.metrics.map((metric) => (
+            <button
+              aria-pressed={activeMetric.id === metric.id}
+              className={activeMetric.id === metric.id ? "active" : ""}
+              key={metric.id}
+              type="button"
+              onClick={() => setActiveMetricId(metric.id)}
+            >
+              <span style={{ background: metric.color }} />
+              {metric.shortLabel}
+            </button>
+          ))}
+        </div>
+      </div>
+      <svg
+        aria-label={`${activeMetric.label} pulse over ${props.data.length} days. Total ${total}, average ${formatPulseAverage(
+          average,
+        )}, peak ${peakValue}.`}
+        className="admin-pulse-chart"
+        role="img"
+        viewBox={`0 0 ${width} ${height}`}
+      >
+        <title>{activeMetric.label} pulse</title>
+        {[0, 0.25, 0.5, 0.75, 1].map((tick) => {
+          const y = padding.top + innerHeight * tick;
+          const value = Math.round(maxValue * (1 - tick));
+
+          return (
+            <g key={tick}>
+              <line
+                className="admin-pulse-gridline"
+                x1={padding.left}
+                x2={width - padding.right}
+                y1={y}
+                y2={y}
+              />
+              <text className="admin-pulse-y-label" x={padding.left - 12} y={y + 4}>
+                {formatCompactNumber(value)}
+              </text>
+            </g>
+          );
+        })}
+        {props.data.map((day, index) => {
+          const value = values[index] ?? 0;
+          const barHeight = value > 0 ? Math.max(3, (value / maxValue) * innerHeight) : 0;
+          const x = padding.left + index * barStep + (barStep - barWidth) / 2;
+          const y = padding.top + innerHeight - barHeight;
+
+          return (
+            <rect
+              className="admin-pulse-bar"
+              fill={activeMetric.color}
+              height={barHeight}
+              key={`${activeMetric.id}-${day.day}`}
+              rx="3"
+              width={barWidth}
+              x={x}
+              y={y}
+            />
+          );
+        })}
+        {props.data.map((day, index) =>
+          index === 0 || index === props.data.length - 1 || index % labelEvery === 0 ? (
+            <text
+              className="admin-pulse-x-label"
+              key={`pulse-label-${day.day}`}
+              textAnchor="middle"
+              x={padding.left + index * barStep + barStep / 2}
+              y={height - 12}
+            >
+              {shortDate(day.day)}
+            </text>
+          ) : null
+        )}
+      </svg>
     </div>
   );
 }
@@ -967,6 +1392,22 @@ function MetricLine(props: { label: string; value: number | string }) {
   );
 }
 
+function SafetyBar(props: { label: string; value: number; max: number }) {
+  const width = `${Math.min(100, Math.max(4, (props.value / Math.max(1, props.max)) * 100))}%`;
+
+  return (
+    <div className="admin-safety-bar-row">
+      <div className="admin-safety-bar-top">
+        <span>{props.label}</span>
+        <b>{props.value.toLocaleString()}</b>
+      </div>
+      <div className="admin-safety-meter" aria-hidden="true">
+        <span style={{ width }} />
+      </div>
+    </div>
+  );
+}
+
 function EmptyState(props: { icon: typeof Sparkles; title: string; text?: string }) {
   return (
     <div className="dashboard-empty-card compact-empty">
@@ -977,12 +1418,46 @@ function EmptyState(props: { icon: typeof Sparkles; title: string; text?: string
   );
 }
 
+function formatPercent(value: number, total: number): string {
+  if (total <= 0) {
+    return "0%";
+  }
+
+  return new Intl.NumberFormat("en", {
+    maximumFractionDigits: value / total >= 0.1 ? 1 : 2,
+    style: "percent",
+  }).format(value / total);
+}
+
+function formatSafetyLabel(value: string): string {
+  const label = value
+    .replace(/[_./-]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+
+  if (!label) {
+    return "Unknown";
+  }
+
+  return label.replace(/\b[a-z]/g, (letter) => letter.toUpperCase());
+}
+
 function shortDate(value: string): string {
   return new Intl.DateTimeFormat("en", { month: "short", day: "numeric" }).format(new Date(value));
 }
 
-function weekdayLabel(value: string): string {
-  return new Intl.DateTimeFormat("en", { weekday: "short" }).format(new Date(value));
+function formatCompactNumber(value: number): string {
+  return new Intl.NumberFormat("en", {
+    maximumFractionDigits: value >= 10 ? 0 : 1,
+    notation: "compact",
+  }).format(value);
+}
+
+function formatPulseAverage(value: number): string {
+  return new Intl.NumberFormat("en", {
+    maximumFractionDigits: value >= 10 ? 0 : 1,
+    notation: value >= 1000 ? "compact" : "standard",
+  }).format(value);
 }
 
 function formatTime(value: string): string {

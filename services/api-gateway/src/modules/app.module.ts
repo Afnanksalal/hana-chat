@@ -1,11 +1,12 @@
 import { Module } from "@nestjs/common";
 import { AdminAnalyticsController } from "./admin-analytics.controller";
+import { AdminCharactersController } from "./admin-characters.controller";
 import { BillingController } from "./billing.controller";
 import { ChatController } from "./chat.controller";
 import { CharactersController } from "./characters.controller";
 import { DashboardController } from "./dashboard.controller";
+import { EmailAuthController } from "./email-auth.controller";
 import { HealthController } from "./health.controller";
-import { IdentityController } from "./identity.controller";
 import { MediaController } from "./media.controller";
 import { MemoryController } from "./memory.controller";
 import { AdminMonetizationController, MonetizationController } from "./monetization.controller";
@@ -16,7 +17,7 @@ import { SystemController } from "./system.controller";
 @Module({
   controllers: [
     HealthController,
-    IdentityController,
+    EmailAuthController,
     SessionsController,
     CharactersController,
     ChatController,
@@ -28,6 +29,7 @@ import { SystemController } from "./system.controller";
     MonetizationController,
     AdminMonetizationController,
     AdminAnalyticsController,
+    AdminCharactersController,
     SystemController,
   ],
 })

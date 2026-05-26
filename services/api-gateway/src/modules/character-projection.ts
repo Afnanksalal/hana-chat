@@ -6,13 +6,14 @@ import { auditEvent } from "./session";
 import { upsertCharacterVector, type CharacterVectorRecord } from "./vector-character";
 
 export type CharacterProjectionRecord = CharacterVectorRecord;
+type CharacterProjectionAction = "create" | "publish" | "review";
 
 export async function projectCharacterUpsert(input: {
   db: Kysely<HanaDatabase>;
   config: AppConfig;
   character: CharacterProjectionRecord;
   actorUserId: string;
-  action: "create" | "publish";
+  action: CharacterProjectionAction;
 }): Promise<void> {
   try {
     await upsertCharacterVector(input.config, input.character);
@@ -52,7 +53,7 @@ export async function projectCharacterUpsert(input: {
 
 function characterPayload(
   character: CharacterProjectionRecord,
-  action: "create" | "publish",
+  action: CharacterProjectionAction,
 ): Record<string, unknown> {
   return {
     action,

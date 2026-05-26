@@ -1,18 +1,20 @@
 # Hana Chat User Flows
 
-Last updated: 2026-05-24
+Last updated: 2026-05-25
 
 ## 1. Flow Goals
 
 Hana Chat should make the core loop obvious:
 
 ```text
-Join -> find a character -> chat -> feel remembered -> return -> create/share -> upgrade
+Join -> find a character -> chat -> feel remembered -> return -> create/share
 ```
 
-The app should support both passive users who only want to chat and power users who create characters, build audiences, and eventually monetize.
+The app should support both passive users who only want to chat and power users who create
+characters, build audiences, and eventually monetize once the server-side payment flag is enabled.
 
-Phone-first login, anti-alt-account controls, risk checks, and recovery rules are detailed in [Hana Chat Identity and Abuse Prevention](hana-chat-identity-and-abuse-prevention.md).
+Email login, anti-alt-account controls, risk checks, and recovery rules are detailed in
+[Hana Chat Identity and Abuse Prevention](hana-chat-identity-and-abuse-prevention.md).
 
 ## 2. Primary User Types
 
@@ -51,7 +53,7 @@ Key needs:
 - Publishing controls.
 - Analytics.
 - Safety/rating clarity.
-- Wallet, paid unlocks, and payout requests.
+- Wallet readiness and monetization setup once payments are enabled.
 
 ### Adult User
 
@@ -70,8 +72,8 @@ Key needs:
 ```mermaid
 flowchart TD
   A["Open app"] --> B["Welcome screen"]
-  B --> C["Enter phone number"]
-  C --> D["OTP verification"]
+  B --> C["Enter username and email"]
+  C --> D["Email code verification"]
   D --> E["Background risk check"]
   E --> F{"Allowed?"}
   F -->|Yes| G["Age and region check"]
@@ -91,16 +93,16 @@ flowchart TD
 1. Welcome
    - Brand signal.
    - Short value prop: "Characters that remember you."
-   - Continue with phone number.
+   - Continue with email.
 
-2. Phone verification
-   - Collect phone number.
-   - Normalize to E.164.
-   - Send OTP.
+2. Email verification
+   - Collect username and email for signup.
+   - Normalize email.
+   - Send a short-lived email code.
    - Verify code.
-   - Run line-type, country, carrier, OTP velocity, IP, and device checks.
-   - Block or step-up obvious disposable/VoIP/farm traffic.
-   - Allow Apple/Google/email only as secondary account links after phone verification.
+   - Run email, IP, and device velocity checks.
+   - Block or step-up obvious duplicate/farm traffic.
+   - Keep Google/OAuth out of the public auth flow.
 
 3. Age and region
    - Collect date of birth.
@@ -163,8 +165,8 @@ The returning user should land on the thing most likely to continue the habit:
 flowchart TD
   A["Open app"] --> B{"Has valid session?"}
   B -->|Yes| C["Resume app"]
-  B -->|No| D["Enter phone number"]
-  D --> E["OTP or passkey"]
+  B -->|No| D["Enter email"]
+  D --> E["Email code or passkey"]
   E --> F["Risk check"]
   F --> G{"Trusted?"}
   G -->|Yes| C
@@ -174,9 +176,8 @@ flowchart TD
 
 Returning login rules:
 
-- Trusted device plus passkey should avoid repeated SMS.
-- New device requires OTP and risk check.
-- SIM-swap risk triggers cooldown or step-up.
+- Trusted device plus future passkey support should avoid repeated code sends.
+- New device requires email code and risk check.
 - Too many accounts on one device triggers limits or support review.
 - Paid users need humane recovery, but not an abuse bypass.
 
@@ -566,11 +567,9 @@ User settings:
 
 Identity settings:
 
-- View verified phone.
-- Change phone number.
+- View verified email.
+- Change email.
 - Add passkey.
-- Add recovery email.
-- Link Apple/Google as recovery.
 - View active devices.
 - Log out other devices.
 
@@ -589,21 +588,22 @@ flowchart TD
   I --> J["Completion receipt"]
 ```
 
-Phone change flow:
+Email change flow:
 
 ```mermaid
 flowchart TD
-  A["Change phone"] --> B["Confirm current session"]
-  B --> C["Verify old phone if available"]
-  C --> D["Verify new phone"]
+  A["Change email"] --> B["Confirm current session"]
+  B --> C["Verify current email if available"]
+  C --> D["Verify new email"]
   D --> E["Risk check"]
   E --> F{"Approved?"}
-  F -->|Yes| G["Update phone credential"]
+  F -->|Yes| G["Update email credential"]
   F -->|Step-up| H["Cooldown / support review"]
   F -->|No| I["Reject change"]
 ```
 
-Phone changes should trigger a temporary cooldown for mature-mode changes, creator payout changes, and payment-method changes.
+Email changes should trigger a temporary cooldown for mature-mode changes, creator payout changes,
+and payment-method changes when monetization is enabled.
 
 ## 14. Notification Flow
 
@@ -696,9 +696,9 @@ Adult mode:
 ## 17. UX Edge Cases
 
 - User runs out of messages during active conversation.
-- User cannot receive OTP.
-- User changes phone number.
-- User loses phone.
+- User cannot receive email code.
+- User changes email.
+- User loses email access.
 - User is falsely flagged as a duplicate account.
 - Multiple legitimate users share one household/device.
 - Character is removed after user has a long relationship.

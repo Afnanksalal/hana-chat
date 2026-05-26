@@ -62,7 +62,6 @@ export class SettingsController {
             }
           : {}),
         ...(input.memoryEnabled !== undefined ? { memory_enabled: input.memoryEnabled } : {}),
-        ...(input.voiceEnabled !== undefined ? { voice_enabled: input.voiceEnabled } : {}),
         ...(input.marketingOptIn !== undefined ? { marketing_opt_in: input.marketingOptIn } : {}),
         updated_at: new Date(),
       })
@@ -117,7 +116,6 @@ function toSettingsResponse(
     adult_mode_enabled: boolean;
     adult_verified_at: Date | null;
     memory_enabled: boolean;
-    voice_enabled: boolean;
     marketing_opt_in: boolean;
   },
   avatarUrl: string | null | undefined,
@@ -128,7 +126,6 @@ function toSettingsResponse(
     adultModeEnabled: settings.adult_mode_enabled,
     adultVerifiedAt: settings.adult_verified_at?.toISOString() ?? null,
     memoryEnabled: settings.memory_enabled,
-    voiceEnabled: settings.voice_enabled,
     marketingOptIn: settings.marketing_opt_in,
   };
 }

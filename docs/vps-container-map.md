@@ -22,8 +22,8 @@ flowchart LR
   Api --> ClickHouse["clickhouse analytics"]
   Api --> Temporal["temporal workflows"]
   Api --> Xai["xAI API"]
-  Api --> Payments["Razorpay / RazorpayX"]
-  Api --> Sms["Twilio Verify"]
+  Api --> Mail["SMTP email"]
+  Api --> Payments["Payments provider gated off"]
   Redpanda --> Workers["worker and domain services"]
 ```
 
@@ -64,8 +64,9 @@ graph, and batch leasing are split to private services with canonical fallbacks.
 | `hana-chat-vps-clickhouse-1`           | `clickhouse`           | Analytics DB    | Append-heavy model-call telemetry mirrored from the worker outbox path.                                                               | No                             |
 | `hana-chat-vps-temporal-postgres-1`    | `temporal-postgres`    | Workflow DB     | Internal Temporal persistence database. Separate from product Postgres to avoid coupling workflow internals to product schema.        | No                             |
 | `hana-chat-vps-temporal-1`             | `temporal`             | Workflow engine | Workflow runtime for long-running jobs, retries, payouts, and background orchestration.                                               | No                             |
-| `hana-chat-vps-identity-service-1`     | `identity-service`     | Domain service  | Phone identity precheck and hashing boundary used by auth start, with local gateway fallback.                                         | No                             |
-| `hana-chat-vps-risk-service-1`         | `risk-service`         | Domain service  | Risk scoring and abuse-control boundary used by auth start before OTP challenge creation.                                             | No                             |
+| `hana-chat-vps-smtp-relay-1`           | `smtp-relay`           | Mail relay      | Lightweight internal Postfix relay for passwordless email auth codes, with DKIM key mount and VPS-local test port.                   | No, host `127.0.0.1:1587` only |
+| `hana-chat-vps-identity-service-1`     | `identity-service`     | Domain service  | Reserved identity bounded-context runtime. Public email auth is coordinated by the API gateway.                                       | No                             |
+| `hana-chat-vps-risk-service-1`         | `risk-service`         | Domain service  | Risk scoring and abuse-control boundary used by email auth before verification code creation.                                         | No                             |
 | `hana-chat-vps-chat-orchestrator-1`    | `chat-orchestrator`    | Domain service  | Chat-turn planning boundary for model route, prompt-window size, and response pacing.                                                 | No                             |
 | `hana-chat-vps-memory-service-1`       | `memory-service`       | Domain service  | Memory salience and write-policy boundary used before saving extracted conversation facts.                                            | No                             |
 | `hana-chat-vps-retrieval-service-1`    | `retrieval-service`    | Domain service  | Retrieval/reranking runtime boundary for memory and search results. Private internal endpoints.                                       | No                             |
@@ -148,22 +149,26 @@ Set and keep secret:
 - `XAI_API_KEY`
 - `XAI_BASE_URL`
 - `XAI_DEFAULT_MODEL`
-- `RAZORPAY_KEY_ID`
-- `RAZORPAY_KEY_SECRET`
-- `RAZORPAY_WEBHOOK_SECRET`
-- `RAZORPAYX_ACCOUNT_NUMBER`
-- `TWILIO_ACCOUNT_SID`
-- `TWILIO_AUTH_TOKEN`
-- `TWILIO_VERIFY_SERVICE_SID`
-- `ADMIN_OTP_BYPASS_PHONE_NUMBER`
+- `EMAIL_HASH_SECRET`
+- `EMAIL_ENCRYPTION_KEY_BASE64`
+- `SMTP_HOST`
+- `SMTP_FROM`
+- `ADMIN_EMAIL`
+- `ADMIN_STATIC_OTP`
+- `MAIL_DKIM_KEYS_DIR`
+- `SMTP_RELAY_HOSTNAME`
+- `PAYOUT_ENCRYPTION_KEY_BASE64`
+- `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET`, and `RAZORPAYX_ACCOUNT_NUMBER` only when `MONETIZATION_ENABLED=true`
 
-The deployed Playground env currently has xAI configured. Razorpay and Twilio are expected to stay
-placeholder/missing until real provider accounts are added.
+The deployed Playground env currently has xAI configured. Monetization should stay disabled with
+`MONETIZATION_ENABLED=false` until a payment provider approves the product category. Payment
+provider values may stay placeholder/missing while the flag is off.
 
-`ADMIN_OTP_BYPASS_PHONE_NUMBER` is a temporary owner-login escape hatch for the raw-IP deployment.
-It grants the matching phone number an admin session and Ultra entitlement without OTP. Keep it in
-the VPS env only, remove it once Twilio/domain auth is live, and never hardcode the phone number in
-the repository.
+`ADMIN_EMAIL` and `ADMIN_STATIC_OTP` configure the owner/admin bootstrap. The login still uses the
+normal email/code flow, but the configured owner email can use the static env code instead of SMTP.
+
+The browser cannot expose a trustworthy MAC address, so account uniqueness enforcement uses hashed
+server-observed IP plus hashed app-generated device id claims.
 
 Never paste these values into docs, commits, tickets, Portainer labels, or chat transcripts.
 

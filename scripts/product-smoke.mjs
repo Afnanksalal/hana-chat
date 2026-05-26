@@ -11,7 +11,9 @@ const QDRANT_URL = stripTrailingSlash(process.env.QDRANT_URL ?? "http://localhos
 const QDRANT_MEMORY_COLLECTION = process.env.QDRANT_MEMORY_COLLECTION ?? "hana_memory_facts";
 const QDRANT_CHARACTER_COLLECTION =
   process.env.QDRANT_CHARACTER_COLLECTION ?? "hana_character_profiles";
-const DEV_ADMIN_PHONE_NUMBER = process.env.DEV_ADMIN_PHONE_NUMBER ?? "+15550000000";
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL ?? "admin@local.hana.test";
+const ADMIN_STATIC_OTP = process.env.ADMIN_STATIC_OTP;
+const SMOKE_RUN_ID = `${Date.now().toString(36)}-${process.pid.toString(36)}`;
 
 const results = [];
 const context = {};
@@ -36,29 +38,44 @@ await check("infra readiness", async () => {
   return payload.dependencies.map((dependency) => dependency.name).join(", ");
 });
 
-await check("dev admin phone bypass", async () => {
-  const payload = await postJson("/v1/auth/phone/start", {
-    phoneNumber: DEV_ADMIN_PHONE_NUMBER,
+await check("admin email session", async () => {
+  const start = await postJson("/v1/auth/email/start", {
+    mode: "signin",
+    email: ADMIN_EMAIL,
+    deviceId: "hana-product-smoke-admin",
+  });
+  const code = start.devCode ?? ADMIN_STATIC_OTP;
+
+  assert(start.verificationId, "admin email verification was not created");
+  assert(code, "admin email code was not available for smoke verification");
+
+  const payload = await postJson("/v1/auth/email/verify", {
+    email: ADMIN_EMAIL,
+    verificationId: start.verificationId,
+    code,
     deviceId: "hana-product-smoke-admin",
   });
 
-  assert(payload.sessionToken, "dev admin did not receive a session token");
-  assert(payload.bypass === "admin_otp_bypass", "admin OTP bypass was not used");
+  assert(payload.sessionToken, "admin did not receive a session token");
   context.adminToken = payload.sessionToken;
 
-  return "session issued with premium bypass";
+  return "session issued with admin email";
 });
 
-await check("premium defaults for dev admin", async () => {
+await check("premium defaults for admin", async () => {
   const settings = await getJson("/v1/settings", context.adminToken);
-  assert(settings.adultModeEnabled === true, "adult mode is not enabled for dev admin");
-  assert(settings.memoryEnabled === true, "memory is not enabled for dev admin");
-  assert(settings.voiceEnabled === true, "voice is not enabled for dev admin");
+  assert(settings.adultModeEnabled === true, "adult mode is not enabled for admin");
+  assert(settings.memoryEnabled === true, "memory is not enabled for admin");
+  assert(!("voiceEnabled" in settings), "settings API still exposes voice");
 
   const billing = await getJson("/v1/billing/plans", context.adminToken);
-  assert(billing.subscription.planId === "ultra", "dev admin is not on Ultra");
+  assert(billing.subscription.planId === "ultra", "admin is not on Ultra");
+  assert(
+    billing.plans.every((plan) => !("voiceEnabled" in plan)),
+    "billing plans still expose voice",
+  );
 
-  return "Ultra, adult, memory, voice";
+  return "Ultra, adult, memory";
 });
 
 await check("seeded admin profile", async () => {
@@ -68,7 +85,6 @@ await check("seeded admin profile", async () => {
       displayName: "Afnan K Salal",
       adultModeEnabled: true,
       memoryEnabled: true,
-      voiceEnabled: true,
     },
     context.adminToken,
   );
@@ -106,14 +122,15 @@ await check("seeded character catalog ready", async () => {
     );
 
   assert(freeCharacter, "seeded free character is missing");
-  assert(paidCharacter, "seeded paid public character is missing");
 
   context.freeCharacterId = freeCharacter.id;
   context.freeCharacterName = freeCharacter.name;
-  context.characterId = paidCharacter.id;
-  context.characterName = paidCharacter.name;
+  context.characterId = freeCharacter.id;
+  context.characterName = freeCharacter.name;
 
-  return `${freeCharacter.name} free, ${paidCharacter.name} paid`;
+  return paidCharacter
+    ? `${freeCharacter.name} free, ${paidCharacter.name} paid`
+    : `${freeCharacter.name} ready, monetization coming soon`;
 });
 
 await check("character marketplace vector search", async () => {
@@ -130,7 +147,7 @@ await check("character marketplace vector search", async () => {
   return "marketplace search and Qdrant point ok";
 });
 
-await check("free phone auth and quota", async () => {
+await check("free email auth and quota", async () => {
   context.freeToken = await createFreeSession("free");
 
   const chat = await postJson(
@@ -269,19 +286,24 @@ await check("memory write and Qdrant projection", async () => {
   return "memory stored and projected";
 });
 
-await check("billing mock activation in development", async () => {
+await check("billing plans are coming soon", async () => {
+  const billing = await getJson("/v1/billing/plans", context.freeToken);
+  assert(billing.comingSoon === true, "billing did not report coming soon");
+
   const checkout = await postJson(
     "/v1/billing/checkout",
     { planId: "plus", provider: "mock" },
     context.freeToken,
+    { allowError: true },
   );
 
-  assert(checkout.activated === true, "mock checkout did not activate plan");
+  assert(checkout.status === 402, `checkout returned HTTP ${checkout.status}`);
+  assert(
+    checkout.body?.error?.message === "Paid plans are coming soon.",
+    "checkout was not gated by the monetization flag",
+  );
 
-  const billing = await getJson("/v1/billing/plans", context.freeToken);
-  assert(billing.subscription.planId === "plus", "Plus subscription did not persist");
-
-  return "Plus active";
+  return "paid plans gated";
 });
 
 await check("credential safety hard block", async () => {
@@ -320,81 +342,28 @@ await check("prompt-injection hard block", async () => {
   return "blocked before model";
 });
 
-await check("paid character trial access", async () => {
-  const unpaidToken = await createFreeSession("paid-gate");
-  context.paidGateToken = unpaidToken;
-  const response = await postJson(
-    "/v1/chat/messages",
-    {
-      characterId: context.characterId,
-      content: "Can a free account chat with this paid character without buying access?",
-      clientMessageId: `smoke-paid-${Date.now()}`,
-      adultModeRequested: false,
-    },
-    unpaidToken,
-  );
-
-  assert(response.accepted === true, "first paid character trial message was not accepted");
-  assert(response.trial?.limit === 30, "paid character trial limit was not 30 messages");
-  assert(response.trial?.remaining === 29, "paid character trial did not decrement");
-
-  return "free user got mandatory 30-message paid character trial";
-});
-
-await check("paid unlock after trial and creator wallet hold", async () => {
-  await exhaustPaidTrial(context.paidGateToken, context.characterId, 30);
-
-  const blocked = await postJson(
-    "/v1/chat/messages",
-    {
-      characterId: context.characterId,
-      content: "This should require purchase now that the trial is exhausted.",
-      clientMessageId: `smoke-paid-block-${Date.now()}`,
-      adultModeRequested: false,
-    },
-    context.paidGateToken,
-    { allowError: true },
-  );
-
-  assert(
-    blocked.body?.error?.code === "ENTITLEMENT_REQUIRED",
-    "paid character did not require purchase after trial was exhausted",
-  );
-
+await check("character monetization is gated", async () => {
   const purchase = await postJson(
     "/v1/monetization/character-purchases",
     { characterId: context.characterId, provider: "mock" },
-    context.paidGateToken,
+    context.freeToken,
+    { allowError: true },
   );
 
-  assert(purchase.activated === true, "mock paid character purchase did not activate");
-
-  const chat = await postJson(
-    "/v1/chat/messages",
-    {
-      characterId: context.characterId,
-      content: "I bought access. Confirm this paid room opens now.",
-      clientMessageId: `smoke-paid-unlock-${Date.now()}`,
-      adultModeRequested: false,
-    },
-    context.paidGateToken,
-  );
-  assert(chat.accepted === true, "paid character chat did not open after purchase");
-
-  const wallet = await getJson("/v1/monetization/wallet", context.adminToken);
-  assert(wallet.wallet.lifetimeEarnedCents >= 100, "creator wallet did not record net earnings");
-  assert(wallet.ledgerEntries.length >= 2, "creator ledger did not include sale and fee entries");
-  assert(wallet.wallet.pendingCents >= 100, "creator sale was not held in pending balance");
+  assert(purchase.status === 402, `character purchase returned HTTP ${purchase.status}`);
   assert(
-    wallet.ledgerEntries.some((entry) => entry.status === "pending"),
-    "creator ledger did not keep sale pending during hold window",
+    purchase.body?.error?.message === "Creator monetization is coming soon.",
+    "character purchase was not gated by the monetization flag",
   );
 
-  return `${wallet.wallet.currency} wallet held ${wallet.wallet.pendingCents} pending cents`;
+  return "paid character unlocks gated";
 });
 
-await check("creator payout profile and admin payout processing", async () => {
-  await patchJson(
+await check("creator payout setup is coming soon", async () => {
+  const wallet = await getJson("/v1/monetization/wallet", context.adminToken);
+  assert(wallet.comingSoon === true, "wallet did not report coming soon");
+
+  const payoutProfile = await patchJson(
     "/v1/monetization/payout-profile",
     {
       displayName: "Afnan K Salal",
@@ -403,47 +372,16 @@ await check("creator payout profile and admin payout processing", async () => {
       vpa: "afnan@upi",
     },
     context.adminToken,
+    { allowError: true },
   );
 
-  const wallet = await getJson("/v1/monetization/wallet", context.adminToken);
-  const payoutAmountCents = Math.min(wallet.wallet.availableCents, 100);
-
-  if (payoutAmountCents < 100) {
-    assert(
-      wallet.wallet.pendingCents >= 100,
-      "creator wallet had neither held nor available funds",
-    );
-
-    return "payout correctly waits for the 7-day creator earning hold";
-  }
-
-  const payout = await postJson(
-    "/v1/monetization/payouts",
-    { amountCents: payoutAmountCents, currency: wallet.wallet.currency },
-    context.adminToken,
-  );
-  assert(payout.payoutId, "payout request did not return an id");
-
-  const adminBefore = await getJson("/v1/admin/monetization", context.adminToken);
+  assert(payoutProfile.status === 402, `payout profile returned HTTP ${payoutProfile.status}`);
   assert(
-    adminBefore.pendingPayouts.some((item) => item.id === payout.payoutId),
-    "admin payout queue did not include requested payout",
+    payoutProfile.body?.error?.message === "Creator monetization is coming soon.",
+    "payout profile was not gated by the monetization flag",
   );
 
-  const processed = await postJson(
-    `/v1/admin/monetization/payouts/${payout.payoutId}/process`,
-    { provider: "mock" },
-    context.adminToken,
-  );
-  assert(processed.status === "paid", "admin mock payout was not marked paid");
-
-  const adminAfter = await getJson("/v1/admin/monetization", context.adminToken);
-  assert(
-    adminAfter.summary.lifetimePaidCents >= payoutAmountCents,
-    "admin summary did not record paid creator payout",
-  );
-
-  return `payout ${payout.payoutId} paid`;
+  return "creator payout setup gated";
 });
 
 printSummary();
@@ -478,8 +416,8 @@ async function deleteJson(path, token) {
   return requestJson("DELETE", path, undefined, token);
 }
 
-async function patchJson(path, body, token) {
-  return requestJson("PATCH", path, body, token);
+async function patchJson(path, body, token, options) {
+  return requestJson("PATCH", path, body, token, options);
 }
 
 async function postSse(path, body, token) {
@@ -501,18 +439,41 @@ async function postSse(path, body, token) {
 }
 
 async function createFreeSession(label) {
-  const suffix = `${Date.now().toString().slice(-8)}${Math.floor(Math.random() * 10)}`;
-  const phoneNumber = `+155${suffix}`;
-  const deviceId = `hana-product-smoke-${label}`;
-  const started = await postJson("/v1/auth/phone/start", {
-    phoneNumber,
-    deviceId,
-  });
+  const email = `${label}.${SMOKE_RUN_ID}@smoke.hanachat.test`;
+  const deviceId = `hana-product-smoke-${label}-${SMOKE_RUN_ID}`;
+  const signupStart = await postJson(
+    "/v1/auth/email/start",
+    {
+      mode: "signup",
+      email,
+      username: `Smoke ${label} ${SMOKE_RUN_ID}`,
+      deviceId,
+    },
+    undefined,
+    { allowError: true },
+  );
+  let started;
+
+  if (signupStart.status === 409) {
+    started = await postJson("/v1/auth/email/start", {
+      mode: "signin",
+      email,
+      deviceId,
+    });
+  } else if (signupStart.status >= 400) {
+    throw new Error(
+      `${label} auth start returned HTTP ${signupStart.status}: ${summarize(signupStart.body)}`,
+    );
+  } else {
+    started = signupStart.body;
+  }
+
   assert(started.verificationId, `${label} auth did not create a verification`);
 
-  const verified = await postJson("/v1/auth/phone/verify", {
-    phoneNumber,
+  const verified = await postJson("/v1/auth/email/verify", {
+    email,
     code: started.devCode ?? "000000",
+    verificationId: started.verificationId,
     deviceId,
   });
   assert(verified.sessionToken, `${label} auth did not return session token`);

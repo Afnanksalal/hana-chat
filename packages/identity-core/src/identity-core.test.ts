@@ -1,38 +1,31 @@
 import { describe, expect, it } from "vitest";
 import {
-  decryptPhoneNumber,
-  encryptPhoneNumber,
-  hashPhoneNumber,
-  normalizePhoneNumber,
-  shouldAllowLineType,
+  decryptEmailAddress,
+  emailDomain,
+  encryptEmailAddress,
+  hashEmailAddress,
+  normalizeEmailAddress,
 } from "./index";
 
 describe("identity core", () => {
-  it("normalizes phone numbers to E.164", () => {
-    expect(normalizePhoneNumber("(415) 555-2671", "US")).toBe("+14155552671");
-  });
+  it("normalizes and hashes email addresses deterministically", () => {
+    const email = normalizeEmailAddress("  USER@Example.COM ");
+    const first = hashEmailAddress(email, "a-secure-test-secret");
+    const second = hashEmailAddress(email, "a-secure-test-secret");
 
-  it("hashes phone numbers deterministically", () => {
-    const phoneNumber = normalizePhoneNumber("+14155552671");
-    const first = hashPhoneNumber(phoneNumber, "a-secure-test-secret");
-    const second = hashPhoneNumber(phoneNumber, "a-secure-test-secret");
-
+    expect(email).toBe("user@example.com");
+    expect(emailDomain(email)).toBe("example.com");
     expect(first).toBe(second);
     expect(first).toHaveLength(64);
   });
 
-  it("encrypts and decrypts phone numbers", () => {
-    const phoneNumber = normalizePhoneNumber("+14155552671");
-    const key = Buffer.alloc(32, 7).toString("base64");
-    const encrypted = encryptPhoneNumber(phoneNumber, key);
+  it("encrypts and decrypts email addresses", () => {
+    const email = normalizeEmailAddress("user@example.com");
+    const key = Buffer.alloc(32, 8).toString("base64");
+    const encrypted = encryptEmailAddress(email, key);
 
-    expect(encrypted.value).not.toContain(phoneNumber);
-    expect(decryptPhoneNumber(encrypted.value, key)).toBe(phoneNumber);
+    expect(encrypted.value).not.toContain(email);
+    expect(decryptEmailAddress(encrypted.value, key)).toBe(email);
   });
 
-  it("blocks high-abuse line types", () => {
-    expect(shouldAllowLineType("mobile")).toBe("allow");
-    expect(shouldAllowLineType("non_fixed_voip")).toBe("block");
-    expect(shouldAllowLineType("unknown")).toBe("challenge");
-  });
 });

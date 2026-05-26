@@ -16,6 +16,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { apiJson, money } from "../api";
+import { renderRoleplayPreview } from "../roleplay-preview";
 
 interface CharacterSummary {
   id: string;
@@ -350,7 +351,7 @@ function DiscoverExperience() {
             </span>
             <h2>{featured.name}</h2>
             <CreatorByline character={featured} />
-            <p>{featured.marketplacePreview || featured.description}</p>
+            <p>{renderRoleplayPreview(featured.marketplacePreview || featured.description)}</p>
             <CharacterRatingControl
               character={featured}
               selectedScore={ratingsByCharacterId[featured.id]}
@@ -421,7 +422,7 @@ function DiscoverExperience() {
                   </span>
                 </div>
                 <CreatorByline character={character} compact />
-                <p>{character.marketplacePreview || character.description}</p>
+                <p>{renderRoleplayPreview(character.marketplacePreview || character.description)}</p>
                 <CharacterRatingControl
                   character={character}
                   compact

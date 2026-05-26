@@ -3,27 +3,26 @@ import { calculateRiskScore, freeDailyMessageLimitForRisk, type RiskSignals } fr
 
 function lowRiskSignals(): RiskSignals {
   return {
-    phone: {
-      lineType: "mobile",
-      otpRequestsLastHour: 1,
-      failedOtpAttemptsLastHour: 0,
-      accountsOnPhone: 1,
-      devicesOnPhone: 1,
-      simSwapRisk: "low",
+    identity: {
+      credentialType: "email",
+      verificationRequestsLastHour: 1,
+      failedVerificationAttemptsLastHour: 0,
+      accountsOnCredential: 1,
+      devicesOnCredential: 1,
+      highRiskCredential: false,
     },
     device: {
       accountsOnDevice: 1,
-      phonesOnDevice: 1,
+      credentialsOnDevice: 1,
       isEmulator: false,
       isRootedOrJailbroken: false,
       automationSuspected: false,
     },
     network: {
       accountsOnIpLastDay: 1,
-      otpRequestsOnIpLastHour: 1,
+      verificationRequestsOnIpLastHour: 1,
       isDatacenter: false,
       isVpnOrProxy: false,
-      countryMismatch: false,
     },
     behavior: {
       freeQuotaExhaustionsLastWeek: 0,
@@ -42,18 +41,19 @@ function lowRiskSignals(): RiskSignals {
 }
 
 describe("risk core", () => {
-  it("allows normal phone/device/network signup traffic", () => {
+  it("allows normal email/device/network signup traffic", () => {
     const result = calculateRiskScore(lowRiskSignals());
 
     expect(result.action).toBe("allow");
     expect(result.score).toBeLessThan(30);
   });
 
-  it("blocks obvious disposable phone abuse", () => {
+  it("raises risk for credential and device abuse", () => {
     const signals = lowRiskSignals();
-    signals.phone.lineType = "non_fixed_voip";
+    signals.identity.highRiskCredential = true;
+    signals.identity.failedVerificationAttemptsLastHour = 8;
     signals.device.accountsOnDevice = 8;
-    signals.device.phonesOnDevice = 8;
+    signals.device.credentialsOnDevice = 8;
     signals.network.isDatacenter = true;
 
     const result = calculateRiskScore(signals);

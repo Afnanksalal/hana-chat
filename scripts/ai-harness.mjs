@@ -7,7 +7,8 @@ loadDotEnv(resolve(process.cwd(), ".env"));
 const API_BASE_URL = stripTrailingSlash(
   process.env.API_GATEWAY_URL ?? process.env.API_BASE_URL ?? "http://localhost:4000",
 );
-const DEV_ADMIN_PHONE_NUMBER = process.env.DEV_ADMIN_PHONE_NUMBER ?? "+15550000000";
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL ?? "admin@local.hana.test";
+const ADMIN_STATIC_OTP = process.env.ADMIN_STATIC_OTP;
 const EXPECTED_MODEL = process.env.XAI_DEFAULT_MODEL;
 const STRICT_QUALITY = process.env.AI_HARNESS_STRICT_QUALITY === "1";
 const reportDir = resolve(process.cwd(), "tmp", "ai-harness");
@@ -25,13 +26,25 @@ await check("api health", "critical", async () => {
   return `${payload.service} ${payload.status}`;
 });
 
-await check("dev admin AI session", "critical", async () => {
-  const payload = await postJson("/v1/auth/phone/start", {
-    phoneNumber: DEV_ADMIN_PHONE_NUMBER,
+await check("admin AI session", "critical", async () => {
+  const start = await postJson("/v1/auth/email/start", {
+    mode: "signin",
+    email: ADMIN_EMAIL,
+    deviceId: "hana-ai-harness-admin",
+  });
+  const code = start.devCode ?? ADMIN_STATIC_OTP;
+
+  assert(start.verificationId, "admin email verification was not created");
+  assert(code, "admin email code was not available for AI harness verification");
+
+  const payload = await postJson("/v1/auth/email/verify", {
+    email: ADMIN_EMAIL,
+    verificationId: start.verificationId,
+    code,
     deviceId: "hana-ai-harness-admin",
   });
 
-  assert(payload.sessionToken, "dev admin auth did not return a session token");
+  assert(payload.sessionToken, "admin auth did not return a session token");
   context.adminToken = payload.sessionToken;
 
   const settings = await patchJson(
@@ -39,7 +52,6 @@ await check("dev admin AI session", "critical", async () => {
     {
       adultModeEnabled: true,
       memoryEnabled: true,
-      voiceEnabled: true,
       displayName: "Afnan K Salal",
     },
     context.adminToken,

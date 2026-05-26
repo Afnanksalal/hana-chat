@@ -1,28 +1,26 @@
 import type { RiskAction } from "@hana/contracts";
-import type { PhoneLineType } from "@hana/identity-core";
 
 export interface RiskSignals {
-  phone: {
-    lineType: PhoneLineType;
-    otpRequestsLastHour: number;
-    failedOtpAttemptsLastHour: number;
-    accountsOnPhone: number;
-    devicesOnPhone: number;
-    simSwapRisk?: "unknown" | "low" | "medium" | "high";
+  identity: {
+    credentialType: "email";
+    verificationRequestsLastHour: number;
+    failedVerificationAttemptsLastHour: number;
+    accountsOnCredential: number;
+    devicesOnCredential: number;
+    highRiskCredential: boolean;
   };
   device: {
     accountsOnDevice: number;
-    phonesOnDevice: number;
+    credentialsOnDevice: number;
     isEmulator: boolean;
     isRootedOrJailbroken: boolean;
     automationSuspected: boolean;
   };
   network: {
     accountsOnIpLastDay: number;
-    otpRequestsOnIpLastHour: number;
+    verificationRequestsOnIpLastHour: number;
     isDatacenter: boolean;
     isVpnOrProxy: boolean;
-    countryMismatch: boolean;
   };
   behavior: {
     freeQuotaExhaustionsLastWeek: number;
@@ -56,36 +54,31 @@ function riskFromBoolean(value: boolean, weight: number): number {
 export function calculateRiskScore(signals: RiskSignals): RiskScoreResult {
   const reasons: string[] = [];
 
-  let phoneRisk = 0;
-  if (signals.phone.lineType === "non_fixed_voip" || signals.phone.lineType === "toll_free") {
-    phoneRisk += 90;
-    reasons.push("blocked_line_type");
-  } else if (signals.phone.lineType === "fixed_voip" || signals.phone.lineType === "unknown") {
-    phoneRisk += 45;
-    reasons.push("risky_line_type");
+  let identityRisk = 0;
+  if (signals.identity.highRiskCredential) {
+    identityRisk += 45;
+    reasons.push("high_risk_credential");
   }
-  phoneRisk += Math.min(30, signals.phone.otpRequestsLastHour * 4);
-  phoneRisk += Math.min(25, signals.phone.failedOtpAttemptsLastHour * 5);
-  phoneRisk += Math.min(40, Math.max(0, signals.phone.accountsOnPhone - 1) * 20);
-  phoneRisk += Math.min(25, Math.max(0, signals.phone.devicesOnPhone - 3) * 5);
-  if (signals.phone.simSwapRisk === "high") {
-    phoneRisk += 30;
-    reasons.push("high_sim_swap_risk");
+  identityRisk += Math.min(30, signals.identity.verificationRequestsLastHour * 4);
+  identityRisk += Math.min(25, signals.identity.failedVerificationAttemptsLastHour * 5);
+  identityRisk += Math.min(40, Math.max(0, signals.identity.accountsOnCredential - 1) * 20);
+  identityRisk += Math.min(25, Math.max(0, signals.identity.devicesOnCredential - 3) * 5);
+  if (signals.identity.accountsOnCredential > 1) {
+    reasons.push("credential_reused_across_accounts");
   }
 
   let deviceRisk = 0;
   deviceRisk += Math.min(60, Math.max(0, signals.device.accountsOnDevice - 1) * 15);
-  deviceRisk += Math.min(60, Math.max(0, signals.device.phonesOnDevice - 1) * 15);
+  deviceRisk += Math.min(60, Math.max(0, signals.device.credentialsOnDevice - 1) * 15);
   deviceRisk += riskFromBoolean(signals.device.isEmulator, 25);
   deviceRisk += riskFromBoolean(signals.device.isRootedOrJailbroken, 15);
   deviceRisk += riskFromBoolean(signals.device.automationSuspected, 40);
 
   let networkRisk = 0;
   networkRisk += Math.min(50, signals.network.accountsOnIpLastDay * 3);
-  networkRisk += Math.min(40, signals.network.otpRequestsOnIpLastHour * 2);
+  networkRisk += Math.min(40, signals.network.verificationRequestsOnIpLastHour * 2);
   networkRisk += riskFromBoolean(signals.network.isDatacenter, 25);
   networkRisk += riskFromBoolean(signals.network.isVpnOrProxy, 15);
-  networkRisk += riskFromBoolean(signals.network.countryMismatch, 20);
 
   let behaviorRisk = 0;
   behaviorRisk += Math.min(40, signals.behavior.freeQuotaExhaustionsLastWeek * 8);
@@ -101,7 +94,7 @@ export function calculateRiskScore(signals: RiskSignals): RiskScoreResult {
   graphRisk += Math.min(40, signals.graph.referralClusterRisk);
 
   const score = clampScore(
-    0.25 * phoneRisk +
+    0.25 * identityRisk +
       0.25 * deviceRisk +
       0.15 * networkRisk +
       0.15 * behaviorRisk +

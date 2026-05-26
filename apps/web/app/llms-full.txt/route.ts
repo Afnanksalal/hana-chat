@@ -9,7 +9,7 @@ ${siteDescription}
 
 ## Product Summary
 
-Hana Chat lets people chat with AI characters, discover published characters, create their own companions, manage saved memories, and upgrade for richer limits and premium experiences. The product voice is consumer-first: emotional continuity, character consistency, privacy controls, and polished mobile use matter more than technical exposition.
+Hana Chat lets people chat with AI characters, discover published characters, create their own companions, manage saved memories, and upgrade for richer limits and premium experiences. The product tone is consumer-first: emotional continuity, character consistency, privacy controls, and polished mobile use matter more than technical exposition.
 
 ## Core Public Features
 

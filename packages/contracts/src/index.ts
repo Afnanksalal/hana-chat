@@ -10,16 +10,26 @@ export type ConversationId = Brand<string, "ConversationId">;
 export type MessageId = Brand<string, "MessageId">;
 export type MemoryId = Brand<string, "MemoryId">;
 export type ModelCallId = Brand<string, "ModelCallId">;
-export type PhoneNumberE164 = Brand<string, "PhoneNumberE164">;
+export type EmailAddress = Brand<string, "EmailAddress">;
 export type DeviceId = Brand<string, "DeviceId">;
 export type RiskSessionId = Brand<string, "RiskSessionId">;
 
 export const IsoDateTimeSchema = z.string().datetime({ offset: true });
 
-export const E164PhoneNumberSchema = z
+export const EmailAddressSchema = z
   .string()
-  .regex(/^\+[1-9]\d{7,14}$/, "Phone number must be normalized E.164")
-  .transform((value) => value as PhoneNumberE164);
+  .trim()
+  .toLowerCase()
+  .email("Enter a valid email address")
+  .max(254)
+  .transform((value) => value as EmailAddress);
+
+export const UsernameSchema = z
+  .string()
+  .trim()
+  .min(2)
+  .max(40)
+  .regex(/^[A-Za-z0-9][A-Za-z0-9 ._-]*$/, "Use letters, numbers, spaces, dots, underscores, or dashes");
 
 export const EntitlementKeySchema = z.enum([
   "chat.free.daily_messages",
@@ -28,8 +38,6 @@ export const EntitlementKeySchema = z.enum([
   "memory.basic",
   "memory.deep",
   "adult.mode",
-  "voice.tts",
-  "voice.realtime",
   "creator.private_characters",
   "creator.paid_characters",
 ]);
@@ -102,22 +110,35 @@ export const ChatMessageSchema = z.object({
 
 export type ChatMessage = z.infer<typeof ChatMessageSchema>;
 
-export const StartPhoneVerificationRequestSchema = z.object({
-  phoneNumber: E164PhoneNumberSchema,
+export const StartEmailAuthRequestSchema = z
+  .object({
+    mode: z.enum(["signup", "signin"]),
+    email: EmailAddressSchema,
+    username: UsernameSchema.optional(),
+    deviceId: z.string().min(8).max(256).optional(),
+    riskSessionId: z.string().optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.mode === "signup" && !value.username) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["username"],
+        message: "Username is required to create an account",
+      });
+    }
+  });
+
+export type StartEmailAuthRequest = z.infer<typeof StartEmailAuthRequestSchema>;
+
+export const VerifyEmailAuthRequestSchema = z.object({
+  email: EmailAddressSchema,
+  verificationId: z.string().uuid().optional(),
+  code: z.string().regex(/^\d{6,8}$/),
   deviceId: z.string().min(8).max(256).optional(),
   riskSessionId: z.string().optional(),
 });
 
-export type StartPhoneVerificationRequest = z.infer<typeof StartPhoneVerificationRequestSchema>;
-
-export const VerifyPhoneRequestSchema = z.object({
-  phoneNumber: E164PhoneNumberSchema,
-  code: z.string().regex(/^\d{4,8}$/),
-  deviceId: z.string().min(8).max(256).optional(),
-  riskSessionId: z.string().optional(),
-});
-
-export type VerifyPhoneRequest = z.infer<typeof VerifyPhoneRequestSchema>;
+export type VerifyEmailAuthRequest = z.infer<typeof VerifyEmailAuthRequestSchema>;
 
 export const CreateCharacterRequestSchema = z.object({
   name: z.string().min(1).max(80),
@@ -205,7 +226,6 @@ export const UpdateSettingsRequestSchema = z.object({
     .optional(),
   adultModeEnabled: z.boolean().optional(),
   memoryEnabled: z.boolean().optional(),
-  voiceEnabled: z.boolean().optional(),
   marketingOptIn: z.boolean().optional(),
 });
 
@@ -271,6 +291,13 @@ export const AdminProcessPayoutRequestSchema = z.object({
 });
 
 export type AdminProcessPayoutRequest = z.infer<typeof AdminProcessPayoutRequestSchema>;
+
+export const AdminReviewCharacterRequestSchema = z.object({
+  action: z.enum(["approve", "reject"]),
+  note: z.string().max(500).optional().default(""),
+});
+
+export type AdminReviewCharacterRequest = z.infer<typeof AdminReviewCharacterRequestSchema>;
 
 export const AdminAnalyticsQuerySchema = z.object({
   rangeDays: z.coerce.number().int().min(7).max(90).default(30),

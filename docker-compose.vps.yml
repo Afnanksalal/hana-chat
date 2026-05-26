@@ -1,5 +1,21 @@
 name: hana-chat-vps
 
+x-hana-depends-on: &hana-depends-on
+  postgres:
+    condition: service_healthy
+  redis:
+    condition: service_healthy
+  qdrant:
+    condition: service_started
+  neo4j:
+    condition: service_healthy
+  redpanda:
+    condition: service_healthy
+  clickhouse:
+    condition: service_healthy
+  temporal:
+    condition: service_started
+
 x-hana-service: &hana-service
   build:
     context: .
@@ -9,21 +25,7 @@ x-hana-service: &hana-service
   restart: unless-stopped
   networks:
     - hana-internal
-  depends_on:
-    postgres:
-      condition: service_healthy
-    redis:
-      condition: service_healthy
-    qdrant:
-      condition: service_started
-    neo4j:
-      condition: service_healthy
-    redpanda:
-      condition: service_healthy
-    clickhouse:
-      condition: service_healthy
-    temporal:
-      condition: service_started
+  depends_on: *hana-depends-on
 
 x-service-health: &service-health
   interval: 30s
@@ -173,6 +175,30 @@ services:
       temporal-postgres:
         condition: service_healthy
 
+  smtp-relay:
+    image: ${SMTP_RELAY_IMAGE:-boky/postfix:latest}
+    restart: unless-stopped
+    environment:
+      HOSTNAME: ${SMTP_RELAY_HOSTNAME:-mail.app.hanachat.site}
+      ALLOWED_SENDER_DOMAINS: ${SMTP_RELAY_ALLOWED_SENDER_DOMAINS:-app.hanachat.site}
+      MASQUERADED_DOMAINS: ${SMTP_RELAY_MASQUERADED_DOMAINS:-app.hanachat.site}
+      MYNETWORKS: ${SMTP_RELAY_MYNETWORKS:-127.0.0.0/8 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16}
+      MESSAGE_SIZE_LIMIT: ${SMTP_RELAY_MESSAGE_SIZE_LIMIT:-1048576}
+      RELAYHOST: ${SMTP_RELAY_UPSTREAM_HOST:-}
+      RELAYHOST_USERNAME: ${SMTP_RELAY_UPSTREAM_USERNAME:-}
+      RELAYHOST_PASSWORD: ${SMTP_RELAY_UPSTREAM_PASSWORD:-}
+      RELAYHOST_TLS_LEVEL: ${SMTP_RELAY_UPSTREAM_TLS_LEVEL:-may}
+    volumes:
+      - smtp_spool:/var/spool/postfix
+      - ${MAIL_DKIM_KEYS_DIR:-/opt/hana-chat/shared/opendkim-keys}:/etc/opendkim/keys:ro
+    ports:
+      - "127.0.0.1:${SMTP_RELAY_HOST_PORT:-1587}:587"
+    networks:
+      - hana-internal
+    healthcheck:
+      <<: *service-health
+      test: ["CMD-SHELL", "postfix status >/dev/null 2>&1 || exit 1"]
+
   api-gateway:
     <<: *hana-service
     build:
@@ -180,6 +206,10 @@ services:
       dockerfile: infra/docker/service.Dockerfile
       args:
         SERVICE_PATH: services/api-gateway
+    depends_on:
+      <<: *hana-depends-on
+      smtp-relay:
+        condition: service_healthy
     environment:
       HEALTH_PORT: 4000
       IDENTITY_SERVICE_URL: http://identity-service:4010
@@ -452,3 +482,4 @@ volumes:
   clickhouse_data:
   temporal_postgres_data:
   media_data:
+  smtp_spool:

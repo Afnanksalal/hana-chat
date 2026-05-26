@@ -29,10 +29,10 @@ export default function TermsPage() {
           title: "Subscriptions",
           body: (
             <p>
-              Paid plans unlock additional usage, premium features, voice experiences, and mature
-              spaces where available. Prices, benefits, renewal terms, taxes, and billing provider
-              details are shown before purchase. Subscriptions renew unless cancelled before the
-              next billing date.
+              Paid plans unlock additional usage, premium features, and mature spaces where
+              available. Prices, benefits, renewal terms, taxes, and billing provider details are
+              shown before purchase. Subscriptions renew unless cancelled before the next billing
+              date.
             </p>
           ),
         },

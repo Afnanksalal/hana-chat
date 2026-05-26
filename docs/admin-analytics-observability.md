@@ -26,7 +26,7 @@ All API calls are guarded by `identity.user_roles.role = 'admin'` through `requi
 - Returns real aggregates from Postgres: users, sessions, messages, model calls, safety decisions,
   memories, marketplace engagement, billing, webhooks, outbox rows, service-boundary pressure, and
   audit events.
-- Does not expose secrets, raw prompts, model payloads, phone numbers, or provider credentials.
+- Does not expose secrets, raw prompts, model payloads, raw identity values, or provider credentials.
 
 ## Telemetry Flow
 

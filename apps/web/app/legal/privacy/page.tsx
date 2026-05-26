@@ -10,7 +10,7 @@ export default function PrivacyPage() {
           title: "Information we collect",
           body: (
             <p>
-              Hana may collect account details, phone number, subscription status, device signals,
+              Hana may collect account details, email address, subscription status, device signals,
               messages, character settings, saved memories, and support requests.
             </p>
           ),

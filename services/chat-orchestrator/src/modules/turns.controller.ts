@@ -18,7 +18,8 @@ export class TurnsController {
     const input = ChatTurnPlanRequestSchema.parse(body);
     const complexConversation =
       input.memoryCount >= 5 || input.recentMessageCount >= 18 || input.characterRating === "adult";
-    const includeRecentTurns = input.userTier === "ultra" ? 24 : input.userTier === "plus" ? 18 : 12;
+    const includeRecentTurns =
+      input.userTier === "ultra" ? 56 : input.userTier === "plus" ? 44 : 32;
 
     return {
       route: routeChatModel({

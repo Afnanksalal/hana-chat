@@ -5,8 +5,8 @@ import {
   GRAPH_CONSTRAINTS,
   buildConversationContextCypher,
   buildDeviceSeenCypher,
+  buildEmailVerifiedCypher,
   buildGraphPromptContext,
-  buildPhoneVerifiedCypher,
   scoreGraphRelationship,
   type GraphConversationContext,
   type GraphMemoryHit,
@@ -70,7 +70,7 @@ export class GraphController implements OnModuleDestroy {
   @Get("/projection-templates")
   public projectionTemplates() {
     return {
-      phoneVerified: buildPhoneVerifiedCypher(),
+      emailVerified: buildEmailVerifiedCypher(),
       deviceSeen: buildDeviceSeenCypher(),
       conversationContext: buildConversationContextCypher(),
     };

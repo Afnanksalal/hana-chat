@@ -101,6 +101,8 @@ export class MonetizationController {
     ]);
 
     return {
+      monetizationEnabled: this.config.MONETIZATION_ENABLED,
+      comingSoon: !this.config.MONETIZATION_ENABLED,
       wallet: toWalletSummary(wallet),
       payoutProfile: profile
         ? {
@@ -159,7 +161,10 @@ export class MonetizationController {
   ) {
     const session = await requireSession(this.db, this.config, authorization);
     const input = UpsertPayoutProfileRequestSchema.parse(body);
-    const encryptedVpa = encryptSensitive(input.vpa, this.config.PHONE_ENCRYPTION_KEY_BASE64);
+
+    assertMonetizationEnabled(this.config);
+
+    const encryptedVpa = encryptSensitive(input.vpa, this.config.PAYOUT_ENCRYPTION_KEY_BASE64);
     const now = new Date();
     let razorpayContactId: string | null = null;
     let razorpayFundAccountId: string | null = null;
@@ -241,6 +246,9 @@ export class MonetizationController {
   ) {
     const session = await requireSession(this.db, this.config, authorization);
     const input = CreateCharacterPurchaseRequestSchema.parse(body);
+
+    assertMonetizationEnabled(this.config);
+
     const character = await this.db
       .selectFrom("creator.characters as characters")
       .select([
@@ -397,6 +405,8 @@ export class MonetizationController {
     const session = await requireSession(this.db, this.config, authorization);
     const input = VerifyCharacterPurchaseRequestSchema.parse(body);
 
+    assertMonetizationEnabled(this.config);
+
     if (!this.config.RAZORPAY_KEY_SECRET) {
       throw new DomainError("INTERNAL", "Razorpay is not configured");
     }
@@ -439,6 +449,8 @@ export class MonetizationController {
   ) {
     const session = await requireSession(this.db, this.config, authorization);
     const input = RequestCreatorPayoutRequestSchema.parse(body);
+
+    assertMonetizationEnabled(this.config);
 
     await releasePendingEarnings(this.db, session.userId);
 
@@ -1236,6 +1248,12 @@ function resolvePaymentProvider(
   }
 
   return "razorpay";
+}
+
+function assertMonetizationEnabled(config: AppConfig): void {
+  if (!config.MONETIZATION_ENABLED) {
+    throw new DomainError("ENTITLEMENT_REQUIRED", "Creator monetization is coming soon.");
+  }
 }
 
 function platformFee(amountCents: number, feeBps: number): number {

@@ -27,6 +27,11 @@ import { searchCharacterVectors } from "./vector-character";
 const DEFAULT_AVATAR_URL = "/assets/hana-icon-head.png";
 const DEFAULT_COVER_IMAGE_URL = "/assets/hana-hero.png";
 
+interface MarketplaceViewer {
+  userId: string;
+  adultContentEnabled: boolean;
+}
+
 @Controller("/v1/characters")
 export class CharactersController {
   private readonly config = loadConfig();
@@ -37,18 +42,23 @@ export class CharactersController {
     await ensureDefaultCharacter(this.db);
 
     return {
-      characters: await listMarketplaceCharacters(this.db),
+      characters: await listMarketplaceCharacters(this.db, { config: this.config }),
     };
   }
 
   @Get("/marketplace")
-  public async marketplace(@Query("query") query?: string) {
+  public async marketplace(
+    @Query("query") query?: string,
+    @Headers("authorization") authorization?: string,
+  ) {
     await ensureDefaultCharacter(this.db);
+    const viewer = await resolveMarketplaceViewer(this.db, this.config, authorization);
 
     return {
       characters: await listMarketplaceCharacters(this.db, {
         config: this.config,
         query,
+        viewer,
       }),
     };
   }
@@ -83,6 +93,7 @@ export class CharactersController {
         "characters.price_cents",
         "characters.monetization_enabled",
         "characters.marketplace_stats_json",
+        "versions.greeting",
         "versions.rating",
         "versions.tags",
         "versions.personality_traits",
@@ -93,7 +104,13 @@ export class CharactersController {
       .orderBy("characters.updated_at", "desc")
       .execute();
 
-    return { characters: characters.map(toCharacterSummary) };
+    return {
+      characters: characters.map((character) =>
+        toCharacterSummary(character, {
+          monetizationEnabled: this.config.MONETIZATION_ENABLED,
+        }),
+      ),
+    };
   }
 
   @Get("/:characterId")
@@ -129,6 +146,7 @@ export class CharactersController {
         "characters.price_cents",
         "characters.monetization_enabled",
         "characters.marketplace_stats_json",
+        "versions.greeting",
         "versions.rating",
         "versions.tags",
         "versions.personality_traits",
@@ -152,6 +170,7 @@ export class CharactersController {
     }
 
     const access =
+      this.config.MONETIZATION_ENABLED &&
       character.monetization_enabled &&
       character.price_cents > 0 &&
       character.creator_user_id !== session.userId
@@ -167,7 +186,15 @@ export class CharactersController {
             trialRemaining: this.config.CREATOR_PAID_CHARACTER_TRIAL_MESSAGES,
           };
 
-    return { character: { ...toCharacterSummary(character), access } };
+    return {
+      character: {
+        ...toCharacterSummary(character, {
+          monetizationEnabled: this.config.MONETIZATION_ENABLED,
+        }),
+        greeting: character.greeting,
+        access,
+      },
+    };
   }
 
   @Post()
@@ -196,7 +223,8 @@ export class CharactersController {
         marketplace_preview: input.marketplacePreview || input.description,
         model_profile: input.modelProfile,
         price_cents: input.priceCents,
-        monetization_enabled: input.monetizationEnabled && input.priceCents > 0,
+        monetization_enabled:
+          this.config.MONETIZATION_ENABLED && input.monetizationEnabled && input.priceCents > 0,
         published_at: publishedAt,
         marketplace_stats_json: DEFAULT_MARKETPLACE_STATS,
       })
@@ -254,7 +282,8 @@ export class CharactersController {
         rating: input.rating,
         tags: input.tags,
         priceCents: input.priceCents,
-        monetizationEnabled: input.monetizationEnabled && input.priceCents > 0,
+        monetizationEnabled:
+          this.config.MONETIZATION_ENABLED && input.monetizationEnabled && input.priceCents > 0,
         updatedAt: now,
       },
     });
@@ -272,7 +301,11 @@ export class CharactersController {
       version: 1,
       status: moderationStatus,
       visibility,
-      character: input,
+      character: {
+        ...input,
+        monetizationEnabled:
+          this.config.MONETIZATION_ENABLED && input.monetizationEnabled && input.priceCents > 0,
+      },
     };
   }
 
@@ -333,7 +366,9 @@ export class CharactersController {
         moderation_status: moderationStatus,
         published_at: moderationStatus === "approved" ? now : null,
         price_cents: input.priceCents ?? character.price_cents,
-        monetization_enabled: input.monetizationEnabled ?? character.monetization_enabled,
+        monetization_enabled:
+          this.config.MONETIZATION_ENABLED &&
+          (input.monetizationEnabled ?? character.monetization_enabled),
         updated_at: now,
       })
       .where("id", "=", character.id)
@@ -361,7 +396,9 @@ export class CharactersController {
         rating: character.rating,
         tags: character.tags,
         priceCents: input.priceCents ?? character.price_cents,
-        monetizationEnabled: input.monetizationEnabled ?? character.monetization_enabled,
+        monetizationEnabled:
+          this.config.MONETIZATION_ENABLED &&
+          (input.monetizationEnabled ?? character.monetization_enabled),
         updatedAt: now,
       },
     });
@@ -633,14 +670,42 @@ async function resetLegacySeedStatsIfNeeded(
     .execute();
 }
 
+async function resolveMarketplaceViewer(
+  db: Kysely<HanaDatabase>,
+  config: AppConfig,
+  authorization: string | undefined,
+): Promise<MarketplaceViewer | null> {
+  try {
+    const session = await requireSession(db, config, authorization);
+    const settings = await db
+      .selectFrom("identity.user_settings")
+      .select(["adult_mode_enabled"])
+      .where("user_id", "=", session.userId)
+      .executeTakeFirst();
+
+    return {
+      userId: session.userId,
+      adultContentEnabled: Boolean(settings?.adult_mode_enabled),
+    };
+  } catch (error) {
+    if (error instanceof DomainError && error.code === "AUTH_REQUIRED") {
+      return null;
+    }
+
+    throw error;
+  }
+}
+
 async function listMarketplaceCharacters(
   db: Kysely<HanaDatabase>,
   options?: {
     config?: ReturnType<typeof loadConfig>;
     query?: string | undefined;
+    viewer?: MarketplaceViewer | null;
   },
 ) {
   const query = options?.query?.trim();
+  const viewer = options?.viewer ?? null;
 
   if (query && options?.config) {
     try {
@@ -651,14 +716,30 @@ async function listMarketplaceCharacters(
       const characterIds = vectorHits.map((hit) => hit.characterId);
 
       if (characterIds.length > 0) {
-        return listMarketplaceCharactersByIds(db, characterIds);
+        const vectorCharacters = await listMarketplaceCharactersByIds(db, characterIds, {
+          monetizationEnabled: options.config.MONETIZATION_ENABLED,
+          viewer,
+        });
+        const ownCharacters = viewer ? await listOwnMarketplaceCharacters(db, viewer, query) : [];
+
+        if (ownCharacters.length === 0) {
+          return vectorCharacters;
+        }
+
+        const ownSummaries = ownCharacters.map((character) =>
+          toCharacterSummary(character, {
+            monetizationEnabled: options.config?.MONETIZATION_ENABLED ?? true,
+          }),
+        );
+
+        return dedupeMarketplaceItems([...ownSummaries, ...vectorCharacters]);
       }
     } catch {
       // Qdrant is the discovery index; Postgres remains canonical when the index is warming.
     }
   }
 
-  const characters = await db
+  let publicQuery = db
     .selectFrom("creator.characters as characters")
     .innerJoin("identity.users as creators", "creators.id", "characters.creator_user_id")
     .innerJoin(
@@ -693,20 +774,46 @@ async function listMarketplaceCharacters(
     ])
     .where("characters.visibility", "=", "public")
     .where("characters.moderation_status", "=", "approved")
-    .where("versions.rating", "in", ["general", "teen"])
     .orderBy(
       sql<number>`COALESCE((characters.marketplace_stats_json->>'trendingScore')::DOUBLE PRECISION, 0)`,
       "desc",
     )
     .orderBy("characters.published_at", "desc")
     .orderBy("characters.updated_at", "desc")
-    .limit(24)
-    .execute();
+    .limit(24);
 
-  return characters.map(toCharacterSummary);
+  if (!viewer?.adultContentEnabled) {
+    publicQuery = publicQuery.where("versions.rating", "in", ["general", "teen"]);
+  }
+
+  if (query) {
+    const pattern = `%${query}%`;
+    publicQuery = publicQuery.where((eb) =>
+      eb.or([
+        eb("characters.name", "ilike", pattern),
+        eb("characters.description", "ilike", pattern),
+        eb("characters.marketplace_preview", "ilike", pattern),
+        sql<boolean>`array_to_string(versions.tags, ' ') ilike ${pattern}`,
+      ]),
+    );
+  }
+
+  const publicCharacters = await publicQuery.execute();
+  const ownCharacters = viewer ? await listOwnMarketplaceCharacters(db, viewer, query) : [];
+  const characters = dedupeMarketplaceItems([...ownCharacters, ...publicCharacters]);
+
+  return characters.map((character) =>
+    toCharacterSummary(character, {
+      monetizationEnabled: options?.config?.MONETIZATION_ENABLED ?? true,
+    }),
+  );
 }
 
-async function listMarketplaceCharactersByIds(db: Kysely<HanaDatabase>, characterIds: string[]) {
+async function listMarketplaceCharactersByIds(
+  db: Kysely<HanaDatabase>,
+  characterIds: string[],
+  options: { monetizationEnabled: boolean; viewer?: MarketplaceViewer | null },
+) {
   const characters = await db
     .selectFrom("creator.characters as characters")
     .innerJoin("identity.users as creators", "creators.id", "characters.creator_user_id")
@@ -741,9 +848,6 @@ async function listMarketplaceCharactersByIds(db: Kysely<HanaDatabase>, characte
       "characters.updated_at",
     ])
     .where("characters.id", "in", characterIds)
-    .where("characters.visibility", "=", "public")
-    .where("characters.moderation_status", "=", "approved")
-    .where("versions.rating", "in", ["general", "teen"])
     .execute();
   const characterById = new Map(characters.map((character) => [character.id, character]));
 
@@ -752,7 +856,107 @@ async function listMarketplaceCharactersByIds(db: Kysely<HanaDatabase>, characte
     .filter((character): character is NonNullable<ReturnType<typeof characterById.get>> =>
       Boolean(character),
     )
-    .map(toCharacterSummary);
+    .filter((character) => isVisibleInMarketplace(character, options.viewer ?? null))
+    .map((character) => toCharacterSummary(character, options));
+}
+
+async function listOwnMarketplaceCharacters(
+  db: Kysely<HanaDatabase>,
+  viewer: MarketplaceViewer,
+  query: string | undefined,
+) {
+  let ownQuery = db
+    .selectFrom("creator.characters as characters")
+    .innerJoin("identity.users as creators", "creators.id", "characters.creator_user_id")
+    .innerJoin(
+      "creator.character_versions as versions",
+      "versions.id",
+      "characters.current_version_id",
+    )
+    .select([
+      "characters.id",
+      "characters.creator_user_id",
+      "creators.display_name as creator_display_name",
+      "creators.avatar_url as creator_avatar_url",
+      "characters.name",
+      "characters.description",
+      "characters.visibility",
+      "characters.moderation_status",
+      "characters.slug",
+      "characters.avatar_url",
+      "characters.cover_image_url",
+      "characters.template_id",
+      "characters.marketplace_category",
+      "characters.marketplace_preview",
+      "characters.model_profile",
+      "characters.price_cents",
+      "characters.monetization_enabled",
+      "characters.marketplace_stats_json",
+      "versions.rating",
+      "versions.tags",
+      "versions.personality_traits",
+      "versions.speaking_style",
+      "characters.updated_at",
+    ])
+    .where("characters.creator_user_id", "=", viewer.userId)
+    .orderBy("characters.updated_at", "desc")
+    .limit(24);
+
+  if (!viewer.adultContentEnabled) {
+    ownQuery = ownQuery.where("versions.rating", "in", ["general", "teen"]);
+  }
+
+  if (query) {
+    const pattern = `%${query}%`;
+    ownQuery = ownQuery.where((eb) =>
+      eb.or([
+        eb("characters.name", "ilike", pattern),
+        eb("characters.description", "ilike", pattern),
+        eb("characters.marketplace_preview", "ilike", pattern),
+        sql<boolean>`array_to_string(versions.tags, ' ') ilike ${pattern}`,
+      ]),
+    );
+  }
+
+  return ownQuery.execute();
+}
+
+type MarketplaceCharacterRow = Awaited<ReturnType<typeof listOwnMarketplaceCharacters>>[number];
+
+function dedupeMarketplaceItems<T extends { id: string }>(rows: T[]): T[] {
+  const seen = new Set<string>();
+  const deduped: T[] = [];
+
+  for (const row of rows) {
+    if (seen.has(row.id)) {
+      continue;
+    }
+
+    seen.add(row.id);
+    deduped.push(row);
+  }
+
+  return deduped;
+}
+
+function isVisibleInMarketplace(
+  character: MarketplaceCharacterRow,
+  viewer: MarketplaceViewer | null,
+): boolean {
+  const publicApproved =
+    character.visibility === "public" && character.moderation_status === "approved";
+  const ownedByViewer = Boolean(viewer && character.creator_user_id === viewer.userId);
+  const safeRating = character.rating === "general" || character.rating === "teen";
+
+  if (safeRating) {
+    return publicApproved || ownedByViewer;
+  }
+
+  if (!viewer?.adultContentEnabled) {
+    return false;
+  }
+
+  return publicApproved || ownedByViewer;
 }
 
 function toCharacterSummary(character: {
@@ -779,7 +983,12 @@ function toCharacterSummary(character: {
   personality_traits: string[] | null;
   speaking_style: string | null;
   updated_at: Date;
-}) {
+}, options?: { monetizationEnabled?: boolean }) {
+  const monetizationEnabled =
+    (options?.monetizationEnabled ?? true) &&
+    character.monetization_enabled &&
+    character.price_cents > 0;
+
   return {
     id: character.id,
     creator: {
@@ -798,8 +1007,8 @@ function toCharacterSummary(character: {
     marketplaceCategory: character.marketplace_category,
     marketplacePreview: character.marketplace_preview ?? character.description,
     modelProfile: character.model_profile,
-    priceCents: character.price_cents,
-    monetizationEnabled: character.monetization_enabled,
+    priceCents: monetizationEnabled ? character.price_cents : 0,
+    monetizationEnabled,
     marketplaceStats: normalizeMarketplaceStats(character.marketplace_stats_json),
     rating: character.rating,
     tags: character.tags ?? [],

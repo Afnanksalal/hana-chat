@@ -5,13 +5,32 @@ import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 const portSchema = z.coerce.number().int().min(1).max(65_535);
-const optionalE164PhoneSchema = z.preprocess(
+const booleanEnvSchema = z.preprocess((value) => {
+  if (typeof value !== "string") {
+    return value;
+  }
+
+  const normalized = value.trim().toLowerCase();
+
+  if (["1", "true", "yes", "on"].includes(normalized)) {
+    return true;
+  }
+
+  if (["0", "false", "no", "off", ""].includes(normalized)) {
+    return false;
+  }
+
+  return value;
+}, z.boolean());
+const optionalEmailSchema = z.preprocess(
   (value) => (value === "" ? undefined : value),
-  z
-    .string()
-    .regex(/^\+[1-9]\d{7,14}$/)
-    .optional(),
+  z.string().trim().toLowerCase().email().optional(),
 );
+const optionalStaticOtpSchema = z.preprocess(
+  (value) => (value === "" ? undefined : value),
+  z.string().trim().regex(/^\d{6,8}$/).optional(),
+);
+const localDevAesKeyBase64 = "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA=";
 let dotenvLoaded = false;
 
 function findEnvFile(startDirectory: string): string | undefined {
@@ -56,9 +75,14 @@ const placeholderSecrets = new Set([
   "replace-with-razorpay-key-id",
   "replace-with-razorpay-key-secret",
   "replace-with-razorpay-webhook-secret",
-  "replace-with-twilio-account-sid",
-  "replace-with-twilio-auth-token",
-  "replace-with-twilio-verify-service-sid",
+  "replace-with-razorpayx-account-number",
+  "replace-with-email-hash-secret",
+  "replace-with-email-encryption-key",
+  "replace-with-payout-encryption-key",
+  "replace-with-smtp-password",
+  "hana-local-dev-email-hash-secret-change-me",
+  "hana-local-dev-session-secret-change-me",
+  localDevAesKeyBase64,
   "change-this-postgres-password",
   "change-this-neo4j-password",
   "change-this-clickhouse-password",
@@ -108,20 +132,33 @@ export const AppConfigSchema = z
     RAZORPAY_KEY_SECRET: z.string().optional(),
     RAZORPAY_WEBHOOK_SECRET: z.string().optional(),
     RAZORPAYX_ACCOUNT_NUMBER: z.string().optional(),
+    MONETIZATION_ENABLED: booleanEnvSchema.default(false),
+    PAYOUT_ENCRYPTION_KEY_BASE64: z.string().default(localDevAesKeyBase64),
     CREATOR_PLATFORM_FEE_BPS: z.coerce.number().int().min(0).max(9_000).default(3_000),
     CREATOR_EARNING_HOLD_DAYS: z.coerce.number().int().min(0).max(90).default(7),
     CREATOR_MIN_PAYOUT_CENTS: z.coerce.number().int().min(100).max(1_000_000).default(1_000),
     CREATOR_PAID_CHARACTER_TRIAL_MESSAGES: z.coerce.number().int().min(0).max(200).default(30),
 
-    PHONE_HASH_SECRET: z.string().default("replace-with-32-byte-secret"),
-    PHONE_ENCRYPTION_KEY_BASE64: z.string().default("replace-with-32-byte-base64-key"),
-    SESSION_SECRET: z.string().default("replace-with-32-byte-session-secret"),
+    EMAIL_HASH_SECRET: z.string().default("hana-local-dev-email-hash-secret-change-me"),
+    EMAIL_ENCRYPTION_KEY_BASE64: z.string().default(localDevAesKeyBase64),
+    AUTH_EMAIL_CODE_TTL_MINUTES: z.coerce.number().int().min(3).max(30).default(10),
+    AUTH_EMAIL_CODE_LENGTH: z.coerce.number().int().min(6).max(8).default(6),
+    AUTH_MAX_EMAIL_CODE_ATTEMPTS: z.coerce.number().int().min(3).max(10).default(5),
+    AUTH_ONE_ACCOUNT_PER_IP: booleanEnvSchema.default(true),
+    AUTH_ONE_ACCOUNT_PER_DEVICE: booleanEnvSchema.default(true),
+    ADMIN_EMAIL: optionalEmailSchema,
+    ADMIN_STATIC_OTP: optionalStaticOtpSchema,
+    SMTP_HOST: z.string().optional(),
+    SMTP_PORT: portSchema.default(587),
+    SMTP_SECURE: booleanEnvSchema.default(false),
+    SMTP_USER: z.string().optional(),
+    SMTP_PASSWORD: z.string().optional(),
+    SMTP_FROM: z.string().default("Hana Chat <no-reply@app.hanachat.site>"),
+    SMTP_POOL_MAX_CONNECTIONS: z.coerce.number().int().min(1).max(20).default(3),
+    SMTP_POOL_MAX_MESSAGES: z.coerce.number().int().min(1).max(10_000).default(100),
+
+    SESSION_SECRET: z.string().default("hana-local-dev-session-secret-change-me"),
     AUTH_COOKIE_NAME: z.string().default("hana_session"),
-    DEV_ADMIN_PHONE_NUMBER: optionalE164PhoneSchema,
-    ADMIN_OTP_BYPASS_PHONE_NUMBER: optionalE164PhoneSchema,
-    TWILIO_ACCOUNT_SID: z.string().optional(),
-    TWILIO_AUTH_TOKEN: z.string().optional(),
-    TWILIO_VERIFY_SERVICE_SID: z.string().optional(),
 
     WEB_ORIGIN: z.string().url().default("http://localhost:3000"),
     WEB_ORIGINS: z.string().default("http://localhost:3000"),
@@ -153,11 +190,19 @@ export const AppConfigSchema = z
     WORKER_SERVICE_PORT: portSchema.default(4120),
   })
   .superRefine((config, ctx) => {
+    if (config.ADMIN_STATIC_OTP && !config.ADMIN_EMAIL) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["ADMIN_STATIC_OTP"],
+        message: "ADMIN_STATIC_OTP requires ADMIN_EMAIL",
+      });
+    }
+
     if (config.NODE_ENV !== "production") {
       return;
     }
 
-    for (const key of ["PHONE_HASH_SECRET", "SESSION_SECRET"] as const) {
+    for (const key of ["EMAIL_HASH_SECRET", "SESSION_SECRET"] as const) {
       const value = config[key];
 
       if (placeholderSecrets.has(value) || value.length < 32) {
@@ -169,11 +214,25 @@ export const AppConfigSchema = z
       }
     }
 
-    if (!isValidAesKey(config.PHONE_ENCRYPTION_KEY_BASE64)) {
+    if (
+      placeholderSecrets.has(config.EMAIL_ENCRYPTION_KEY_BASE64) ||
+      !isValidAesKey(config.EMAIL_ENCRYPTION_KEY_BASE64)
+    ) {
       ctx.addIssue({
         code: "custom",
-        path: ["PHONE_ENCRYPTION_KEY_BASE64"],
-        message: "PHONE_ENCRYPTION_KEY_BASE64 must decode to a 32-byte key in production",
+        path: ["EMAIL_ENCRYPTION_KEY_BASE64"],
+        message: "EMAIL_ENCRYPTION_KEY_BASE64 must decode to a 32-byte key in production",
+      });
+    }
+
+    if (
+      placeholderSecrets.has(config.PAYOUT_ENCRYPTION_KEY_BASE64) ||
+      !isValidAesKey(config.PAYOUT_ENCRYPTION_KEY_BASE64)
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["PAYOUT_ENCRYPTION_KEY_BASE64"],
+        message: "PAYOUT_ENCRYPTION_KEY_BASE64 must decode to a 32-byte key in production",
       });
     }
 
@@ -185,18 +244,7 @@ export const AppConfigSchema = z
       });
     }
 
-    for (const key of [
-      "POSTGRES_PASSWORD",
-      "NEO4J_PASSWORD",
-      "CLICKHOUSE_PASSWORD",
-      "RAZORPAY_KEY_ID",
-      "RAZORPAY_KEY_SECRET",
-      "RAZORPAY_WEBHOOK_SECRET",
-      "RAZORPAYX_ACCOUNT_NUMBER",
-      "TWILIO_ACCOUNT_SID",
-      "TWILIO_AUTH_TOKEN",
-      "TWILIO_VERIFY_SERVICE_SID",
-    ] as const) {
+    for (const key of ["POSTGRES_PASSWORD", "NEO4J_PASSWORD", "CLICKHOUSE_PASSWORD"] as const) {
       if (isMissingOrPlaceholder(config[key])) {
         ctx.addIssue({
           code: "custom",
@@ -206,12 +254,45 @@ export const AppConfigSchema = z
       }
     }
 
-    if (config.DEV_ADMIN_PHONE_NUMBER) {
+    if (!config.SMTP_HOST) {
       ctx.addIssue({
         code: "custom",
-        path: ["DEV_ADMIN_PHONE_NUMBER"],
-        message: "DEV_ADMIN_PHONE_NUMBER must not be configured in production",
+        path: ["SMTP_HOST"],
+        message: "SMTP_HOST must be configured in production for email authentication",
       });
+    }
+
+    if (!config.SMTP_FROM) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["SMTP_FROM"],
+        message: "SMTP_FROM must use the production Hana sender address",
+      });
+    }
+
+    if (config.SMTP_USER && isMissingOrPlaceholder(config.SMTP_PASSWORD)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["SMTP_PASSWORD"],
+        message: "SMTP_PASSWORD must be configured when SMTP_USER is set in production",
+      });
+    }
+
+    if (config.MONETIZATION_ENABLED) {
+      for (const key of [
+        "RAZORPAY_KEY_ID",
+        "RAZORPAY_KEY_SECRET",
+        "RAZORPAY_WEBHOOK_SECRET",
+        "RAZORPAYX_ACCOUNT_NUMBER",
+      ] as const) {
+        if (isMissingOrPlaceholder(config[key])) {
+          ctx.addIssue({
+            code: "custom",
+            path: [key],
+            message: `${key} must be configured when monetization is enabled`,
+          });
+        }
+      }
     }
 
     validateProductionUrl(ctx, "WEB_ORIGIN", config.WEB_ORIGIN);

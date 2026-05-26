@@ -4,7 +4,7 @@ Date: 2026-05-25
 
 ## Verdict
 
-This pass closed the highest-risk dead ends found across auth, billing, creator monetization, chat safety, memory isolation, queue processing, deployment config, and mobile product polish. The codebase now has a deployable NestJS/Next.js product spine with real Postgres durability, Qdrant projections, Neo4j projection workers, Razorpay verification, creator wallet ledger, admin payout operations, phone OTP provider wiring, strict production config validation, PWA/SEO routes, and authenticated web flows.
+This pass closed the highest-risk dead ends found across auth, billing, creator monetization, chat safety, memory isolation, queue processing, deployment config, and mobile product polish. The codebase now has a deployable NestJS/Next.js product spine with real Postgres durability, Qdrant projections, Neo4j projection workers, payment-provider verification paths, creator wallet ledger, admin payout operations, passwordless email auth, strict production config validation, PWA/SEO routes, and authenticated web flows.
 
 Hana Chat still has dedicated product projects before it should be sold as a fully mature consumer
 platform: voice runtime, refund/tax/KYC operations, reports/moderation ops UI, production embedding
@@ -16,8 +16,8 @@ ends.
 - Removed browser JSON exposure of raw session tokens from web auth proxy responses.
 - Removed middleware HMAC-only session acceptance so revoked sessions require API validation.
 - Blocked auth open redirects by allowing only safe relative `next` paths.
-- Added production Twilio Verify wiring for OTP start/check, plus phone/device/IP OTP rate limits.
-- Hardened production config so placeholder xAI, Razorpay, Twilio, Postgres, Neo4j, ClickHouse, phone, and session secrets fail fast.
+- Added production email verification wiring for auth start/check, plus email/device/IP code rate limits.
+- Hardened production config so placeholder xAI, payment-provider, SMTP, Postgres, Neo4j, ClickHouse, identity, and session secrets fail fast.
 - Made Razorpay webhooks fail closed without a secret, idempotent by event id, amount/currency/status checked, and no longer activates on `payment.authorized`.
 - Added one-active-subscription data protection and transactional subscription activation.
 - Prevented mature/adult pending-review characters from being public or directly chat-accessible without creator ownership.
@@ -32,8 +32,8 @@ ends.
 - Added Qdrant timeouts and memory `last_used_at` updates.
 - Hardened outbox leases with expired-lock recovery, worker-owned ack/fail, and `dead_letter` status.
 - Turned `worker-service` from a health-only shell into a real projection worker for Qdrant and Neo4j outbox events.
-- Added active private service calls in the auth/chat/worker hot paths: `identity-service` for phone
-  precheck, `risk-service` for OTP abuse scoring, `chat-orchestrator` for model/prompt planning,
+- Added active private service calls in the auth/chat/worker hot paths: `identity-service` for identity
+  checks, `risk-service` for verification abuse scoring, `chat-orchestrator` for model/prompt planning,
   `billing-service` for entitlements and paid-character access, `moderation-service` for
   input/output safety, `memory-service` for memory write policy, `retrieval-service` for hybrid
   memory ranking, `graph-service` for Neo4j-backed per-conversation personalization, and
@@ -48,7 +48,7 @@ ends.
 - Added shared `.hanachat.site` auth-cookie configuration so landing CTAs can route signed-in users directly to the dashboard across public/app subdomains.
 - Added web CSP/security headers, API defensive headers, and production redaction for unexpected API errors.
 - Redacted production SSE internal errors and production chat model-route fields, removed raw provider response bodies from app errors, and expanded logger secret redaction.
-- Replaced local OTP fallback generation with cryptographic randomness, validated every production `WEB_ORIGINS` entry, removed unused raw mascot assets, and removed unrestricted Neo4j APOC config from the VPS compose file.
+- Replaced local verification-code fallback generation with cryptographic randomness, validated every production `WEB_ORIGINS` entry, removed unused raw mascot assets, and removed unrestricted Neo4j APOC config from the VPS compose file.
 - Cleared the dependency audit by overriding `postcss` to `8.5.15`.
 - Reworked shared UI polish across landing, dashboard, marketplace, creator, chat, settings, auth, legal, and mobile while preserving pure black plus hotpink and avoiding gradients.
 - Adjusted the landing hero so the next section remains visible on desktop and mobile instead of behaving like a sealed pitch slide.
@@ -65,7 +65,7 @@ ends.
 
 ## Current Critical Paths
 
-- Phone auth creates users, credentials, sessions, settings, risk sessions, and owner-bypass admin
+- Email auth creates users, credentials, sessions, settings, risk sessions, and dev-owner admin
   entitlements when explicitly configured.
 - Character create, publish, marketplace, and mine flows persist in Postgres and project to Qdrant/Neo4j.
 - Chat validates session, character visibility, moderation status, per-character paid unlocks, usage limits, safety, memory scope, model route, output safety, analytics, and memory extraction.
