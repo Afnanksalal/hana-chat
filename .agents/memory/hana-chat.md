@@ -68,6 +68,8 @@
 - Creator image uploads are stored as owned `creator.media_assets` records and served through the API media file route; creator UI should not rely on raw image URL fields.
 - User profile avatars are also uploaded through `creator.media_assets` with purpose `user_avatar`, then saved on `identity.users.avatar_url`.
 - Marketplace engagement uses real counters and event rows for views, profile opens, chat starts, messages, likes, saves, interactions, and trending score.
+- Admin marketplace analytics use admin inventory scope, not consumer Discover scope: non-rejected private, draft, pending-review, mature, and adult characters must appear with visibility/review labels while consumer discovery remains gated.
+- Admin character reviews have a dedicated dashboard queue and API; approving a character sets it `public`/`approved`, rejecting sets it `private`/`rejected`, and both paths audit/project the new state.
 - Marketplace ratings are persisted in `creator.character_ratings` as one score per user per character; `ratingAverage` and `ratingCount` live in `marketplace_stats_json` and affect trending rank.
 - Paid plans and creator monetization are preserved but disabled by default with `MONETIZATION_ENABLED=false`; public surfaces show "coming soon" and server endpoints block checkout, paid character purchase, payout profile, and payout request flows while the flag is off.
 - When monetization is re-enabled, paid character access is per-character purchase based: buyers get a mandatory 30 user-message trial, then chat requires a paid `billing.character_purchases` unlock or creator ownership, not just a subscription entitlement.
@@ -79,7 +81,7 @@
 - Chat adult-mode turns are opt-in per request: the web client requests adult mode only when the user setting is enabled and the selected character is mature/adult or has explicit spicy/NSFW signals.
 - Chat prompts treat character rating, tags, public description, marketplace preview, persona, and creator notes as style and heat-level signals while preserving the safety contract.
 - Marketplace fallback seeding must only create the flagship character when no approved public character exists, so local seeded casts do not get extra default bots.
-- Chat room list and dashboard recent-room previews render single-asterisk roleplay action beats as italics, and room avatars must remain fixed circular profile images instead of stretched cover-style cards.
+- Chat messages, room lists, marketplace cards, creator previews, and admin character reviews render single-asterisk roleplay action beats as italics, and room avatars must remain fixed circular profile images instead of stretched cover-style cards.
 - Seeded adult characters use explicit `adult` rating plus `nsfw`/`spicy`/`18+` tags so chat adult mode, persona, description, and tags can drive consensual 18+ roleplay behavior without making every bot sexual by default.
 
 ## Memory System
@@ -87,7 +89,12 @@
 - Chat prompt memory is scoped by user, character, and conversation.
 - The Memory toggle gates both prompt-memory retrieval/evolution injection and new automatic memory extraction for chat turns.
 - Multiple rooms for one bot must never share prompt memory or evolution state unless an explicit user-controlled import/copy feature is added.
-- Conversation evolution is stored in `chat.conversation_evolution` per user, character, and conversation, derived from scoped memories plus user turn count, and shown in chat settings.
+- Automatic memory extraction runs after accepted chat turns and writes bounded, deduplicated exact-scope facts for aliases, preferences, boundaries, relationship states/events, canon, and style signals.
+- Automatic memory extraction also reads the assistant side of the turn for reciprocal relationship decisions, character self-continuity/soul cues, and rare commitments, so memory can be bot-authored from actual chat behavior rather than only manual/user notes.
+- Conversation evolution is stored in `chat.conversation_evolution` per user, character, and conversation, derived from scoped memories, recent messages, user turn count, and relationship signals, then shown in chat settings.
+- Conversation evolution is a compacted live profile, not fixed content: underlying exact-scoped facts can grow over many turns, while prompt-facing user profile, character soul, milestones, habits, and open loops stay bounded and are recomputed from current evidence.
+- Evolution prompts must keep relationship progression evidence-based: enemies/rivals/strangers cannot become girlfriend/boyfriend/lover behavior after a few kind messages unless the chat explicitly earns and establishes that bond.
+- Web chat keeps a short-lived local pending-send outbox keyed by `clientMessageId` so quick back/navigation does not visually drop the last user turn and stale in-flight sends can retry idempotently.
 - Deleting a room must also deactivate exact-scope Qdrant/Neo4j memory projections so the deleted room cannot influence future prompt personalization.
 - No global user memory should be injected into chat.
 - Manual memories create or use a conversation thread for the selected character.

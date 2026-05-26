@@ -1301,6 +1301,16 @@ select:focus {
   font-style: italic;
 }
 
+.dashboard-character-card p em,
+.featured-content p em,
+.market-card-body p em,
+.marketplace-preview-card p em,
+.admin-character-review-copy p em,
+.admin-character-review-copy small em {
+  color: #ffd6e4;
+  font-style: italic;
+}
+
 .command-list svg,
 .dashboard-room-row > svg {
   color: var(--primary);
@@ -3331,6 +3341,7 @@ select:hover,
 .wallet-hero,
 .wallet-metric,
 .wallet-table-panel,
+.admin-character-review-card,
 .admin-review-card,
 .admin-payout-card {
   background: #050507;
@@ -3379,6 +3390,7 @@ select:hover,
 
 .wallet-metric svg,
 .wallet-table-panel svg,
+.admin-character-review-card svg,
 .admin-review-card svg,
 .admin-payout-card svg {
   color: var(--primary);
@@ -3387,6 +3399,7 @@ select:hover,
 .wallet-metric span,
 .wallet-metric small,
 .wallet-table-row small,
+.admin-character-review-card small,
 .admin-review-card small,
 .admin-payout-main small,
 .payout-card small {
@@ -3424,12 +3437,14 @@ select:hover,
 
 .wallet-table,
 .admin-card-list,
+.admin-character-review-list,
 .admin-payout-list {
   display: grid;
   gap: 10px;
 }
 
 .wallet-table-row,
+.admin-character-review-card,
 .admin-review-card,
 .admin-payout-card {
   padding: 13px;
@@ -3481,6 +3496,74 @@ select:hover,
 .admin-payout-card {
   display: grid;
   gap: 12px;
+}
+
+.admin-character-review-panel {
+  max-width: 1180px;
+}
+
+.admin-character-review-card {
+  display: grid;
+  gap: 12px;
+}
+
+.admin-character-review-main {
+  display: grid;
+  grid-template-columns: 68px minmax(0, 1fr);
+  gap: 13px;
+  align-items: start;
+}
+
+.admin-character-review-main img {
+  width: 68px;
+  height: 68px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid rgba(255, 31, 109, 0.38);
+  background: #08080b;
+}
+
+.admin-character-review-copy {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.admin-character-review-title {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.admin-character-review-title span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.admin-character-review-copy p,
+.admin-character-review-copy small {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.admin-character-review-copy p {
+  color: #f7f2f5;
+}
+
+.admin-review-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.admin-review-tags span {
+  border: 1px solid #24212a;
+  border-radius: 999px;
+  padding: 5px 8px;
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .admin-action-row {
@@ -4440,9 +4523,19 @@ select:hover,
   }
 
   .wallet-table-row,
+  .admin-character-review-card,
   .admin-review-card,
   .admin-payout-main {
     align-items: flex-start;
+  }
+
+  .admin-character-review-main {
+    grid-template-columns: 56px minmax(0, 1fr);
+  }
+
+  .admin-character-review-main img {
+    width: 56px;
+    height: 56px;
   }
 
   .admin-action-row {
@@ -5654,10 +5747,15 @@ textarea:focus {
   }
 
   .wallet-table-row,
+  .admin-character-review-card,
   .admin-review-card,
   .admin-payout-main {
     min-width: 0;
     overflow-wrap: anywhere;
+  }
+
+  .admin-character-review-main {
+    grid-template-columns: 1fr;
   }
 }
 

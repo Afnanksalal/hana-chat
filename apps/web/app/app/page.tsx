@@ -305,7 +305,9 @@ export default function AppHomePage() {
                 <img src={character.avatarUrl ?? "/assets/hana-icon-head.png"} alt="" />
                 <span>{character.marketplaceCategory ?? character.rating ?? "featured"}</span>
                 <h3>{character.name}</h3>
-                <p>{character.marketplacePreview ?? character.description}</p>
+                <p>
+                  {renderRoleplayPreview(character.marketplacePreview ?? character.description)}
+                </p>
               </Link>
             ))}
           </div>

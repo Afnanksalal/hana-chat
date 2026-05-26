@@ -13,6 +13,7 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { PremiumSelect } from "../../components/premium-select";
 import { apiJson, money } from "../api";
+import { renderRoleplayPreview } from "../roleplay-preview";
 
 type Rating = "general" | "teen" | "mature" | "adult";
 type ModelProfile = "fast" | "balanced" | "immersive" | "premium";
@@ -638,9 +639,11 @@ export default function CreatePage() {
           </div>
           <h2>{name || "New character"}</h2>
           <p>
-            {marketplacePreview ||
-              description ||
-              "A memorable companion with a distinct speaking style."}
+            {renderRoleplayPreview(
+              marketplacePreview ||
+                description ||
+                "A memorable companion with a distinct speaking style.",
+            )}
           </p>
           <div className="chip-row">
             {previewTags.map((tag) => (

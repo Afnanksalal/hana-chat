@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { AdminAnalyticsController } from "./admin-analytics.controller";
+import { AdminCharactersController } from "./admin-characters.controller";
 import { BillingController } from "./billing.controller";
 import { ChatController } from "./chat.controller";
 import { CharactersController } from "./characters.controller";
@@ -28,6 +29,7 @@ import { SystemController } from "./system.controller";
     MonetizationController,
     AdminMonetizationController,
     AdminAnalyticsController,
+    AdminCharactersController,
     SystemController,
   ],
 })

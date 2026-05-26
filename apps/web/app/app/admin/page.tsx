@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { apiJson, money } from "../api";
+import { renderRoleplayPreview } from "../roleplay-preview";
 
 interface AdminMonetizationResponse {
   summary: {
@@ -68,6 +69,28 @@ interface AdminMonetizationResponse {
     pendingCents: number;
     lifetimeEarnedCents: number;
     lifetimePaidCents: number;
+  }>;
+}
+
+interface AdminCharacterReviewsResponse {
+  characters: Array<{
+    id: string;
+    name: string;
+    creatorName: string;
+    description: string;
+    marketplacePreview: string;
+    category: string;
+    rating: string;
+    isAdult: boolean;
+    tags: string[];
+    traits: string[];
+    speakingStyle: string | null;
+    greeting: string;
+    visibility: string;
+    moderationStatus: string;
+    avatarUrl: string | null;
+    coverImageUrl: string | null;
+    updatedAt: string;
   }>;
 }
 
@@ -120,8 +143,11 @@ interface AdminAnalyticsResponse {
     messages: number;
     likes: number;
     saves: number;
+    totalCharacters: number;
     publicCharacters: number;
+    privateCharacters: number;
     pendingReviewCharacters: number;
+    adultCharacters: number;
     ratings: number;
     averageRating: number;
     topCharacters: Array<{
@@ -130,6 +156,9 @@ interface AdminAnalyticsResponse {
       creatorName: string;
       category: string;
       rating: string;
+      visibility: string;
+      moderationStatus: string;
+      isAdult: boolean;
       monetizationEnabled: boolean;
       priceCents: number;
       trendingScore: number;
@@ -245,6 +274,10 @@ const emptyAdmin: AdminMonetizationResponse = {
   topCreators: [],
 };
 
+const emptyReviews: AdminCharacterReviewsResponse = {
+  characters: [],
+};
+
 const emptyAnalytics: AdminAnalyticsResponse = {
   generatedAt: new Date(0).toISOString(),
   rangeDays: 30,
@@ -283,8 +316,11 @@ const emptyAnalytics: AdminAnalyticsResponse = {
     messages: 0,
     likes: 0,
     saves: 0,
+    totalCharacters: 0,
     publicCharacters: 0,
+    privateCharacters: 0,
     pendingReviewCharacters: 0,
+    adultCharacters: 0,
     ratings: 0,
     averageRating: 0,
     topCharacters: [],
@@ -344,8 +380,9 @@ const emptyAnalytics: AdminAnalyticsResponse = {
   auditTrail: [],
 };
 
-type AdminTab = "analytics" | "ops" | "safety";
+type AdminTab = "analytics" | "reviews" | "ops" | "safety";
 type PulseDay = AdminAnalyticsResponse["growth"]["timeSeries"][number];
+type MarketplaceCharacter = AdminAnalyticsResponse["marketplace"]["topCharacters"][number];
 
 const pulseMetrics: Array<{
   id: string;
@@ -384,9 +421,15 @@ const pulseMetrics: Array<{
   },
 ];
 
+function marketplaceCharacterMeta(character: MarketplaceCharacter) {
+  const adultLabel = character.isAdult ? " - 18+" : "";
+  return `${character.creatorName} - ${character.category} - ${character.rating}${adultLabel} - ${character.visibility}/${character.moderationStatus}`;
+}
+
 export default function AdminPage() {
   const [payload, setPayload] = useState<AdminMonetizationResponse>(emptyAdmin);
   const [analytics, setAnalytics] = useState<AdminAnalyticsResponse>(emptyAnalytics);
+  const [reviews, setReviews] = useState<AdminCharacterReviewsResponse>(emptyReviews);
   const [activeTab, setActiveTab] = useState<AdminTab>("analytics");
   const [showAllBoundaries, setShowAllBoundaries] = useState(false);
   const [hasLiveData, setHasLiveData] = useState(false);
@@ -398,13 +441,15 @@ export default function AdminPage() {
 
   async function load() {
     try {
-      const [analyticsData, monetizationData] = await Promise.all([
+      const [analyticsData, monetizationData, reviewData] = await Promise.all([
         apiJson<AdminAnalyticsResponse>("/api/v1/admin/analytics?rangeDays=30"),
         apiJson<AdminMonetizationResponse>("/api/v1/admin/monetization"),
+        apiJson<AdminCharacterReviewsResponse>("/api/v1/admin/characters/reviews"),
       ]);
 
       setAnalytics(analyticsData);
       setPayload(monetizationData);
+      setReviews(reviewData);
       setHasLiveData(true);
       setStatus("");
     } catch (error) {
@@ -456,6 +501,28 @@ export default function AdminPage() {
     }
   }
 
+  async function reviewCharacter(characterId: string, action: "approve" | "reject") {
+    if (
+      action === "reject" &&
+      !window.confirm("Reject this character and keep it out of Discover?")
+    ) {
+      return;
+    }
+
+    setStatus(action === "approve" ? "Approving character..." : "Rejecting character...");
+
+    try {
+      await apiJson(`/api/v1/admin/characters/${encodeURIComponent(characterId)}/review`, {
+        method: "POST",
+        body: JSON.stringify({ action }),
+      });
+      await load();
+      setStatus(action === "approve" ? "Character approved." : "Character rejected.");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Could not review character.");
+    }
+  }
+
   const topKpis = [
     {
       label: "Active users",
@@ -496,6 +563,7 @@ export default function AdminPage() {
   ];
   const tabs: Array<{ id: AdminTab; label: string; icon: typeof Activity }> = [
     { id: "analytics", label: "Analytics", icon: BarChart3 },
+    { id: "reviews", label: "Reviews", icon: UserCheck },
     { id: "ops", label: "Payout ops", icon: WalletCards },
     { id: "safety", label: "Safety", icon: AlertTriangle },
   ];
@@ -648,16 +716,18 @@ export default function AdminPage() {
                   </span>
                   <h2>Characters pulling attention</h2>
                 </div>
-                <small>{analytics.marketplace.publicCharacters} public</small>
+                <small>
+                  {analytics.marketplace.totalCharacters.toLocaleString()} total |{" "}
+                  {analytics.marketplace.publicCharacters.toLocaleString()} public |{" "}
+                  {analytics.marketplace.adultCharacters.toLocaleString()} 18+
+                </small>
               </div>
               <div className="admin-table compact-table">
                 {analytics.marketplace.topCharacters.map((character) => (
                   <div className="admin-table-row" key={character.id}>
                     <span>
                       <strong>{character.name}</strong>
-                      <small>
-                        {character.creatorName} - {character.category} - {character.rating}
-                      </small>
+                      <small>{marketplaceCharacterMeta(character)}</small>
                     </span>
                     <b>{character.messages.toLocaleString()} msgs</b>
                     <b>{money(character.revenueCents, "USD")}</b>
@@ -914,6 +984,79 @@ export default function AdminPage() {
             </div>
           </section>
         </>
+      ) : null}
+
+      {hasLiveData && activeTab === "reviews" ? (
+        <section className="wallet-table-panel admin-character-review-panel">
+          <div className="panel-heading split">
+            <div>
+              <span className="section-label">
+                <UserCheck size={15} /> Character review
+              </span>
+              <h2>Pending marketplace approvals</h2>
+            </div>
+            <small>
+              {reviews.characters.length.toLocaleString()} waiting |{" "}
+              {reviews.characters.filter((character) => character.isAdult).length.toLocaleString()}{" "}
+              18+
+            </small>
+          </div>
+          <div className="admin-character-review-list">
+            {reviews.characters.map((character) => (
+              <article className="admin-character-review-card" key={character.id}>
+                <div className="admin-character-review-main">
+                  {character.avatarUrl ? (
+                    <img src={character.avatarUrl} alt={`${character.name} avatar`} />
+                  ) : null}
+                  <div className="admin-character-review-copy">
+                    <div className="admin-character-review-title">
+                      <span>
+                        <strong>{character.name}</strong>
+                        <small>
+                          {character.creatorName} - {character.category} - {character.rating}
+                          {character.isAdult ? " - 18+" : ""} - {character.visibility}/
+                          {character.moderationStatus}
+                        </small>
+                      </span>
+                    </div>
+                    <p>
+                      {renderRoleplayPreview(character.marketplacePreview || character.description)}
+                    </p>
+                    <small>{renderRoleplayPreview(character.greeting)}</small>
+                    <div className="admin-review-tags">
+                      {character.tags.slice(0, 6).map((tag) => (
+                        <span key={`${character.id}:${tag}`}>{tag}</span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+                <div className="admin-action-row">
+                  <button
+                    className="primary-action compact"
+                    type="button"
+                    onClick={() => void reviewCharacter(character.id, "approve")}
+                  >
+                    <CheckCircle2 size={15} /> Approve
+                  </button>
+                  <button
+                    className="secondary-action compact"
+                    type="button"
+                    onClick={() => void reviewCharacter(character.id, "reject")}
+                  >
+                    <AlertTriangle size={15} /> Reject
+                  </button>
+                </div>
+              </article>
+            ))}
+            {reviews.characters.length === 0 ? (
+              <EmptyState
+                icon={CheckCircle2}
+                title="No character reviews"
+                text="Mature, adult, or manually held characters will appear here before they enter Discover."
+              />
+            ) : null}
+          </div>
+        </section>
       ) : null}
 
       {hasLiveData && activeTab === "safety" ? (

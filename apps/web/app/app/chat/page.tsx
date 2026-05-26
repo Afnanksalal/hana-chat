@@ -23,7 +23,7 @@ import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { HanaLogo } from "../../components/hana-logo";
 import { apiJson, money } from "../api";
-import { renderRoleplayPreview } from "../roleplay-preview";
+import { renderRoleplayContent, renderRoleplayPreview } from "../roleplay-preview";
 
 type MemoryKind = "preference" | "boundary" | "relationship" | "canon" | "event" | "style";
 
@@ -100,6 +100,13 @@ interface EvolutionSummary {
     relationship: string[];
     canon: string[];
     style: string[];
+    relationshipState: string;
+    userProfile: string[];
+    soul: string[];
+    milestones: string[];
+    adaptiveSkills: string[];
+    openLoops: string[];
+    recentSignals: string[];
   };
   updatedAt: string;
 }
@@ -122,6 +129,20 @@ interface ChatResponse {
     action: string;
     reasonCode?: string;
   };
+}
+
+type PendingTurnStatus = "sending" | "failed";
+
+interface PendingChatTurn {
+  id: string;
+  characterId: string;
+  conversationId?: string;
+  content: string;
+  adultModeRequested: boolean;
+  status: PendingTurnStatus;
+  attempts: number;
+  createdAt: string;
+  updatedAt: string;
 }
 
 interface MemoriesResponse {
@@ -180,6 +201,8 @@ const memoryKinds: Array<{ id: MemoryKind; label: string }> = [
   { id: "event", label: "Event" },
   { id: "style", label: "Style" },
 ];
+const pendingChatStorageKey = "hana:chat-pending-turns:v1";
+const pendingChatTtlMs = 15 * 60 * 1_000;
 
 function formatRoomTimestamp(value: string): string {
   const date = new Date(value);
@@ -225,6 +248,126 @@ function replaceWithFreshRoom(characterId: string): void {
   params.set("characterId", characterId);
   params.set("new", "1");
   replaceChatLocation(params);
+}
+
+function readPendingTurns(): PendingChatTurn[] {
+  if (typeof window === "undefined") {
+    return [];
+  }
+
+  try {
+    const parsed: unknown = JSON.parse(window.localStorage.getItem(pendingChatStorageKey) ?? "[]");
+    const now = Date.now();
+    const turns = Array.isArray(parsed)
+      ? parsed.filter(isPendingTurn).filter((turn) => {
+          const timestamp = new Date(turn.updatedAt).getTime();
+
+          return Number.isFinite(timestamp) && now - timestamp <= pendingChatTtlMs;
+        })
+      : [];
+
+    writePendingTurns(turns);
+    return turns;
+  } catch {
+    return [];
+  }
+}
+
+function writePendingTurns(turns: PendingChatTurn[]): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.localStorage.setItem(pendingChatStorageKey, JSON.stringify(turns.slice(-20)));
+}
+
+function upsertPendingTurn(turn: PendingChatTurn): void {
+  const turns = readPendingTurns();
+  const index = turns.findIndex((item) => item.id === turn.id);
+
+  if (index >= 0) {
+    turns[index] = turn;
+  } else {
+    turns.push(turn);
+  }
+
+  writePendingTurns(turns);
+}
+
+function patchPendingTurn(id: string, patch: Partial<PendingChatTurn>): PendingChatTurn | null {
+  const turns = readPendingTurns();
+  const index = turns.findIndex((turn) => turn.id === id);
+
+  if (index < 0) {
+    return null;
+  }
+
+  const current = turns[index];
+
+  if (!current) {
+    return null;
+  }
+
+  const next: PendingChatTurn = { ...current, ...patch, updatedAt: new Date().toISOString() };
+  turns[index] = next;
+  writePendingTurns(turns);
+
+  return next;
+}
+
+function removePendingTurn(id: string): void {
+  writePendingTurns(readPendingTurns().filter((turn) => turn.id !== id));
+}
+
+function pendingTurnsFor(characterId: string, conversationId?: string): PendingChatTurn[] {
+  return readPendingTurns().filter((turn) => {
+    if (turn.characterId !== characterId) {
+      return false;
+    }
+
+    return conversationId ? turn.conversationId === conversationId : !turn.conversationId;
+  });
+}
+
+function mergePendingMessages(
+  messages: ChatMessage[],
+  characterId: string,
+  conversationId?: string,
+): ChatMessage[] {
+  const next = [...messages];
+
+  for (const turn of pendingTurnsFor(characterId, conversationId)) {
+    const alreadyVisible = next.some(
+      (message) =>
+        message.id === turn.id || (message.role === "user" && message.content === turn.content),
+    );
+
+    if (!alreadyVisible) {
+      next.push({ id: turn.id, role: "user", content: turn.content });
+    }
+  }
+
+  return next;
+}
+
+function isPendingTurn(value: unknown): value is PendingChatTurn {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const record = value as Record<string, unknown>;
+
+  return (
+    typeof record["id"] === "string" &&
+    typeof record["characterId"] === "string" &&
+    typeof record["content"] === "string" &&
+    typeof record["adultModeRequested"] === "boolean" &&
+    (record["status"] === "sending" || record["status"] === "failed") &&
+    typeof record["attempts"] === "number" &&
+    typeof record["createdAt"] === "string" &&
+    typeof record["updatedAt"] === "string" &&
+    (record["conversationId"] === undefined || typeof record["conversationId"] === "string")
+  );
 }
 
 function ChatExperience() {
@@ -294,6 +437,32 @@ function ChatExperience() {
       document.body.classList.remove("chat-room-open");
     };
   }, [selectedCharacter]);
+
+  useEffect(() => {
+    if (!selectedCharacter || isSending) {
+      return;
+    }
+
+    const stalePendingTurn = pendingTurnsFor(selectedCharacter.id, activeConversation?.id).find(
+      (turn) =>
+        turn.status === "sending" &&
+        turn.attempts < 4 &&
+        Date.now() - new Date(turn.updatedAt).getTime() > 2_500,
+    );
+
+    if (!stalePendingTurn) {
+      return;
+    }
+
+    setMessages((current) =>
+      mergePendingMessages(current, selectedCharacter.id, activeConversation?.id),
+    );
+    void submitPendingTurn({
+      ...stalePendingTurn,
+      attempts: stalePendingTurn.attempts + 1,
+      updatedAt: new Date().toISOString(),
+    });
+  }, [activeConversation?.id, isSending, selectedCharacter?.id]);
 
   useEffect(() => {
     setDeleteArmed(false);
@@ -406,17 +575,18 @@ function ChatExperience() {
         messages: Array<{ id: string; role: "assistant" | "user" | "system"; content: string }>;
         evolution?: EvolutionSummary | null;
       }>(`/api/v1/chat/conversations/${encodeURIComponent(conversation.id)}/messages`);
+      const persistedMessages = payload.messages
+        .filter(
+          (message): message is { id: string; role: "assistant" | "user"; content: string } =>
+            message.role === "assistant" || message.role === "user",
+        )
+        .map((message) => ({
+          id: message.id,
+          role: message.role,
+          content: message.content,
+        }));
       setMessages(
-        payload.messages
-          .filter(
-            (message): message is { id: string; role: "assistant" | "user"; content: string } =>
-              message.role === "assistant" || message.role === "user",
-          )
-          .map((message) => ({
-            id: message.id,
-            role: message.role,
-            content: message.content,
-          })),
+        mergePendingMessages(persistedMessages, conversation.characterId, conversation.id),
       );
       setEvolution(payload.evolution ?? null);
       await loadScopedMemories(conversation.characterId, conversation.id);
@@ -431,15 +601,20 @@ function ChatExperience() {
     setDirectCharacter(character);
     setActiveConversation(undefined);
     setSelectedCharacterId(character.id);
-    setMessages([
-      {
-        id: "intro",
-        role: "assistant",
-        content:
-          character.greeting?.trim() ||
-          `*${character.name} settles into the room with you.* Tell me where you want the scene to begin.`,
-      },
-    ]);
+    setMessages(
+      mergePendingMessages(
+        [
+          {
+            id: "intro",
+            role: "assistant",
+            content:
+              character.greeting?.trim() ||
+              `*${character.name} settles into the room with you.* Tell me where you want the scene to begin.`,
+          },
+        ],
+        character.id,
+      ),
+    );
     setMemories([]);
     setMemoryEdits({});
     setMemoryDraft("");
@@ -556,10 +731,31 @@ function ChatExperience() {
       role: "user",
       content,
     };
+    const now = new Date().toISOString();
+    const pendingTurn: PendingChatTurn = {
+      id: userMessage.id,
+      characterId: selectedCharacter.id,
+      content,
+      adultModeRequested: shouldRequestAdultMode(selectedCharacter, adultModeEnabled),
+      status: "sending",
+      attempts: 1,
+      createdAt: now,
+      updatedAt: now,
+      ...(activeConversation?.id ? { conversationId: activeConversation.id } : {}),
+    };
 
     resetAssistantTyping();
     setDraft("");
     setMessages((current) => [...current, userMessage]);
+    upsertPendingTurn(pendingTurn);
+    await submitPendingTurn(pendingTurn);
+  }
+
+  async function submitPendingTurn(turn: PendingChatTurn) {
+    if (!selectedCharacter || isSending) {
+      return;
+    }
+
     setIsSending(true);
     setStatus("Sending...");
 
@@ -571,11 +767,11 @@ function ChatExperience() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          conversationId: activeConversation?.id,
-          characterId: selectedCharacter.id,
-          content,
-          clientMessageId: userMessage.id,
-          adultModeRequested: shouldRequestAdultMode(selectedCharacter, adultModeEnabled),
+          conversationId: turn.conversationId ?? activeConversation?.id,
+          characterId: turn.characterId,
+          content: turn.content,
+          clientMessageId: turn.id,
+          adultModeRequested: turn.adultModeRequested,
         }),
       });
 
@@ -583,7 +779,7 @@ function ChatExperience() {
         throw new Error(`Chat stream failed with HTTP ${response.status}`);
       }
 
-      let nextConversationId = activeConversation?.id;
+      let nextConversationId = turn.conversationId ?? activeConversation?.id;
       let assistantId: string | undefined;
       let assistantAdded = false;
       let wasBlocked = false;
@@ -592,11 +788,16 @@ function ChatExperience() {
         ready: () => setStatus(""),
         blocked: (payload) => {
           wasBlocked = true;
+          removePendingTurn(turn.id);
           resetAssistantTyping();
           setStatus(payload.safety?.reasonCode ?? "Message was not accepted.");
         },
         meta: (payload) => {
           nextConversationId = payload.conversationId ?? nextConversationId;
+          if (nextConversationId) {
+            patchPendingTurn(turn.id, { conversationId: nextConversationId, status: "sending" });
+          }
+
           if (payload.trial) {
             setTrialStatus(payload.trial);
           }
@@ -627,10 +828,12 @@ function ChatExperience() {
         },
         done: (payload) => {
           if (!payload.accepted) {
+            removePendingTurn(turn.id);
             return;
           }
 
           nextConversationId = payload.conversationId ?? nextConversationId;
+          removePendingTurn(turn.id);
 
           if (payload.assistantMessage) {
             assistantId = assistantId ?? payload.assistantMessage.id;
@@ -656,7 +859,7 @@ function ChatExperience() {
               remaining: numberDetail(payload.details, "trialRemaining"),
             });
           }
-          throw new Error(payload.message ?? "Chat stream failed.");
+          throw new ChatStreamError(payload.message ?? "Chat stream failed.", payload.code);
         },
       });
 
@@ -670,13 +873,29 @@ function ChatExperience() {
           replaceWithConversation(conversation.id);
         }
 
-        await loadScopedMemories(selectedCharacter.id, nextConversationId);
+        await loadScopedMemories(turn.characterId, nextConversationId);
       }
 
       if (!wasBlocked) {
         setStatus("");
       }
     } catch (error) {
+      if (error instanceof ChatStreamError && error.code === "CONFLICT") {
+        patchPendingTurn(turn.id, { status: "sending", attempts: turn.attempts + 1 });
+        setStatus("Message is still saving...");
+        window.setTimeout(() => {
+          if (!isSending) {
+            const pending = readPendingTurns().find((item) => item.id === turn.id);
+
+            if (pending && pending.attempts < 4) {
+              void submitPendingTurn(pending);
+            }
+          }
+        }, 1_400);
+        return;
+      }
+
+      patchPendingTurn(turn.id, { status: "failed" });
       setStatus(error instanceof Error ? error.message : "Message failed.");
     } finally {
       setIsSending(false);
@@ -1360,6 +1579,16 @@ interface ChatStreamHandlers {
   error: (payload: { code?: string; message?: string; details?: Record<string, unknown> }) => void;
 }
 
+class ChatStreamError extends Error {
+  public readonly code: string | undefined;
+
+  public constructor(message: string, code?: string) {
+    super(message);
+    this.name = "ChatStreamError";
+    this.code = code;
+  }
+}
+
 async function readChatStream(response: Response, handlers: ChatStreamHandlers): Promise<void> {
   const reader = response.body?.getReader();
 
@@ -1438,27 +1667,6 @@ function safeJsonParse(value: string): unknown {
   }
 }
 
-function renderRoleplayContent(content: string) {
-  const parts = content.split(/(\*[^*\n]{1,220}\*)/g);
-
-  return parts.map((part, index) => {
-    if (!part) {
-      return null;
-    }
-
-    if (part.startsWith("*") && part.endsWith("*") && part.length > 2) {
-      return <em key={`${part}-${index}`}>{part.slice(1, -1)}</em>;
-    }
-
-    return part.split("\n").map((line, lineIndex, lines) => (
-      <span key={`${index}-${lineIndex}`}>
-        {line}
-        {lineIndex < lines.length - 1 ? <br /> : null}
-      </span>
-    ));
-  });
-}
-
 function shouldRequestAdultMode(character: CharacterSummary, enabledInSettings: boolean): boolean {
   if (!enabledInSettings) {
     return false;
@@ -1470,7 +1678,8 @@ function shouldRequestAdultMode(character: CharacterSummary, enabledInSettings: 
 
   const adultTags = new Set(["adult", "nsfw", "spicy", "naughty", "sexual", "18+"]);
   const adultTextSignals = ["nsfw", "spicy", "naughty", "sexual", "18+", "explicit"];
-  const freeformSignals = `${character.description} ${character.marketplacePreview ?? ""}`.toLowerCase();
+  const freeformSignals =
+    `${character.description} ${character.marketplacePreview ?? ""}`.toLowerCase();
 
   return (
     character.tags?.some((tag) => adultTags.has(tag.trim().toLowerCase())) ||

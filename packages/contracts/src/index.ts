@@ -292,6 +292,13 @@ export const AdminProcessPayoutRequestSchema = z.object({
 
 export type AdminProcessPayoutRequest = z.infer<typeof AdminProcessPayoutRequestSchema>;
 
+export const AdminReviewCharacterRequestSchema = z.object({
+  action: z.enum(["approve", "reject"]),
+  note: z.string().max(500).optional().default(""),
+});
+
+export type AdminReviewCharacterRequest = z.infer<typeof AdminReviewCharacterRequestSchema>;
+
 export const AdminAnalyticsQuerySchema = z.object({
   rangeDays: z.coerce.number().int().min(7).max(90).default(30),
 });

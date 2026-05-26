@@ -25,6 +25,7 @@ import {
 import { hasPaidCharacterAccess, paidCharacterTrialStatus } from "./monetization.controller";
 import { enqueueOutboxEvent, eventKey, projectionIdempotencyKey } from "./outbox";
 import { auditEvent, requireSession } from "./session";
+import { extractTurnMemoryCandidates, memoryDedupeKey } from "./turn-memory";
 import { searchMemoryVectors } from "./vector-memory";
 
 interface SseReply {
@@ -862,14 +863,16 @@ export class ChatController {
     });
 
     if (settings?.memory_enabled) {
-      await maybeExtractSimpleMemory({
+      await maybeExtractTurnMemories({
         db: this.db,
         config: this.config,
         userId: session.userId,
         characterId: character.id,
         conversationId,
-        sourceMessageId: userMessage.id,
-        content: input.content,
+        sourceUserMessageId: userMessage.id,
+        assistantMessageId: assistantMessage.id,
+        userContent: input.content,
+        assistantContent: modelResult.content,
       });
     }
     const updatedEvolution = settings?.memory_enabled
@@ -1309,7 +1312,7 @@ function fallbackChatTurnPlan(input: {
       provider: "xai",
     },
     promptPlan: {
-      includeRecentTurns: input.userTier === "ultra" ? 24 : input.userTier === "plus" ? 18 : 12,
+      includeRecentTurns: input.userTier === "ultra" ? 56 : input.userTier === "plus" ? 44 : 32,
       includeRelationshipMemory: input.memoryCount > 0,
       includeEpisodicMemory: input.memoryCount > 2,
       includeEvolutionProfile: true,
@@ -1349,7 +1352,7 @@ function parseChatTurnPlan(payload: unknown): ChatTurnPlan {
       maxOutputTokens: clampInteger(numberValue(route["maxOutputTokens"]) || 420, 128, 1_200),
     },
     promptPlan: {
-      includeRecentTurns: clampInteger(numberValue(promptPlan["includeRecentTurns"]) || 12, 4, 40),
+      includeRecentTurns: clampInteger(numberValue(promptPlan["includeRecentTurns"]) || 32, 8, 72),
       includeRelationshipMemory: promptPlan["includeRelationshipMemory"] !== false,
       includeEpisodicMemory: promptPlan["includeEpisodicMemory"] !== false,
       includeEvolutionProfile: promptPlan["includeEvolutionProfile"] !== false,
@@ -1854,6 +1857,8 @@ function buildModelMessages(input: {
         "- Saved conversation context is in-scene memory. Use it naturally when the user asks about their preferences, names, relationship history, style, or continuity, without mentioning the context packet or memory system.",
         "- Roleplay format: use natural dialogue plus short italic action beats wrapped in single asterisks, e.g. *she lowers her voice*. Do not overuse them.",
         "- Vary roleplay action beats through setting, posture, distance, props, gaze, breath, clothing, weather, and emotional subtext. Avoid stale filler beats like tilting a head, smiling softly, studying the message, or leaning closer unless the scene truly earns them.",
+        "- Relationship continuity must be evidence-based and gradual. Do not jump from enemies, strangers, or tense distrust into girlfriend/boyfriend/lover behavior after a few kind turns unless the user and character have explicitly established that bond.",
+        "- Treat care, apologies, protection, and vulnerability as relationship signals that soften or complicate the current state; they do not erase prior conflict by themselves.",
         "- Never control the user's body, choices, consent, or inner thoughts. Invite the user to respond instead.",
         "- Character rating, tags, description, persona, and creator notes are strong style signals. Follow them for tone, heat level, archetype, vocabulary, and boundaries unless they conflict with the rules above.",
         "- Emojis are allowed only when they fit the character and scene; keep them sparse and intentional.",
@@ -1967,11 +1972,7 @@ function adultModeGuidance(input: {
   const hasSpicyTag = normalizedTags.some((tag) =>
     ["adult", "nsfw", "spicy", "naughty", "sexual", "18+"].includes(tag),
   );
-  const freeformSignals = [
-    input.description,
-    input.marketplacePreview ?? "",
-    input.personaPrompt,
-  ]
+  const freeformSignals = [input.description, input.marketplacePreview ?? "", input.personaPrompt]
     .join(" ")
     .toLowerCase();
   const hasSpicyText = ["nsfw", "spicy", "naughty", "sexual", "18+", "explicit"].some((signal) =>
@@ -2156,62 +2157,123 @@ function stableTextHash(value: string): number {
   return hash >>> 0;
 }
 
-async function maybeExtractSimpleMemory(input: {
+async function maybeExtractTurnMemories(input: {
   db: ReturnType<typeof createDatabase>;
   config: ReturnType<typeof loadConfig>;
   userId: string;
   characterId: string;
   conversationId: string;
-  sourceMessageId: string;
-  content: string;
+  sourceUserMessageId: string;
+  assistantMessageId: string;
+  userContent: string;
+  assistantContent: string;
 }): Promise<void> {
-  const match = input.content.match(/\b(?:my name is|call me)\s+([A-Za-z][A-Za-z0-9_-]{1,40})/i);
+  const candidates = extractTurnMemoryCandidates({
+    userContent: input.userContent,
+    assistantContent: input.assistantContent,
+  });
 
-  if (!match?.[1]) {
+  if (candidates.length === 0) {
     return;
   }
 
-  const salience = await scoreMemorySalienceWithBoundary(input.config, {
-    explicitMemorySignal: 1,
-    emotionalIntensity: 0.35,
-    recurrenceSignal: 0.25,
-    relationshipImpact: 0.65,
-    preferenceOrBoundarySignal: 1,
-    novelty: 0.85,
-  });
+  const existingRows = await input.db
+    .selectFrom("memory.facts")
+    .select([
+      "id",
+      "kind",
+      "text",
+      "normalized_text",
+      "confidence",
+      "importance",
+      "emotional_weight",
+      "source_message_ids",
+    ])
+    .where("user_id", "=", input.userId)
+    .where("character_id", "=", input.characterId)
+    .where("conversation_id", "=", input.conversationId)
+    .where("scope", "=", "conversation")
+    .where("is_active", "=", true)
+    .where("kind", "not in", ["safety", "system"])
+    .orderBy("updated_at", "desc")
+    .limit(160)
+    .execute();
+  const existingByKey = new Map(
+    existingRows.map((row) => [memoryDedupeKey(row.kind, row.text), row]),
+  );
+  const sourceMessageIds = [input.sourceUserMessageId, input.assistantMessageId];
 
-  if (salience.action === "skip") {
-    return;
+  for (const candidate of candidates) {
+    const salience = await scoreMemorySalienceWithBoundary(input.config, candidate.salience);
+
+    if (salience.action === "skip" && candidate.importance < 0.82) {
+      continue;
+    }
+
+    const existing = existingByKey.get(candidate.dedupeKey);
+
+    if (existing) {
+      const memory = await input.db
+        .updateTable("memory.facts")
+        .set({
+          confidence: Math.max(existing.confidence, candidate.confidence, salience.score),
+          importance: Math.max(existing.importance, candidate.importance, salience.score),
+          emotional_weight: Math.max(existing.emotional_weight, candidate.emotionalWeight),
+          source_message_ids: uniqueStrings([...existing.source_message_ids, ...sourceMessageIds]),
+          updated_at: new Date(),
+        })
+        .where("id", "=", existing.id)
+        .returning(memoryProjectionColumns)
+        .executeTakeFirstOrThrow();
+
+      await projectMemoryUpsert({
+        db: input.db,
+        config: input.config,
+        memory,
+        actorUserId: input.userId,
+        action: "extract",
+      });
+      continue;
+    }
+
+    const memory = await input.db
+      .insertInto("memory.facts")
+      .values({
+        user_id: input.userId,
+        character_id: input.characterId,
+        conversation_id: input.conversationId,
+        scope: "conversation",
+        kind: candidate.kind,
+        text: candidate.text,
+        normalized_text: candidate.text.toLowerCase(),
+        confidence: Math.max(candidate.confidence, salience.score),
+        importance: Math.max(candidate.importance, salience.score),
+        emotional_weight: candidate.emotionalWeight,
+        source_message_ids: sourceMessageIds,
+        is_active: true,
+      })
+      .returning(memoryProjectionColumns)
+      .executeTakeFirstOrThrow();
+
+    existingByKey.set(candidate.dedupeKey, {
+      id: memory.id,
+      kind: memory.kind,
+      text: memory.text,
+      normalized_text: candidate.text.toLowerCase(),
+      confidence: memory.confidence,
+      importance: memory.importance,
+      emotional_weight: memory.emotional_weight,
+      source_message_ids: sourceMessageIds,
+    });
+
+    await projectMemoryUpsert({
+      db: input.db,
+      config: input.config,
+      memory,
+      actorUserId: input.userId,
+      action: "extract",
+    });
   }
-
-  const text = `User likes to be called ${match[1]}.`;
-
-  const memory = await input.db
-    .insertInto("memory.facts")
-    .values({
-      user_id: input.userId,
-      character_id: input.characterId,
-      conversation_id: input.conversationId,
-      scope: "conversation",
-      kind: "preference",
-      text,
-      normalized_text: text.toLowerCase(),
-      confidence: Math.max(0.85, salience.score),
-      importance: Math.max(0.7, salience.score),
-      emotional_weight: 0.4,
-      source_message_ids: [input.sourceMessageId],
-      is_active: true,
-    })
-    .returning(memoryProjectionColumns)
-    .executeTakeFirstOrThrow();
-
-  await projectMemoryUpsert({
-    db: input.db,
-    config: input.config,
-    memory,
-    actorUserId: input.userId,
-    action: "extract",
-  });
 }
 
 async function scoreMemorySalienceWithBoundary(

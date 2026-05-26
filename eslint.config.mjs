@@ -22,7 +22,7 @@ export default tseslint.config(
     languageOptions: {
       parserOptions: {
         projectService: {
-          allowDefaultProject: ["packages/*/src/*.test.ts"],
+          allowDefaultProject: ["packages/*/src/*.test.ts", "services/*/src/modules/*.test.ts"],
         },
         tsconfigRootDir: import.meta.dirname,
       },

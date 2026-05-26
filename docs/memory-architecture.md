@@ -28,7 +28,7 @@ flowchart TD
   Graph --> Evolve
   Evolve --> Prompt["Inject scoped facts + evolution + graph context into prompt"]
   Prompt --> Model["xAI model call"]
-  Model --> Extract["Extract simple memory from user message"]
+  Model --> Extract["Extract turn memory candidates from user + assistant messages"]
   Extract --> Policy["Memory service scores salience and write policy"]
   Policy --> Store["Store fact with same character + conversation"]
   Store --> Refresh["Refresh evolution profile"]
@@ -53,24 +53,47 @@ counts, so retries are idempotent. Memory facts continue to project through
 conversation facts, then falls back to `memory-core` if the private service is restarting. Saved
 facts remain exact-scoped to the current user, character, and conversation.
 
+Automatic extraction runs every accepted chat turn. It now writes bounded, deduplicated candidates
+for user aliases, preferences, boundaries, relationship state, shared events/canon, style requests,
+assistant self-continuity/soul cues, reciprocal relationship decisions, and rare assistant
+commitments. Each write uses `client_message_id`-anchored source message ids and updates an
+existing matching fact instead of spamming repeated rows.
+
 ## Conversation Evolution
 
 `chat.conversation_evolution` stores the personalized relationship state for one
-`user_id + character_id + conversation_id` tuple. The chat orchestrator derives it from active
-conversation memories and user turn count, then injects a concise version into the prompt as
-relationship continuity.
+`user_id + character_id + conversation_id` tuple. The gateway derives it from active scoped memories,
+user turn count, and the latest conversation messages, then injects a concise version into the
+prompt as relationship continuity.
 
 Tracked fields:
 
 - `stage`: `new`, `warming`, `attuned`, or `bonded`.
-- `relationship_depth`: a bounded score derived from turn count and memory volume.
+- `relationship_depth`: a bounded score derived from turn count, memory importance, emotional
+  weight, and recent relationship signals.
 - `memory_count` and `user_message_count`.
 - `source_memory_ids`: active facts used to derive the current profile.
-- `style_profile_json`: preference, boundary, relationship, canon, event, and style snippets.
+- `style_profile_json`: preference, boundary, relationship, canon, event, style, relationship
+  state, scoped user profile cues, character soul/self-continuity cues, relationship milestones,
+  adaptive roleplay habits, recent signals, and open scene loops.
 - `summary`: short, user-editable-facing continuity summary for the chat settings surface.
 
 The evolution profile is not a global persona. It can only influence the matching conversation and
-is refreshed after chat turns and manual memory edits.
+is refreshed before and after chat turns and after manual memory edits. The prompt explicitly treats
+relationship progress as evidence-based: care and apologies can soften tension, but they cannot
+erase rivalry or create romance unless the conversation establishes that bond.
+
+Evolution is not fixed prose. The database can keep accumulating exact-scoped facts for the room,
+and the profile rewrites a compact prompt-facing view from those facts plus recent turns. The
+prompt-facing arrays stay bounded for token control, while the underlying fact set can keep growing
+and being re-ranked/compacted over many iterations.
+
+## Client Outbox
+
+The web chat stores pending sends in a short-lived local outbox keyed by `clientMessageId` before the
+network request starts. If the user navigates back quickly, the pending user message is merged back
+into the room view, and stale in-flight turns retry idempotently through the same server
+`client_message_id`. Completed, blocked, or rejected turns clear the local outbox entry.
 
 ## Non-Goals
 
@@ -81,6 +104,6 @@ is refreshed after chat turns and manual memory edits.
 
 ## Hardening Backlog
 
-- LLM-based memory extraction with batch deduplication and contradiction handling.
-- Memory summarization by conversation once threads grow.
+- Optional LLM-assisted batch consolidation for long-running rooms after deterministic extraction.
+- User-visible memory import/copy between rooms, if product decides to support it.
 - User-visible export/delete controls by character and thread.
