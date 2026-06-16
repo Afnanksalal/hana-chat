@@ -60,6 +60,15 @@ The build script rejects any `ANDROID_TWA_ORIGIN` or asset origin that is not
 
 ## Build
 
+Generic monorepo and PR builds run the read-only TWA validator:
+
+```powershell
+pnpm android:twa:validate
+```
+
+That check verifies the Android package, generated web manifest, Digital Asset Links target, and
+domain-only release origin without requiring Docker, signing keys, or Android SDK licenses.
+
 The Bubblewrap Docker image is used so local Android SDK setup does not leak into the repo:
 
 ```powershell

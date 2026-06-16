@@ -4,7 +4,8 @@
   "private": true,
   "description": "Trusted Web Activity wrapper for Hana Chat",
   "scripts": {
-    "build": "pnpm --workspace-root android:twa:build",
+    "build": "pnpm --workspace-root android:twa:validate",
+    "release": "pnpm --workspace-root android:twa:build",
     "assetlinks": "pnpm --workspace-root android:twa:assetlinks"
   }
 }

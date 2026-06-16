@@ -27,5 +27,4 @@ describe("identity core", () => {
     expect(encrypted.value).not.toContain(email);
     expect(decryptEmailAddress(encrypted.value, key)).toBe(email);
   });
-
 });

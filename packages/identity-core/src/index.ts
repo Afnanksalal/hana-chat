@@ -29,10 +29,7 @@ export interface EncryptedEmailAddress {
   algorithm: "aes-256-gcm";
 }
 
-export function encryptEmailAddress(
-  email: EmailAddress,
-  base64Key: string,
-): EncryptedEmailAddress {
+export function encryptEmailAddress(email: EmailAddress, base64Key: string): EncryptedEmailAddress {
   const key = Buffer.from(base64Key, "base64");
   if (key.length !== 32) {
     throw new DomainError("INTERNAL", "Email encryption key must be 32 bytes base64");

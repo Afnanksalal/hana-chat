@@ -40,7 +40,9 @@ const assetLinks = [
 ];
 
 const output = `${JSON.stringify(assetLinks, null, 2)}\n`;
-const outputPath = process.argv.find((arg) => arg.startsWith("--output="))?.slice("--output=".length);
+const outputPath = process.argv
+  .find((arg) => arg.startsWith("--output="))
+  ?.slice("--output=".length);
 
 if (outputPath) {
   writeFileSync(resolve(process.cwd(), outputPath), output);

@@ -177,7 +177,9 @@ export class GraphController implements OnModuleDestroy {
       .execute();
   }
 
-  private async countUserMessages(input: z.infer<typeof ConversationContextSchema>): Promise<number> {
+  private async countUserMessages(
+    input: z.infer<typeof ConversationContextSchema>,
+  ): Promise<number> {
     const row = await this.db
       .selectFrom("chat.messages")
       .select((eb) => eb.fn.countAll<number>().as("count"))
@@ -298,8 +300,7 @@ function strongestKinds(rows: MemoryRow[]): string[] {
 
   return [...counts.entries()]
     .sort(
-      (left, right) =>
-        right[1].count - left[1].count || right[1].importance - left[1].importance,
+      (left, right) => right[1].count - left[1].count || right[1].importance - left[1].importance,
     )
     .slice(0, 5)
     .map(([kind]) => kind);
@@ -334,10 +335,12 @@ function lexicalOverlap(query: string, text: string): number {
 }
 
 function tokenize(value: string): string[] {
-  return value
-    .toLowerCase()
-    .match(/[a-z0-9]{2,}/g)
-    ?.slice(0, 80) ?? [];
+  return (
+    value
+      .toLowerCase()
+      .match(/[a-z0-9]{2,}/g)
+      ?.slice(0, 80) ?? []
+  );
 }
 
 function kindBoost(kind: string): number {
