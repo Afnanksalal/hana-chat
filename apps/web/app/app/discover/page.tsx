@@ -340,11 +340,11 @@ function DiscoverExperience() {
       {featured ? (
         <section className="featured-character">
           <div className="featured-cover">
-            <img src={featured.coverImageUrl ?? "/assets/hana-hero.png"} alt="" />
+            <img src={featured.coverImageUrl ?? "/assets/character-cover-default.svg"} alt="" />
           </div>
           <div className="featured-content">
             <div className="featured-avatar">
-              <img src={featured.avatarUrl ?? "/assets/hana-icon-head.png"} alt="" />
+              <img src={featured.avatarUrl ?? "/assets/character-avatar-default.svg"} alt="" />
             </div>
             <span>
               <Flame size={15} /> {marketplaceLabel(featured)}
@@ -408,11 +408,14 @@ function DiscoverExperience() {
           return (
             <article className="market-card" key={character.id}>
               <div className="market-card-cover">
-                <img src={character.coverImageUrl ?? "/assets/hana-hero.png"} alt="" />
+                <img
+                  src={character.coverImageUrl ?? "/assets/character-cover-default.svg"}
+                  alt=""
+                />
               </div>
               <div className="market-card-body">
                 <div className="market-card-avatar">
-                  <img src={character.avatarUrl ?? "/assets/hana-icon-head.png"} alt="" />
+                  <img src={character.avatarUrl ?? "/assets/character-avatar-default.svg"} alt="" />
                 </div>
                 <div className="market-card-title">
                   <h2>{character.name}</h2>
@@ -422,7 +425,9 @@ function DiscoverExperience() {
                   </span>
                 </div>
                 <CreatorByline character={character} compact />
-                <p>{renderRoleplayPreview(character.marketplacePreview || character.description)}</p>
+                <p>
+                  {renderRoleplayPreview(character.marketplacePreview || character.description)}
+                </p>
                 <CharacterRatingControl
                   character={character}
                   compact

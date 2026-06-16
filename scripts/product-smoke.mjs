@@ -13,6 +13,8 @@ const QDRANT_CHARACTER_COLLECTION =
   process.env.QDRANT_CHARACTER_COLLECTION ?? "hana_character_profiles";
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL ?? "admin@local.hana.test";
 const ADMIN_STATIC_OTP = process.env.ADMIN_STATIC_OTP;
+const SMOKE_EMAIL_DOMAIN = process.env.SMOKE_EMAIL_DOMAIN ?? "smoke.hanachat.test";
+const SMOKE_STATIC_OTP = process.env.SMOKE_STATIC_OTP;
 const SMOKE_RUN_ID = `${Date.now().toString(36)}-${process.pid.toString(36)}`;
 
 const results = [];
@@ -66,14 +68,9 @@ await check("premium defaults for admin", async () => {
   const settings = await getJson("/v1/settings", context.adminToken);
   assert(settings.adultModeEnabled === true, "adult mode is not enabled for admin");
   assert(settings.memoryEnabled === true, "memory is not enabled for admin");
-  assert(!("voiceEnabled" in settings), "settings API still exposes voice");
 
   const billing = await getJson("/v1/billing/plans", context.adminToken);
   assert(billing.subscription.planId === "ultra", "admin is not on Ultra");
-  assert(
-    billing.plans.every((plan) => !("voiceEnabled" in plan)),
-    "billing plans still expose voice",
-  );
 
   return "Ultra, adult, memory";
 });
@@ -439,7 +436,7 @@ async function postSse(path, body, token) {
 }
 
 async function createFreeSession(label) {
-  const email = `${label}.${SMOKE_RUN_ID}@smoke.hanachat.test`;
+  const email = `${label}.${SMOKE_RUN_ID}@${SMOKE_EMAIL_DOMAIN}`;
   const deviceId = `hana-product-smoke-${label}-${SMOKE_RUN_ID}`;
   const signupStart = await postJson(
     "/v1/auth/email/start",
@@ -469,10 +466,16 @@ async function createFreeSession(label) {
   }
 
   assert(started.verificationId, `${label} auth did not create a verification`);
+  const code = started.devCode ?? SMOKE_STATIC_OTP;
+
+  assert(
+    code,
+    `${label} auth code was not available; set SMOKE_STATIC_OTP for production smoke runs`,
+  );
 
   const verified = await postJson("/v1/auth/email/verify", {
     email,
-    code: started.devCode ?? "000000",
+    code,
     verificationId: started.verificationId,
     deviceId,
   });

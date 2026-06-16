@@ -1,4 +1,11 @@
-import { absoluteAppUrl, absoluteUrl, siteDescription, siteName } from "../seo";
+import {
+  absoluteAppUrl,
+  absoluteUrl,
+  policySeoPages,
+  productSeoPages,
+  siteDescription,
+  siteName,
+} from "../seo";
 
 export const dynamic = "force-static";
 
@@ -11,6 +18,15 @@ ${siteDescription}
 
 Hana Chat lets people chat with AI characters, discover published characters, create their own companions, manage saved memories, and upgrade for richer limits and premium experiences. The product tone is consumer-first: emotional continuity, character consistency, privacy controls, and polished mobile use matter more than technical exposition.
 
+## High-Signal Topic Map
+
+${productSeoPages()
+  .map(
+    (page) =>
+      `- ${page.shortTitle}: ${absoluteUrl(page.path)} — ${page.description} Tags: ${page.tags.join(", ")}.`,
+  )
+  .join("\n")}
+
 ## Core Public Features
 
 - Persistent character conversations that remember useful details across sessions.
@@ -22,13 +38,10 @@ Hana Chat lets people chat with AI characters, discover published characters, cr
 
 ## Important Public Pages
 
-- Home: ${absoluteUrl("/")}
+${[...productSeoPages(), ...policySeoPages()]
+  .map((page) => `- ${page.shortTitle}: ${absoluteUrl(page.path)}`)
+  .join("\n")}
 - App sign in: ${absoluteAppUrl("/auth")}
-- Terms: ${absoluteUrl("/legal/terms")}
-- Billing and refunds: ${absoluteUrl("/legal/refunds")}
-- Privacy: ${absoluteUrl("/legal/privacy")}
-- Community rules: ${absoluteUrl("/legal/community")}
-- Safety: ${absoluteUrl("/legal/safety")}
 
 ## Indexing Guidance
 

@@ -151,7 +151,6 @@ Good:
 - Soft pink highlight strokes.
 - Subtle sparkle glyphs in empty states.
 - Manga-panel inspired character preview crops.
-- Voice mood indicators.
 - Relationship/memory moments presented like keepsakes.
 
 Avoid:
@@ -244,7 +243,6 @@ Layout:
   - back,
   - character avatar,
   - name/status,
-  - voice button,
   - more menu.
 - Message list.
 - Composer.
@@ -254,7 +252,6 @@ Composer:
 
 - Text input.
 - Send icon button.
-- Voice icon.
 - Plus menu for image, memory, scene, regenerate.
 - Keep controls compact.
 
@@ -277,7 +274,6 @@ Layout:
 - Tags and rating.
 - Short description.
 - Start chat button.
-- Voice preview if available.
 - Memory compatibility highlights.
 - Report/block in overflow menu.
 
@@ -285,23 +281,22 @@ Layout:
 
 Purpose: make character creation powerful but not intimidating.
 
-Use segmented steps:
+Use a segmented, progressive builder:
 
-1. Basics
-2. Personality
-3. Voice
-4. Memory
-5. Safety
-6. Preview
+1. Identity
+2. Look
+3. Persona
+4. Publish
+5. Review
 
 Controls:
 
-- Text inputs for name, greeting, backstory.
-- Sliders for traits.
+- Text inputs for name, marketplace description, greeting, persona, and scenario.
+- Body direction, visual style, mood, backdrop, and detail option cards/selects.
 - Toggle for public/private.
 - Rating selector.
 - Example dialogue editor.
-- Preview chat panel.
+- Live marketplace preview panel using dedicated Hana-colored character fallback media until creator media is uploaded or generated.
 
 ### Memories
 
@@ -335,7 +330,6 @@ Sell:
 - More messages.
 - Better memory.
 - Deeper character continuity.
-- Voice.
 - Adult mode for eligible users.
 - Private characters.
 
@@ -378,7 +372,7 @@ Variants:
 
 Button rules:
 
-- Use icons for obvious actions like send, voice, back, close, settings.
+- Use icons for obvious actions like send, back, close, settings.
 - Use text only when the command needs clarity.
 - Minimum touch target: 44x44.
 - Loading state required.

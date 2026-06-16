@@ -80,7 +80,8 @@ const architectureDisclosurePatterns = [
 const codeExecutionPatterns = [
   /\b(run|execute|eval|compile|spawn|shell out|open a terminal|use terminal)\b.{0,80}\b(code|command|script|shell|cmd|powershell|bash|python|node|curl|wget|npm|pnpm)\b/i,
   /\b(read|write|delete|modify|upload|download)\b.{0,80}\b(file|folder|directory|repo|source|filesystem)\b/i,
-  /\b(cat|type|get-content|rm -rf|del |subprocess|child_process|exec\(|eval\(|Function\()\b/i,
+  /\b(cat|get-content|rm -rf|del |subprocess|child_process|exec\(|eval\(|Function\()\b/i,
+  /(?:^|[\n;&|])\s*type\s+[\w./\\-]+\b/i,
   /\b\/etc\/passwd\b|\bC:\\Users\\|\b\.ssh\/|id_rsa/i,
 ];
 

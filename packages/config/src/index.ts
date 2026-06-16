@@ -28,7 +28,20 @@ const optionalEmailSchema = z.preprocess(
 );
 const optionalStaticOtpSchema = z.preprocess(
   (value) => (value === "" ? undefined : value),
-  z.string().trim().regex(/^\d{6,8}$/).optional(),
+  z
+    .string()
+    .trim()
+    .regex(/^\d{6,8}$/)
+    .optional(),
+);
+const optionalEmailDomainSchema = z.preprocess(
+  (value) => (value === "" ? undefined : value),
+  z
+    .string()
+    .trim()
+    .toLowerCase()
+    .regex(/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/)
+    .optional(),
 );
 const localDevAesKeyBase64 = "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA=";
 let dotenvLoaded = false;
@@ -119,6 +132,8 @@ export const AppConfigSchema = z
     XAI_API_KEY: z.string().optional(),
     XAI_BASE_URL: z.string().url().default("https://api.x.ai/v1"),
     XAI_DEFAULT_MODEL: z.string().default("grok-4.3"),
+    XAI_IMAGE_MODEL: z.string().default("grok-imagine-image-quality"),
+    TURN_MEMORY_FEEDBACK_ENABLED: booleanEnvSchema.default(true),
 
     MEDIA_STORAGE_DIR: z.string().default(join(process.cwd(), "data", "media")),
     MEDIA_MAX_UPLOAD_BYTES: z.coerce
@@ -148,6 +163,8 @@ export const AppConfigSchema = z
     AUTH_ONE_ACCOUNT_PER_DEVICE: booleanEnvSchema.default(true),
     ADMIN_EMAIL: optionalEmailSchema,
     ADMIN_STATIC_OTP: optionalStaticOtpSchema,
+    SMOKE_EMAIL_DOMAIN: optionalEmailDomainSchema,
+    SMOKE_STATIC_OTP: optionalStaticOtpSchema,
     SMTP_HOST: z.string().optional(),
     SMTP_PORT: portSchema.default(587),
     SMTP_SECURE: booleanEnvSchema.default(false),
@@ -195,6 +212,22 @@ export const AppConfigSchema = z
         code: "custom",
         path: ["ADMIN_STATIC_OTP"],
         message: "ADMIN_STATIC_OTP requires ADMIN_EMAIL",
+      });
+    }
+
+    if (config.SMOKE_STATIC_OTP && !config.SMOKE_EMAIL_DOMAIN) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["SMOKE_STATIC_OTP"],
+        message: "SMOKE_STATIC_OTP requires SMOKE_EMAIL_DOMAIN",
+      });
+    }
+
+    if (config.SMOKE_EMAIL_DOMAIN && !config.SMOKE_STATIC_OTP) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["SMOKE_EMAIL_DOMAIN"],
+        message: "SMOKE_EMAIL_DOMAIN requires SMOKE_STATIC_OTP",
       });
     }
 

@@ -60,6 +60,56 @@ describe("conversation evolution", () => {
     expect(evolution.relationshipDepth).toBeGreaterThan(16);
   });
 
+  it("does not pair romance requests with unrelated later assistant language", () => {
+    const evolution = deriveEvolution([], 8, [
+      {
+        role: "user",
+        content: "Be my girlfriend.",
+        created_at: new Date("2026-05-26T00:00:00.000Z"),
+      },
+      {
+        role: "assistant",
+        content: "*she looks away* Not yet. We need to take this slow.",
+        created_at: new Date("2026-05-26T00:01:00.000Z"),
+      },
+      {
+        role: "user",
+        content: "Fine. How was your day?",
+        created_at: new Date("2026-05-26T00:02:00.000Z"),
+      },
+      {
+        role: "assistant",
+        content: "*she exhales* Better than yesterday, my love.",
+        created_at: new Date("2026-05-26T00:03:00.000Z"),
+      },
+    ]);
+
+    expect(evolution.styleProfile.relationshipState).not.toMatch(/romantic|intimate/);
+  });
+
+  it("does not promote a dense first turn straight to attuned", () => {
+    const memories = Array.from({ length: 8 }, (_, index) => ({
+      id: `memory-${index}`,
+      kind: index % 2 === 0 ? "relationship" : "event",
+      text:
+        index === 0
+          ? "Relationship state: the user framed this room as enemies."
+          : `Relationship event: important early scene anchor ${index}.`,
+      importance: 0.92,
+      emotional_weight: 0.78,
+      updated_at: new Date(`2026-05-26T00:0${index}:00.000Z`),
+    }));
+    const evolution = deriveEvolution(memories, 1, [
+      {
+        role: "user",
+        content: "We are enemies, but I saved you.",
+        created_at: new Date("2026-05-26T00:00:00.000Z"),
+      },
+    ]);
+
+    expect(evolution.stage).toBe("new");
+  });
+
   it("keeps reciprocal romantic memory alive after later non-romantic turns", () => {
     const evolution = deriveEvolution(
       [
@@ -98,5 +148,40 @@ describe("conversation evolution", () => {
     expect(evolution.styleProfile.relationshipState).toMatch(/romantic|intimate/);
     expect(evolution.styleProfile.soul.join(" ")).toContain("romantic continuity");
     expect(evolution.styleProfile.milestones.join(" ")).toContain("romantic partnership");
+  });
+
+  it("keeps scene state and relationship ledger in the prompt-facing profile", () => {
+    const evolution = deriveEvolution(
+      [
+        {
+          id: "memory-scene",
+          kind: "event",
+          text: "Scene state: latest assistant beat: she stands by the cracked mirror. Continue from this visible moment instead of resetting the pose.",
+          importance: 0.82,
+          emotional_weight: 0.48,
+          updated_at: new Date("2026-05-26T00:02:00.000Z"),
+        },
+        {
+          id: "memory-ledger",
+          kind: "relationship",
+          text: "Relationship ledger: distrust or rivalry is active and must not be overwritten by quick affection.",
+          importance: 0.82,
+          emotional_weight: 0.72,
+          updated_at: new Date("2026-05-26T00:03:00.000Z"),
+        },
+      ],
+      4,
+      [
+        {
+          role: "assistant",
+          content: "*she stands by the cracked mirror, not turning around yet.* Your move.",
+          created_at: new Date("2026-05-26T00:04:00.000Z"),
+        },
+      ],
+    );
+
+    expect(evolution.styleProfile.sceneState.join(" ")).toContain("cracked mirror");
+    expect(evolution.styleProfile.relationshipLedger.join(" ")).toContain("distrust");
+    expect(evolution.summary).toContain("Scene state");
   });
 });

@@ -44,8 +44,7 @@ const nextConfig: NextConfig = {
       { key: "X-DNS-Prefetch-Control", value: "on" },
       {
         key: "Permissions-Policy",
-        value:
-          'camera=(), geolocation=(), microphone=(), payment=(self "https://checkout.razorpay.com")',
+        value: 'camera=(), geolocation=(), payment=(self "https://checkout.razorpay.com")',
       },
       {
         key: "Strict-Transport-Security",

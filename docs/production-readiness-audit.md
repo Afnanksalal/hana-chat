@@ -7,9 +7,8 @@ Date: 2026-05-25
 This pass closed the highest-risk dead ends found across auth, billing, creator monetization, chat safety, memory isolation, queue processing, deployment config, and mobile product polish. The codebase now has a deployable NestJS/Next.js product spine with real Postgres durability, Qdrant projections, Neo4j projection workers, payment-provider verification paths, creator wallet ledger, admin payout operations, passwordless email auth, strict production config validation, PWA/SEO routes, and authenticated web flows.
 
 Hana Chat still has dedicated product projects before it should be sold as a fully mature consumer
-platform: voice runtime, refund/tax/KYC operations, reports/moderation ops UI, production embedding
-provider, and load testing. Those are tracked as explicit hardening work rather than hidden dead
-ends.
+platform: refund/tax/KYC operations, reports/moderation ops UI, production embedding provider, and
+load testing. Those are tracked as explicit hardening work rather than hidden dead ends.
 
 ## Fixed In This Pass
 
@@ -56,12 +55,43 @@ ends.
 
 ## Remaining Product Projects
 
-- Voice: plan/settings flags exist, but TTS/STT/realtime voice APIs, playback UI, credit metering, and storage policy still need implementation before selling voice as a finished feature.
 - Creator monetization operations: paid unlocks, wallet ledger, payout profiles, payout requests, and admin payout processing exist. Refund handling, tax/KYC document collection, creator analytics dashboards, and Razorpay Route eligibility remain roadmap work.
 - Reports and moderation ops: rating gates and safety checks exist, but report/block endpoints, reviewer queues, appeal flow, and creator enforcement UI still need to be built.
 - Embedding quality: Qdrant projection is live and durable, but the current deterministic embedding is a pipeline-safe fallback. A production embedding provider and batch embedding workflow should replace it.
 - Streaming depth: SSE product path exists, but provider-token streaming and user cancellation remain hardening work.
 - Testing depth: typecheck, lint, build, unit tests, backend smoke, AI harness, and web smoke cover the main path. Dedicated load tests, webhook replay suites, red-team prompt corpora, and disaster recovery drills are still needed.
+
+## 2026-06-05 Cleanup Pass
+
+- Restored the voice-removal migration so production bootstrap continues dropping stale
+  `voice_enabled` columns while the product remains text-chat only.
+- Replaced off-palette teal character fallback assets with dedicated black/hotpink character avatar
+  and cover SVGs. App, Discover, chat lists, and API character fallbacks now use character media
+  defaults instead of the Hana mascot or landing hero.
+- Tightened Creator Studio layout behavior: the preview rail is no longer a sticky overlay, owned
+  character rows stay under the form column on desktop, mobile action buttons remain above the bottom
+  nav, and listed-bot thumbnails are fixed-size tiles.
+- Removed stale global custom scrollbar styling. Hidden-scrollbar rules remain the product default
+  so scroll affordances do not fall back to native bars.
+- Updated builder docs and synced agent memory to the current Identity, Look, Persona, Publish, and
+  Review flow with capped profile/cover generation options.
+
+## 2026-06-05 Deployment Verification
+
+- Deployed release `20260605102348` to the Playground VPS through `pnpm deploy:playground`.
+- Preserved the live VPS env secrets after an attempted full env copy exposed the expected Neo4j
+  data-volume/password mismatch. Production env edits should patch intended keys only, because
+  initialized database volumes do not adopt regenerated env passwords.
+- Quoted shell-sensitive VPS env values (`SMTP_FROM`, `SMTP_RELAY_MYNETWORKS`) because the deploy
+  script sources `/opt/hana-chat/shared/.env.vps` with bash before Compose.
+- Verified public health after deploy: `https://api.hanachat.site/health`,
+  `https://app.hanachat.site/`, and `https://hanachat.site/` returned HTTP 200.
+- Ran production product smoke with a temporary server-side smoke OTP lane and a private SSH tunnel
+  to the internal Qdrant container: 17 passed, 0 failed. The smoke OTP variables were removed from
+  production env and `api-gateway` was restarted healthy afterward.
+- Ran production AI harness: 12 passed, 0 warned, 0 failed.
+- Ran production web smoke after updating the smoke script for the multi-step builder and empty-draft
+  chat-send behavior: 18 passed, 0 failed.
 
 ## Current Critical Paths
 

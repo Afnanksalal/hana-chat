@@ -1,8 +1,26 @@
 import type { MetadataRoute } from "next";
-import { absoluteUrl, getSiteUrl } from "./seo";
+import { absoluteUrl, getSiteUrl, publicSeoPages } from "./seo";
 
 const privatePaths = ["/app", "/app/", "/api/", "/auth"];
-const llmPaths = ["/", "/llms.txt", "/llms-full.txt", "/legal/", "/assets/"];
+const llmPaths = [
+  ...publicSeoPages.map((page) => page.path),
+  "/llms.txt",
+  "/llms-full.txt",
+  "/assets/",
+];
+const aiSearchUserAgents = [
+  "OAI-SearchBot",
+  "OAI-AdsBot",
+  "GPTBot",
+  "ChatGPT-User",
+  "ClaudeBot",
+  "Claude-SearchBot",
+  "Claude-User",
+  "PerplexityBot",
+  "Perplexity-User",
+  "Google-Extended",
+  "Applebot-Extended",
+];
 
 export default function robots(): MetadataRoute.Robots {
   return {
@@ -13,7 +31,7 @@ export default function robots(): MetadataRoute.Robots {
         disallow: privatePaths,
       },
       {
-        userAgent: ["GPTBot", "ChatGPT-User", "ClaudeBot", "PerplexityBot", "Applebot-Extended"],
+        userAgent: aiSearchUserAgents,
         allow: llmPaths,
         disallow: privatePaths,
       },

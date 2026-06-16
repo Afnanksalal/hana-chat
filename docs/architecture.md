@@ -18,7 +18,7 @@ flowchart LR
   GraphSvc --> Neo4j["Neo4j graph memory"]
   GraphSvc --> Postgres
   Gateway --> Qdrant["Qdrant vector retrieval"]
-  Gateway --> Xai["xAI chat completions"]
+  Gateway --> Xai["xAI chat completions and image generation"]
   Gateway --> Redis["Redis cache / rate state"]
   Gateway --> Mail["SMTP email"]
   Gateway --> Payments["Payment providers (flag gated)"]
@@ -116,7 +116,7 @@ prompts, raw identity data, provider credentials, and internal model payloads.
 
 - `apps/web`: consumer web app, PWA, landing, auth, app shell, marketplace, chat, creator tools.
 - `apps/android-twa`: Bubblewrap Trusted Web Activity wrapper for Android APK/AAB builds.
-- `services/api-gateway`: stable public product API and request coordinator.
+- `services/api-gateway`: stable public product API and request coordinator, including image-only xAI media generation stored through Hana media assets.
 - `services/*`: private NestJS bounded contexts used by the gateway, workers, or operators.
 - `packages/contracts`: shared validation schemas and branded types.
 - `packages/database`: typed Kysely database model.

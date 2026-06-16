@@ -21,6 +21,23 @@ The helper uploads `tmp/deploy/hana-chat-<release>.tar`, extracts it into
 `/opt/hana-chat/shared/.env.vps`, and runs compose config/build/up/ps. The generated remote shell
 script is written with LF endings only so PowerShell cannot add CRLF or a BOM.
 
+## Environment File
+
+`/opt/hana-chat/shared/.env.vps` is the production source of truth. The deploy script shell-sources
+this file before running Docker Compose, so values containing spaces or shell metacharacters must be
+quoted, for example:
+
+```bash
+SMTP_FROM="Hana Chat <no-reply@app.hanachat.site>"
+SMTP_RELAY_MYNETWORKS="127.0.0.0/8 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16"
+```
+
+Do not replace the live VPS env with a freshly generated local env file. Existing Postgres, Neo4j,
+ClickHouse, and Temporal volumes keep their original credentials; changing only environment
+passwords can make health checks and application connections fail against already-initialized data.
+When editing production env, back up `/opt/hana-chat/shared/.env.vps`, patch only the intended keys,
+then run compose config and targeted service restarts.
+
 ## Compose Files
 
 Use the base VPS stack plus the Playground Caddy overlay:

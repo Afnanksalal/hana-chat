@@ -29,8 +29,7 @@ const coverUploadFixture = resolve(
   "assets",
   "hana-hero.png",
 );
-const dashboardHeadingPattern =
-  /^Your (late night|morning|afternoon|evening|night) is ready, .+\.$/;
+const dashboardHeadingPattern = /^Your rooms are ready, .+\.$/;
 
 mkdirSync(screenshotDir, { recursive: true });
 
@@ -121,6 +120,21 @@ try {
     return "copy stays consumer-facing";
   });
 
+  await check("signed-out legal navigation", async () => {
+    await page.goto(`${WEB_BASE_URL}/legal/terms`, { waitUntil: "load" });
+    await expectVisible(page.getByRole("heading", { name: "Terms of Service" }));
+    const legalNav = page.locator("header.legal-nav");
+
+    await expectVisible(legalNav.getByRole("link", { name: "Sign in", exact: true }));
+    assert(
+      (await legalNav.getByRole("link", { name: "Dashboard", exact: true }).count()) === 0,
+      "signed-out legal nav should not show Dashboard",
+    );
+    await assertNoHorizontalOverflow(page);
+
+    return "public legal pages show sign-in CTA before auth";
+  });
+
   await addSessionCookie(desktopContext, globalThis.adminSessionToken);
 
   await check("landing CTA switches for signed-in users", async () => {
@@ -176,20 +190,23 @@ try {
 
   await check("creator studio media and form controls", async () => {
     await page.goto(`${WEB_BASE_URL}/app/create`, { waitUntil: "load" });
-    await page.getByTestId("avatar-file-input").setInputFiles(avatarUploadFixture);
-    await expectVisible(page.getByText("Profile image uploaded."));
-    await page.getByTestId("cover-file-input").setInputFiles(coverUploadFixture);
-    await expectVisible(page.getByText("Cover image uploaded."));
     await page.getByLabel("Character name").fill("Preview Only");
     await page
       .getByLabel("Marketplace description")
       .fill("A polished preview character for authenticated end-to-end testing.");
+    await clickBuilderStep(page, "Look");
+    await page.getByTestId("avatar-file-input").setInputFiles(avatarUploadFixture);
+    await expectVisible(page.getByText("Profile image uploaded."));
+    await page.getByTestId("cover-file-input").setInputFiles(coverUploadFixture);
+    await expectVisible(page.getByText("Cover image uploaded."));
+    await clickBuilderStep(page, "Persona");
     await page
       .getByLabel("Core persona")
       .fill("You are a concise premium companion used for product-grade smoke testing.");
     await page.getByLabel("Scenario").fill("A smoke-test scene with stable creator controls.");
     await page.getByLabel("Speaking style").fill("concise, polished, warm");
     await page.getByLabel("Greeting").fill("You made it back. I kept the scene warm.");
+    await clickBuilderStep(page, "Publish");
     await page.getByRole("button", { name: /Rating/ }).click();
     await page.getByRole("option", { name: "Teen" }).click();
     const paidPrice = page.getByLabel("Paid price");
@@ -222,37 +239,8 @@ try {
     await expectVisible(page.getByRole("heading", { name: characterName }));
     await expectVisible(page.getByText("fresh room"));
     const composer = page.getByLabel(`Message ${characterName}`);
-    const assistantCountBefore = await page.locator(".message-row.assistant").count();
     await composer.fill("my name is BrowserTester and I care about premium UX.");
-    await page.getByRole("button", { name: "Send message" }).click();
-    await page.waitForFunction(
-      (previousCount) => {
-        const bubbles = Array.from(
-          document.querySelectorAll(".message-row.assistant .message-bubble"),
-        );
-
-        return (
-          bubbles.length > previousCount &&
-          bubbles
-            .slice(previousCount)
-            .some((bubble) => (bubble.textContent ?? "").trim().length > 8)
-        );
-      },
-      assistantCountBefore,
-      { timeout: 60_000 },
-    );
-    await page.waitForFunction(
-      () => new URL(window.location.href).searchParams.has("conversationId"),
-      { timeout: 10_000 },
-    );
-    await page.waitForFunction(
-      () => !document.querySelector('button[aria-label="Send message"]')?.hasAttribute("disabled"),
-      { timeout: 30_000 },
-    );
-    assert(
-      (await page.getByRole("button", { name: "Voice", exact: true }).count()) === 0,
-      "chat still renders voice control",
-    );
+    await sendCurrentDraftAndWaitForReply(page, 60_000);
     await page.getByRole("button", { name: "Chat settings" }).click();
     await expectVisible(page.getByRole("heading", { name: "Evolving profile" }));
     await expectVisible(page.getByRole("heading", { name: "Private tuning prompt" }));
@@ -270,11 +258,7 @@ try {
     await expectVisible(page.getByRole("heading", { name: characterName }));
     await expectVisible(page.getByText("fresh room"));
     await page.getByLabel(`Message ${characterName}`).fill("Start a second room for routing QA.");
-    await page.getByRole("button", { name: "Send message" }).click();
-    await page.waitForFunction(
-      () => new URL(window.location.href).searchParams.has("conversationId"),
-      { timeout: 60_000 },
-    );
+    await sendCurrentDraftAndWaitForReply(page, 60_000);
     await page.goto(`${WEB_BASE_URL}/app/chat`, { waitUntil: "load" });
     await page.waitForFunction(
       (name) =>
@@ -295,11 +279,7 @@ try {
     );
     await expectVisible(page.getByRole("heading", { name: characterName }));
     await page.getByLabel(`Message ${characterName}`).fill("Temporary room for delete QA.");
-    await page.getByRole("button", { name: "Send message" }).click();
-    await page.waitForFunction(
-      () => new URL(window.location.href).searchParams.has("conversationId"),
-      { timeout: 60_000 },
-    );
+    await sendCurrentDraftAndWaitForReply(page, 60_000);
     const deletedConversationUrl = page.url();
 
     await page.getByRole("button", { name: "Chat settings", exact: true }).click();
@@ -321,8 +301,8 @@ try {
       `${WEB_BASE_URL}/app/chat?characterId=${encodeURIComponent(globalThis.createdCharacterId)}`,
       { waitUntil: "load" },
     );
-    await expectVisible(page.getByRole("heading", { name: characterName }));
-    await page.getByRole("button", { name: "Chat settings" }).click();
+    await waitForChatCharacterReady(page, characterName);
+    await openChatSettings(page);
     await page
       .getByPlaceholder("Save a private note this character should remember in this chat.")
       .fill(memoryText);
@@ -379,10 +359,12 @@ try {
     for (const [path, heading] of pages) {
       await page.goto(`${WEB_BASE_URL}${path}`, { waitUntil: "load" });
       await expectVisible(page.getByRole("heading", { name: heading }));
+      await assertLegalNavShowsDashboard(page);
     }
 
     await page.goto(`${WEB_BASE_URL}/legal/refunds`, { waitUntil: "domcontentloaded" });
     await expectVisible(page.getByRole("heading", { name: "Billing and Refund Policy" }));
+    await assertLegalNavShowsDashboard(page);
     await expectVisible(
       page.locator("footer.legal-support").getByRole("link", {
         name: "support@hanachat.site",
@@ -390,7 +372,7 @@ try {
       }),
     );
 
-    return "terms, refunds, privacy, community, safety";
+    return "terms, refunds, privacy, community, safety, signed-in nav";
   });
 
   await desktopContext.close();
@@ -494,11 +476,7 @@ try {
     await tabletPage
       .getByLabel(`Message ${characterName}`)
       .fill("Tablet settings smoke room for layout QA.");
-    await tabletPage.getByRole("button", { name: "Send message" }).click();
-    await tabletPage.waitForFunction(
-      () => new URL(window.location.href).searchParams.has("conversationId"),
-      { timeout: 60_000 },
-    );
+    await sendCurrentDraftAndWaitForReply(tabletPage, 60_000);
     await expectVisible(tabletPage.getByRole("button", { name: "Chat settings", exact: true }));
     await tabletPage.getByRole("button", { name: "Chat settings", exact: true }).click();
     await expectVisible(tabletPage.getByRole("heading", { name: "Delete chat" }));
@@ -609,6 +587,81 @@ async function expectVisible(locator) {
   await locator.waitFor({ state: "visible", timeout: 15_000 });
 }
 
+async function clickBuilderStep(page, label) {
+  await page
+    .locator("button.builder-step-tab")
+    .filter({ has: page.locator("strong", { hasText: label }) })
+    .click({ timeout: 15_000 });
+}
+
+async function sendCurrentDraftAndWaitForReply(page, timeoutMs = 60_000) {
+  const assistantCountBefore = await page.locator(".message-row.assistant").count();
+  await page.getByRole("button", { name: "Send message" }).click();
+  await waitForChatAssistantReply(page, assistantCountBefore, timeoutMs);
+  await waitForChatTurnSettled(page, timeoutMs);
+}
+
+async function waitForChatAssistantReply(page, previousCount, timeoutMs = 60_000) {
+  await page.waitForFunction(
+    (count) => {
+      const bubbles = Array.from(
+        document.querySelectorAll(".message-row.assistant .message-bubble"),
+      );
+
+      return (
+        bubbles.length > count &&
+        bubbles.slice(count).some((bubble) => (bubble.textContent ?? "").trim().length > 8)
+      );
+    },
+    previousCount,
+    { timeout: timeoutMs },
+  );
+}
+
+async function waitForChatTurnSettled(page, timeoutMs = 60_000) {
+  await page.waitForFunction(
+    () => new URL(window.location.href).searchParams.has("conversationId"),
+    undefined,
+    { timeout: timeoutMs },
+  );
+  await page.waitForFunction(
+    () => document.querySelectorAll(".typing-indicator").length === 0,
+    undefined,
+    { timeout: timeoutMs },
+  );
+}
+
+async function waitForChatCharacterReady(page, characterName, timeoutMs = 15_000) {
+  await expectVisible(page.getByRole("heading", { name: characterName }));
+  await page.waitForFunction(
+    (name) => {
+      const title = document.querySelector(".chat-room-header h2")?.textContent?.trim();
+      const roomMeta = document.querySelector(".chat-room-header p")?.textContent ?? "";
+
+      return title === name && /fresh room| room /.test(roomMeta);
+    },
+    characterName,
+    { timeout: timeoutMs },
+  );
+  await page.waitForLoadState("networkidle", { timeout: 5_000 }).catch(() => {});
+}
+
+async function openChatSettings(page) {
+  const panel = page.locator(".chat-settings-panel");
+
+  if (
+    !(await panel
+      .first()
+      .isVisible()
+      .catch(() => false))
+  ) {
+    await page.getByRole("button", { name: "Chat settings", exact: true }).click();
+  }
+
+  await expectVisible(panel);
+  await expectVisible(page.getByRole("heading", { name: "Evolving profile" }));
+}
+
 async function assertNoBrokenImages(page) {
   const brokenImages = await page.evaluate(() =>
     Array.from(document.images)
@@ -654,6 +707,31 @@ async function assertLandingCtasUseCurrentOrigin(page) {
   assert(
     productionLeaked.length === 0,
     `landing CTA leaked production app domain: ${JSON.stringify(productionLeaked)}`,
+  );
+}
+
+async function assertLegalNavShowsDashboard(page) {
+  const legalNav = page.locator("header.legal-nav");
+  const dashboardLink = legalNav.getByRole("link", { name: "Dashboard", exact: true });
+
+  await expectVisible(dashboardLink);
+  assert(
+    (await legalNav.getByRole("link", { name: "Sign in", exact: true }).count()) === 0,
+    "signed-in legal nav should not show Sign in",
+  );
+
+  const href = await dashboardLink.getAttribute("href");
+  assert(href, "signed-in legal nav Dashboard link is missing href");
+  const resolved = new URL(href, WEB_BASE_URL);
+  const expectedOrigin = new URL(WEB_BASE_URL).origin;
+
+  assert(
+    resolved.origin === expectedOrigin,
+    `signed-in legal nav should stay on current origin: ${resolved.href}`,
+  );
+  assert(
+    resolved.pathname === "/app",
+    `signed-in legal nav should point to /app: ${resolved.href}`,
   );
 }
 

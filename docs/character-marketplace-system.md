@@ -34,13 +34,18 @@ flowchart TD
 - Postgres remains canonical and filters visibility/moderation state.
 - Web cards show imagery, tags, price, rating, model feel, and engagement stats.
 - Character images are uploaded media assets owned by the creator and served through `/v1/media/:id/file`; URL text boxes are not the creation path.
+- Creator Studio can also generate profile and cover images through the authenticated `/v1/media/generate` path. Generated images use xAI image generation/editing only, are downloaded into Hana-owned `creator.media_assets`, and are stored beside uploaded assets. The builder exposes art-direction, mood, backdrop, and detail presets so generation is not locked to anime-only prompts or Hana's hotpink brand palette. When a cover is generated after the creator selected or uploaded a profile image, the server resolves that Hana media asset and sends it to xAI as the identity reference for the cover.
+- Empty profile and cover art uses dedicated Hana-colored character fallback SVGs, not the Hana mascot or landing hero. Creator lists, Discover cards, and chat rooms should all fall back to those character assets until uploaded/generated media exists.
 - Marketplace ranking uses persisted engagement counters and event rows: views, profile opens, chat starts, messages, likes, saves, interactions, and a computed trending score.
 - Marketplace cards expose the creator display name/avatar and persisted user ratings. Ratings are stored once per user per character and roll into `ratingAverage`, `ratingCount`, and the trending score.
 
 ## Monetization
 
 - `price_cents` and `monetization_enabled` live on the character record, but public paid access is currently server-gated by `MONETIZATION_ENABLED=false`.
-- When monetization is re-enabled, paid characters include a mandatory 30 user-message trial per buyer and character before checkout is required.
+- When monetization is re-enabled, paid characters include a mandatory 30 completed-user-turn trial
+  per buyer and character before checkout is required. A turn is billable only after the user message
+  receives an assistant reply; greetings, assistant rows, blocked inputs, and failed pending sends do
+  not consume trial messages.
 - After the trial is exhausted, paid character chat access requires a `billing.character_purchases` row with `status = paid`, or creator ownership. Subscription plans do not bypass a creator's paid unlock.
 - Character purchase creation is idempotent per user and character. If trial messages remain, the purchase endpoint opens chat instead of starting checkout. Checkout is verified server-side with the payment signature and can also be supported through a webhook path.
 - Creator revenue is posted to a signed wallet ledger: gross sale, platform fee, pending hold, available balance, payout reserve, payout release, settlement, and failure recovery.

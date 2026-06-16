@@ -9,7 +9,9 @@ const API_BASE_URL = stripTrailingSlash(
 );
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL ?? "admin@local.hana.test";
 const ADMIN_STATIC_OTP = process.env.ADMIN_STATIC_OTP;
-const EXPECTED_MODEL = process.env.XAI_DEFAULT_MODEL;
+const API_TARGET_IS_PRODUCTION =
+  process.env.AI_HARNESS_PRODUCTION === "1" || isProductionApiTarget(API_BASE_URL);
+const EXPECTED_MODEL = expectedModelForHarness();
 const STRICT_QUALITY = process.env.AI_HARNESS_STRICT_QUALITY === "1";
 const reportDir = resolve(process.cwd(), "tmp", "ai-harness");
 const runId = new Date().toISOString().replace(/[:.]/g, "-");
@@ -66,7 +68,7 @@ await check("admin AI session", "critical", async () => {
 await check("eval character setup", "critical", async () => {
   const stamp = Date.now().toString().slice(-8);
   context.codename = `orchid-harbor-${stamp}`;
-  const character = await findSeededOwnCharacter((item) => item.name === "Mika Velvet");
+  const character = await findHarnessCharacter();
   assert(character.id, "seeded harness character was not found");
   context.characterId = character.id;
   context.characterName = character.name;
@@ -311,6 +313,7 @@ await check("SSE streaming chat path", "critical", async () => {
 await check("adult-mode input gate", "critical", async () => {
   const adultCharacter = await findSeededOwnCharacter(
     (item) => item.rating === "adult" || item.name === "Aiko Nocturne",
+    "adult-rated seeded character is missing; approve or seed an adult test character before the AI harness",
   );
 
   const blocked = await sendChat({
@@ -366,11 +369,29 @@ async function sendChat(input) {
   );
 }
 
-async function findSeededOwnCharacter(predicate) {
+async function findHarnessCharacter() {
+  const mine = await getJson("/v1/characters/mine", context.adminToken);
+  const character =
+    mine.characters.find((item) => item.name === "Mika Velvet") ??
+    mine.characters.find((item) => item.rating !== "adult" && item.rating !== "mature") ??
+    mine.characters[0];
+
+  assert(
+    character,
+    "owned harness character is missing; seed or create a character before the AI harness",
+  );
+
+  return character;
+}
+
+async function findSeededOwnCharacter(predicate, message) {
   const mine = await getJson("/v1/characters/mine", context.adminToken);
   const character = mine.characters.find(predicate);
 
-  assert(character, "seeded local cast is missing; run pnpm seed:local before the AI harness");
+  assert(
+    character,
+    message ?? "seeded local cast is missing; run pnpm seed:local before the AI harness",
+  );
 
   return character;
 }
@@ -688,6 +709,24 @@ function summarize(value) {
 
 function stripTrailingSlash(value) {
   return value.replace(/\/+$/, "");
+}
+
+function expectedModelForHarness() {
+  if (process.env.AI_HARNESS_EXPECTED_MODEL !== undefined) {
+    const value = process.env.AI_HARNESS_EXPECTED_MODEL.trim();
+
+    return value || undefined;
+  }
+
+  return API_TARGET_IS_PRODUCTION ? undefined : process.env.XAI_DEFAULT_MODEL;
+}
+
+function isProductionApiTarget(value) {
+  try {
+    return /(^|\.)hanachat\.site$/i.test(new URL(value).hostname);
+  } catch {
+    return false;
+  }
 }
 
 function loadDotEnv(path) {

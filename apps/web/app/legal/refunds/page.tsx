@@ -1,8 +1,12 @@
 import { LegalPage } from "../legal-page";
+import { createPublicMetadata } from "../../seo";
+
+export const metadata = createPublicMetadata("/legal/refunds");
 
 export default function RefundPolicyPage() {
   return (
     <LegalPage
+      path="/legal/refunds"
       title="Billing and Refund Policy"
       intro="This policy explains paid plans, renewals, cancellations, failed payments, refunds, charge issues, and support routes for Hana Chat."
       sections={[
@@ -11,8 +15,8 @@ export default function RefundPolicyPage() {
           body: (
             <p>
               Hana Chat may offer subscriptions, paid character access, message limits, memory
-              upgrades, and mature spaces. Prices, plan benefits, billing interval, currency,
-              taxes, and payment provider details are shown before checkout.
+              upgrades, and mature spaces. Prices, plan benefits, billing interval, currency, taxes,
+              and payment provider details are shown before checkout.
             </p>
           ),
         },

@@ -5,6 +5,11 @@ import { Controller, Get, Headers, Query } from "@nestjs/common";
 import { Kysely, sql } from "kysely";
 import { normalizeMarketplaceStats } from "./marketplace-stats";
 import { requireAdmin } from "./session";
+import {
+  costTicksToUsd,
+  estimateImageGenerationCostUsd,
+  estimateTextModelCostUsd,
+} from "./xai-pricing";
 
 type Db = Kysely<HanaDatabase>;
 type ServiceHealthStatus = "ok" | "degraded";
@@ -29,6 +34,21 @@ interface TimeSeriesRow {
   safety_blocks: number | string | null;
   revenue_cents: number | string | null;
   marketplace_interactions: number | string | null;
+}
+
+interface ModelCostRow {
+  provider: string;
+  model: string;
+  calls: number | string | null;
+  average_latency_ms: number | string | null;
+  input_tokens: number | string | null;
+  cached_input_tokens: number | string | null;
+  output_tokens: number | string | null;
+  exact_cost_ticks: number | string | null;
+  stored_cost_usd: number | string | null;
+  fallback_input_tokens: number | string | null;
+  fallback_cached_input_tokens: number | string | null;
+  fallback_output_tokens: number | string | null;
 }
 
 @Controller("/v1/admin/analytics")
@@ -67,6 +87,7 @@ export class AdminAnalyticsController {
       outboxSummary,
       topCharacters,
       modelRoutes,
+      imageGenerationSummary,
       safetyActions,
       safetyCategories,
       queueStatuses,
@@ -91,6 +112,7 @@ export class AdminAnalyticsController {
       outboxHealthSummary(this.db, since24h),
       topMarketplaceCharacters(this.db, since),
       modelRoutesSummary(this.db, since),
+      imageGenerationCostSummary(this.db, since),
       safetyActionBreakdown(this.db, since),
       safetyCategoryBreakdown(this.db, since),
       queueStatusBreakdown(this.db),
@@ -140,6 +162,9 @@ export class AdminAnalyticsController {
       },
       modelHealth: {
         ...modelSummary,
+        imageGenerations: imageGenerationSummary,
+        totalEstimatedCostUsd:
+          modelSummary.estimatedCostUsd + imageGenerationSummary.estimatedCostUsd,
         routes: modelRoutes,
       },
       safety: {
@@ -215,57 +240,43 @@ async function countMessages(
 }
 
 async function modelCallSummary(db: Db, since: Date) {
-  const result = await sql<{
-    calls: number | string | null;
-    input_tokens: number | string | null;
-    cached_input_tokens: number | string | null;
-    output_tokens: number | string | null;
-    estimated_cost_usd: number | string | null;
-    average_latency_ms: number | string | null;
-    p95_latency_ms: number | string | null;
-  }>`
-    SELECT
-      COUNT(*)::integer AS calls,
-      COALESCE(SUM(input_tokens), 0)::integer AS input_tokens,
-      COALESCE(SUM(cached_input_tokens), 0)::integer AS cached_input_tokens,
-      COALESCE(SUM(output_tokens), 0)::integer AS output_tokens,
-      COALESCE(SUM(estimated_cost_usd), 0)::text AS estimated_cost_usd,
-      COALESCE(ROUND(AVG(latency_ms))::integer, 0) AS average_latency_ms,
-      COALESCE(ROUND(percentile_cont(0.95) WITHIN GROUP (ORDER BY latency_ms))::integer, 0)
-        AS p95_latency_ms
-    FROM analytics.model_calls
-    WHERE created_at >= ${since}
-  `.execute(db);
-  const row = result.rows[0];
+  const [summaryResult, costRows] = await Promise.all([
+    sql<{
+      calls: number | string | null;
+      input_tokens: number | string | null;
+      cached_input_tokens: number | string | null;
+      output_tokens: number | string | null;
+      average_latency_ms: number | string | null;
+      p95_latency_ms: number | string | null;
+    }>`
+      SELECT
+        COUNT(*)::integer AS calls,
+        COALESCE(SUM(input_tokens), 0)::integer AS input_tokens,
+        COALESCE(SUM(cached_input_tokens), 0)::integer AS cached_input_tokens,
+        COALESCE(SUM(output_tokens), 0)::integer AS output_tokens,
+        COALESCE(ROUND(AVG(latency_ms))::integer, 0) AS average_latency_ms,
+        COALESCE(ROUND(percentile_cont(0.95) WITHIN GROUP (ORDER BY latency_ms))::integer, 0)
+          AS p95_latency_ms
+      FROM analytics.model_calls
+      WHERE created_at >= ${since}
+    `.execute(db),
+    modelCostRows(db, since),
+  ]);
+  const row = summaryResult.rows[0];
 
   return {
     calls: toInt(row?.calls),
     inputTokens: toInt(row?.input_tokens),
     cachedInputTokens: toInt(row?.cached_input_tokens),
     outputTokens: toInt(row?.output_tokens),
-    estimatedCostUsd: toFloat(row?.estimated_cost_usd),
+    estimatedCostUsd: costRows.reduce((sum, costRow) => sum + modelCostUsd(costRow), 0),
     averageLatencyMs: toInt(row?.average_latency_ms),
     p95LatencyMs: toInt(row?.p95_latency_ms),
   };
 }
 
 async function modelRoutesSummary(db: Db, since: Date) {
-  const rows = await db
-    .selectFrom("analytics.model_calls")
-    .select([
-      "provider",
-      "model",
-      sql<number>`COUNT(*)::integer`.as("calls"),
-      sql<number>`COALESCE(ROUND(AVG(latency_ms))::integer, 0)`.as("average_latency_ms"),
-      sql<number>`COALESCE(SUM(input_tokens), 0)::integer`.as("input_tokens"),
-      sql<number>`COALESCE(SUM(output_tokens), 0)::integer`.as("output_tokens"),
-      sql<string>`COALESCE(SUM(estimated_cost_usd), 0)::text`.as("estimated_cost_usd"),
-    ])
-    .where("created_at", ">=", since)
-    .groupBy(["provider", "model"])
-    .orderBy("calls", "desc")
-    .limit(12)
-    .execute();
+  const rows = await modelCostRows(db, since, 12);
 
   return rows.map((row) => ({
     provider: row.provider,
@@ -273,9 +284,127 @@ async function modelRoutesSummary(db: Db, since: Date) {
     calls: toInt(row.calls),
     averageLatencyMs: toInt(row.average_latency_ms),
     inputTokens: toInt(row.input_tokens),
+    cachedInputTokens: toInt(row.cached_input_tokens),
     outputTokens: toInt(row.output_tokens),
-    estimatedCostUsd: toFloat(row.estimated_cost_usd),
+    estimatedCostUsd: modelCostUsd(row),
   }));
+}
+
+async function modelCostRows(db: Db, since: Date, limit?: number): Promise<ModelCostRow[]> {
+  const limitClause = limit ? sql`LIMIT ${limit}` : sql``;
+  const result = await sql<ModelCostRow>`
+    SELECT
+      provider,
+      model,
+      COUNT(*)::integer AS calls,
+      COALESCE(ROUND(AVG(latency_ms))::integer, 0) AS average_latency_ms,
+      COALESCE(SUM(input_tokens), 0)::integer AS input_tokens,
+      COALESCE(SUM(cached_input_tokens), 0)::integer AS cached_input_tokens,
+      COALESCE(SUM(output_tokens), 0)::integer AS output_tokens,
+      SUM(cost_in_usd_ticks)::text AS exact_cost_ticks,
+      COALESCE(
+        SUM(estimated_cost_usd)
+          FILTER (WHERE cost_in_usd_ticks IS NULL AND estimated_cost_usd > 0),
+        0
+      )::text AS stored_cost_usd,
+      COALESCE(
+        SUM(input_tokens)
+          FILTER (WHERE cost_in_usd_ticks IS NULL AND estimated_cost_usd <= 0),
+        0
+      )::integer AS fallback_input_tokens,
+      COALESCE(
+        SUM(cached_input_tokens)
+          FILTER (WHERE cost_in_usd_ticks IS NULL AND estimated_cost_usd <= 0),
+        0
+      )::integer AS fallback_cached_input_tokens,
+      COALESCE(
+        SUM(output_tokens)
+          FILTER (WHERE cost_in_usd_ticks IS NULL AND estimated_cost_usd <= 0),
+        0
+      )::integer AS fallback_output_tokens
+    FROM analytics.model_calls
+    WHERE created_at >= ${since}
+    GROUP BY provider, model
+    ORDER BY calls DESC, provider ASC, model ASC
+    ${limitClause}
+  `.execute(db);
+
+  return result.rows;
+}
+
+function modelCostUsd(row: ModelCostRow): number {
+  const exactCost = costTicksToUsd(toFloat(row.exact_cost_ticks)) ?? 0;
+  const storedCost = toFloat(row.stored_cost_usd);
+  const fallbackCost = estimateTextModelCostUsd({
+    provider: row.provider,
+    model: row.model,
+    inputTokens: toInt(row.fallback_input_tokens),
+    cachedInputTokens: toInt(row.fallback_cached_input_tokens),
+    outputTokens: toInt(row.fallback_output_tokens),
+  });
+
+  return exactCost + storedCost + fallbackCost;
+}
+
+async function imageGenerationCostSummary(db: Db, since: Date) {
+  const result = await sql<{
+    provider: string;
+    model: string;
+    purpose: string;
+    aspect_ratio: string;
+    resolution: string | null;
+    images: number | string | null;
+    exact_cost_ticks: number | string | null;
+    fallback_images: number | string | null;
+  }>`
+    SELECT
+      'xai' AS provider,
+      COALESCE(NULLIF(metadata_json->>'model', ''), 'grok-imagine-image-quality') AS model,
+      COALESCE(NULLIF(metadata_json->>'purpose', ''), purpose) AS purpose,
+      COALESCE(NULLIF(metadata_json->>'aspectRatio', ''), '1:1') AS aspect_ratio,
+      NULLIF(metadata_json->>'resolution', '') AS resolution,
+      COUNT(*)::integer AS images,
+      SUM(
+        CASE
+          WHEN metadata_json->>'costTicks' ~ '^[0-9]+$'
+          THEN (metadata_json->>'costTicks')::numeric
+          ELSE NULL
+        END
+      )::text AS exact_cost_ticks,
+      COUNT(*) FILTER (
+        WHERE NOT (COALESCE(metadata_json->>'costTicks', '') ~ '^[0-9]+$')
+      )::integer AS fallback_images
+    FROM creator.media_assets
+    WHERE created_at >= ${since}
+      AND metadata_json @> '{"source":"xai-image-generation"}'::jsonb
+    GROUP BY 1, 2, 3, 4, 5
+    ORDER BY images DESC, model ASC, purpose ASC
+    LIMIT 12
+  `.execute(db);
+  const routes = result.rows.map((row) => {
+    const exactCost = costTicksToUsd(toFloat(row.exact_cost_ticks)) ?? 0;
+    const fallbackCost = estimateImageGenerationCostUsd({
+      provider: row.provider,
+      model: row.model,
+      images: toInt(row.fallback_images),
+      resolution: row.resolution,
+    });
+
+    return {
+      provider: row.provider,
+      model: row.model,
+      purpose: row.purpose,
+      aspectRatio: row.aspect_ratio,
+      images: toInt(row.images),
+      estimatedCostUsd: exactCost + fallbackCost,
+    };
+  });
+
+  return {
+    images: routes.reduce((sum, route) => sum + route.images, 0),
+    estimatedCostUsd: routes.reduce((sum, route) => sum + route.estimatedCostUsd, 0),
+    routes,
+  };
 }
 
 async function safetyDecisionSummary(db: Db, since: Date) {

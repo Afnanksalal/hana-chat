@@ -316,8 +316,6 @@ export type EntitlementKey =
   | "memory.basic"
   | "memory.deep"
   | "adult.mode"
-  | "voice.tts"
-  | "voice.realtime"
   | "creator.private_characters"
   | "creator.paid_characters";
 ```
@@ -501,7 +499,8 @@ The memory system is the main product moat. It must not be a single vector searc
 
 5. Character canon memory
    - Facts that define the character.
-   - Backstory, voice, style, lore constraints.
+
+- Backstory, tone, style, lore constraints.
 
 6. Episodic memory
    - Specific remembered moments.
@@ -792,7 +791,7 @@ ultra normal chat      -> grok-4.3 none or low if needed
 memory extraction      -> local/Hermes/NouS cheap model where possible
 moderation classifier  -> small classifier + rules, escalate to stronger model
 summarization          -> cheap model first, grok low for high-value users
-voice realtime         -> separate credit meter
+image generation       -> separate credit meter
 ```
 
 ### Cost Accounting
@@ -1247,7 +1246,7 @@ This graph should identify clusters:
 - Delay, step-up, or block suspicious free-tier traffic.
 - Reduce free quota for medium-risk users instead of only hard-blocking.
 - Add proof-of-work, CAPTCHA, or Arkose-style challenges for risky sessions and active attacks.
-- Require successful risk checks before referral rewards, creator monetization, mature-mode enablement, and high-cost voice/media usage.
+- Require successful risk checks before referral rewards, creator monetization, mature-mode enablement, and high-cost generated media usage.
 
 ## 19. Privacy and Data Controls
 
@@ -1297,13 +1296,12 @@ Internal requirements:
 
 Use credits for:
 
-- voice,
 - images,
 - long context boosts,
 - extra messages,
 - creator premium characters.
 
-Do not promise truly unlimited voice or high-cost media.
+Do not promise truly unlimited high-cost media.
 
 ### Ledger
 
@@ -1588,13 +1586,11 @@ Pipeline:
 - Paid/private characters.
 - Ranking and discovery.
 
-### Phase 6: Voice and Media
+### Phase 6: Image Media
 
-- TTS.
-- STT.
-- Realtime voice.
-- Voice credit metering.
 - Avatar/media generation if profitable.
+- Media safety and provenance checks.
+- Creator asset workflow hardening.
 
 ### Phase 7: Scale Hardening
 

@@ -90,9 +90,15 @@ export default function AppHomePage() {
     ])
       .then(([dashboardPayload, conversationPayload, characterPayload]) => {
         if (mounted) {
-          setDashboard(dashboardPayload);
-          setConversations(conversationPayload.conversations);
-          setCharacters(characterPayload.characters);
+          setDashboard(normalizeDashboard(dashboardPayload));
+          setConversations(
+            Array.isArray(conversationPayload.conversations)
+              ? conversationPayload.conversations
+              : [],
+          );
+          setCharacters(
+            Array.isArray(characterPayload.characters) ? characterPayload.characters : [],
+          );
           setStatus("");
         }
       })
@@ -207,7 +213,7 @@ export default function AppHomePage() {
                 key={conversation.id}
               >
                 <img
-                  src={conversation.character.avatarUrl ?? "/assets/hana-icon-head.png"}
+                  src={conversation.character.avatarUrl ?? "/assets/character-avatar-default.svg"}
                   alt=""
                 />
                 <span>
@@ -302,7 +308,7 @@ export default function AppHomePage() {
                 href={`/app/chat?characterId=${encodeURIComponent(character.id)}`}
                 key={character.id}
               >
-                <img src={character.avatarUrl ?? "/assets/hana-icon-head.png"} alt="" />
+                <img src={character.avatarUrl ?? "/assets/character-avatar-default.svg"} alt="" />
                 <span>{character.marketplaceCategory ?? character.rating ?? "featured"}</span>
                 <h3>{character.name}</h3>
                 <p>
@@ -321,17 +327,48 @@ export default function AppHomePage() {
 
 function greetingFor(displayName: string): string {
   const firstName = displayName.trim().split(/\s+/)[0] || "there";
-  const hour = new Date().getHours();
-  const moment =
-    hour < 5
-      ? "late night"
-      : hour < 12
-        ? "morning"
-        : hour < 17
-          ? "afternoon"
-          : hour < 21
-            ? "evening"
-            : "night";
 
-  return `Your ${moment} is ready, ${firstName}.`;
+  return `Your rooms are ready, ${firstName}.`;
+}
+
+function normalizeDashboard(payload: Partial<DashboardResponse>): DashboardResponse {
+  return {
+    user: {
+      displayName: payload.user?.displayName ?? fallbackDashboard.user.displayName,
+      roles: Array.isArray(payload.user?.roles) ? payload.user.roles : [],
+    },
+    plan: {
+      id: payload.plan?.id ?? fallbackDashboard.plan.id,
+      name: payload.plan?.name ?? fallbackDashboard.plan.name,
+    },
+    usage: {
+      monthlyMessagesUsed:
+        typeof payload.usage?.monthlyMessagesUsed === "number"
+          ? payload.usage.monthlyMessagesUsed
+          : fallbackDashboard.usage.monthlyMessagesUsed,
+      monthlyMessagesLimit:
+        typeof payload.usage?.monthlyMessagesLimit === "number"
+          ? payload.usage.monthlyMessagesLimit
+          : fallbackDashboard.usage.monthlyMessagesLimit,
+      messagesRemaining:
+        typeof payload.usage?.messagesRemaining === "number"
+          ? payload.usage.messagesRemaining
+          : fallbackDashboard.usage.messagesRemaining,
+    },
+    counts: {
+      savedMemories:
+        typeof payload.counts?.savedMemories === "number"
+          ? payload.counts.savedMemories
+          : fallbackDashboard.counts.savedMemories,
+      createdCharacters:
+        typeof payload.counts?.createdCharacters === "number"
+          ? payload.counts.createdCharacters
+          : fallbackDashboard.counts.createdCharacters,
+      activeConversations:
+        typeof payload.counts?.activeConversations === "number"
+          ? payload.counts.activeConversations
+          : fallbackDashboard.counts.activeConversations,
+    },
+    nextAction: payload.nextAction ?? fallbackDashboard.nextAction,
+  };
 }

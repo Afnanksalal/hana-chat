@@ -45,6 +45,7 @@ pnpm typecheck
 pnpm lint
 pnpm test
 pnpm product:smoke
+pnpm seo:audit
 pnpm ai:harness
 pnpm web:smoke
 ```
@@ -78,6 +79,7 @@ pnpm web:smoke
 - [VPS Container Map](docs/vps-container-map.md)
 - [Domain Integration](docs/domain-integration.md)
 - [Android TWA Packaging](docs/android-twa.md)
+- [SEO and AI Discovery](docs/seo-ai-discovery.md)
 - [Guardrails and SSE](docs/guardrails-and-sse.md)
 - [AI Harness](docs/ai-harness.md)
 - [Product and Market Audit](docs/product-market-audit-2026.md)

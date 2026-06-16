@@ -1,6 +1,19 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { HanaLogo } from "../components/hana-logo";
 import { AppNavigation } from "./components/app-navigation";
+
+export const metadata: Metadata = {
+  title: "Dashboard",
+  robots: {
+    index: false,
+    follow: false,
+    googleBot: {
+      index: false,
+      follow: false,
+    },
+  },
+};
 
 export default function AppLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (

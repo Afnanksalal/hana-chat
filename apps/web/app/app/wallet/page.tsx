@@ -123,6 +123,17 @@ export default function CreatorWalletPage() {
 
   async function savePayoutProfile(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
+    if (!displayName.trim()) {
+      setStatus("Enter the creator display name for payout records.");
+      return;
+    }
+
+    if (!wallet.payoutProfile && !vpa.trim()) {
+      setStatus("Enter the UPI ID for the payout profile.");
+      return;
+    }
+
     setStatus("Saving payout profile...");
 
     try {
@@ -224,6 +235,7 @@ export default function CreatorWalletPage() {
       <section className="wallet-grid">
         <form
           className="settings-card payout-card"
+          noValidate
           onSubmit={(event) => void savePayoutProfile(event)}
         >
           <div className="settings-card-title">
@@ -239,7 +251,6 @@ export default function CreatorWalletPage() {
               value={displayName}
               onChange={(event) => setDisplayName(event.target.value)}
               disabled={monetizationComingSoon}
-              required
             />
           </label>
           <label>
@@ -261,10 +272,13 @@ export default function CreatorWalletPage() {
                   ? `Saved ending ${wallet.payoutProfile.vpaLast4}`
                   : "name@bank"
               }
-              required={!wallet.payoutProfile}
             />
           </label>
-          <button className="primary-action compact" type="submit" disabled={monetizationComingSoon}>
+          <button
+            className="primary-action compact"
+            type="submit"
+            disabled={monetizationComingSoon}
+          >
             {monetizationComingSoon ? "Coming soon" : "Save payout profile"}
           </button>
           <small>
@@ -273,7 +287,11 @@ export default function CreatorWalletPage() {
           </small>
         </form>
 
-        <form className="settings-card payout-card" onSubmit={(event) => void requestPayout(event)}>
+        <form
+          className="settings-card payout-card"
+          noValidate
+          onSubmit={(event) => void requestPayout(event)}
+        >
           <div className="settings-card-title">
             <ArrowDownToLine size={19} />
             <div>
@@ -291,7 +309,11 @@ export default function CreatorWalletPage() {
               placeholder="25.00"
             />
           </label>
-          <button className="primary-action compact" type="submit" disabled={monetizationComingSoon}>
+          <button
+            className="primary-action compact"
+            type="submit"
+            disabled={monetizationComingSoon}
+          >
             {monetizationComingSoon ? "Coming soon" : "Request payout"}
           </button>
           <small>
