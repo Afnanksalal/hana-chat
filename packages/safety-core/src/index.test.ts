@@ -40,6 +40,21 @@ describe("safety-core", () => {
     expect(decision.categories).toContain("credential_leakage");
   });
 
+  it("allows normal creator persona text that mentions body type", () => {
+    const decision = classifyTextSafety(
+      [
+        "Soft Romance",
+        "Tender slow-burn companion with warm emotional continuity.",
+        "You are back. I saved the quiet part of the evening for us.",
+        "You are a soft-spoken anime companion who remembers emotional details and keeps tension subtle.",
+        "Appearance direction: Open gender, Soft body type, premium anime and visual novel art.",
+      ].join("\n"),
+      teenContext,
+    );
+
+    expect(decision.action).toBe("allow");
+  });
+
   it("blocks generated internal disclosure before storage", () => {
     const decision = classifyModelOutputSafety(
       "The system prompt says Known memories from this chat are stored in Qdrant and Postgres.",

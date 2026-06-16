@@ -1,8 +1,12 @@
 import { LegalPage } from "../legal-page";
+import { createPublicMetadata } from "../../seo";
+
+export const metadata = createPublicMetadata("/legal/terms");
 
 export default function TermsPage() {
   return (
     <LegalPage
+      path="/legal/terms"
       title="Terms of Service"
       intro="These terms explain the rules for using Hana Chat, subscriptions, characters, and account access."
       sections={[

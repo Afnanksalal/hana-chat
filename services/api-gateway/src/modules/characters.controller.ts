@@ -24,8 +24,8 @@ import { hasPaidCharacterAccess, paidCharacterTrialStatus } from "./monetization
 import { auditEvent, requireSession } from "./session";
 import { searchCharacterVectors } from "./vector-character";
 
-const DEFAULT_AVATAR_URL = "/assets/hana-icon-head.png";
-const DEFAULT_COVER_IMAGE_URL = "/assets/hana-hero.png";
+const DEFAULT_AVATAR_URL = "/assets/character-avatar-default.svg";
+const DEFAULT_COVER_IMAGE_URL = "/assets/character-cover-default.svg";
 
 interface MarketplaceViewer {
   userId: string;
@@ -959,31 +959,34 @@ function isVisibleInMarketplace(
   return publicApproved || ownedByViewer;
 }
 
-function toCharacterSummary(character: {
-  id: string;
-  creator_user_id: string;
-  creator_display_name: string | null;
-  creator_avatar_url: string | null;
-  name: string;
-  description: string;
-  visibility: string;
-  moderation_status: string;
-  slug: string | null;
-  avatar_url: string | null;
-  cover_image_url: string | null;
-  template_id: string | null;
-  marketplace_category: string;
-  marketplace_preview: string | null;
-  model_profile: string;
-  price_cents: number;
-  monetization_enabled: boolean;
-  marketplace_stats_json: unknown;
-  rating: CharacterRating | null;
-  tags: string[] | null;
-  personality_traits: string[] | null;
-  speaking_style: string | null;
-  updated_at: Date;
-}, options?: { monetizationEnabled?: boolean }) {
+function toCharacterSummary(
+  character: {
+    id: string;
+    creator_user_id: string;
+    creator_display_name: string | null;
+    creator_avatar_url: string | null;
+    name: string;
+    description: string;
+    visibility: string;
+    moderation_status: string;
+    slug: string | null;
+    avatar_url: string | null;
+    cover_image_url: string | null;
+    template_id: string | null;
+    marketplace_category: string;
+    marketplace_preview: string | null;
+    model_profile: string;
+    price_cents: number;
+    monetization_enabled: boolean;
+    marketplace_stats_json: unknown;
+    rating: CharacterRating | null;
+    tags: string[] | null;
+    personality_traits: string[] | null;
+    speaking_style: string | null;
+    updated_at: Date;
+  },
+  options?: { monetizationEnabled?: boolean },
+) {
   const monetizationEnabled =
     (options?.monetizationEnabled ?? true) &&
     character.monetization_enabled &&

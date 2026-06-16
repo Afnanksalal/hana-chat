@@ -54,6 +54,8 @@ export interface ConversationEvolutionSummary {
     userProfile: string[];
     soul: string[];
     milestones: string[];
+    relationshipLedger: string[];
+    sceneState: string[];
     adaptiveSkills: string[];
     openLoops: string[];
     recentSignals: string[];
@@ -186,6 +188,14 @@ export function formatEvolutionForPrompt(evolution: ConversationEvolutionSummary
     lines.push("Relationship milestones:", ...profile.milestones.map((item) => `- ${item}`));
   }
 
+  if (profile.relationshipLedger.length) {
+    lines.push("Relationship ledger:", ...profile.relationshipLedger.map((item) => `- ${item}`));
+  }
+
+  if (profile.sceneState.length) {
+    lines.push("Current scene state:", ...profile.sceneState.map((item) => `- ${item}`));
+  }
+
   if (profile.recentSignals.length) {
     lines.push("Recent signals:", ...profile.recentSignals.map((item) => `- ${item}`));
   }
@@ -227,10 +237,19 @@ export function deriveEvolution(
   recentMessages: RecentMessageSignal[] = [],
 ): Omit<ConversationEvolutionSummary, "updatedAt"> {
   const relationship = analyzeRelationship(memories, recentMessages);
-  const memoryDepth = memories.reduce(
-    (sum, memory) => sum + memory.importance * 3.2 + memory.emotional_weight * 5,
-    0,
-  );
+  const memoryDepth = [...memories]
+    .sort(
+      (left, right) =>
+        right.importance - left.importance ||
+        right.emotional_weight - left.emotional_weight ||
+        right.updated_at.getTime() - left.updated_at.getTime(),
+    )
+    .slice(0, 18)
+    .reduce(
+      (sum, memory, index) =>
+        sum + (memory.importance * 2.2 + memory.emotional_weight * 3.4) / (1 + index * 0.45),
+      0,
+    );
   const turnDepth = Math.min(34, userMessageCount * 1.35);
   const signalDepth =
     relationship.positiveSignals * 3.5 +
@@ -253,6 +272,8 @@ export function deriveEvolution(
     userProfile: deriveUserProfile(memories, recentMessages),
     soul: deriveSoulProfile(memories, recentMessages, relationship),
     milestones: deriveMilestones(memories, recentMessages, relationship),
+    relationshipLedger: deriveRelationshipLedger(memories, recentMessages, relationship),
+    sceneState: deriveSceneState(memories, recentMessages),
     adaptiveSkills: deriveAdaptiveSkills(memories, recentMessages, relationship),
     openLoops: deriveOpenLoops(recentMessages),
     recentSignals: relationship.recentSignals,
@@ -293,11 +314,6 @@ function analyzeRelationship(
     .map((message) => message.content)
     .join("\n")
     .toLowerCase();
-  const recentAssistantText = recentMessages
-    .filter((message) => message.role === "assistant")
-    .map((message) => message.content)
-    .join("\n")
-    .toLowerCase();
   const tensionSignals = countMatches(text, [
     /\benem(?:y|ies)\b/g,
     /\brivals?\b/g,
@@ -330,12 +346,12 @@ function analyzeRelationship(
     /\bintimate\b/g,
   ]);
   const explicitConflict =
-    conflictEvidence(recentUserText) || conflictEvidence(memoryText) || conflictEvidence(recentText);
+    conflictEvidence(recentUserText) ||
+    conflictEvidence(memoryText) ||
+    conflictEvidence(recentText);
   const explicitRomance = romanticEvidence({
     memoryText,
-    recentUserText,
-    recentAssistantText,
-    recentText,
+    recentMessages,
   });
   const state = chooseRelationshipState({
     tensionSignals,
@@ -408,28 +424,62 @@ function conflictEvidence(text: string): boolean {
 
 function romanticEvidence(input: {
   memoryText: string;
-  recentUserText: string;
-  recentAssistantText: string;
-  recentText: string;
+  recentMessages: RecentMessageSignal[];
 }): boolean {
   const establishedMemory =
     /\brelationship state:.*(?:romantic partnership|lovers|dating|girlfriend|boyfriend|explicitly romantic|explicitly intimate)\b/i.test(
       input.memoryText,
     );
-  const explicitUser =
-    /\b(?:we (?:are|were) (?:lovers|dating|partners)|we're (?:lovers|dating|partners)|girlfriend|boyfriend|i love you|kiss me|be my girlfriend|be my boyfriend)\b/i.test(
-      input.recentUserText,
-    );
-  const assistantAccepted =
-    /\b(?:i love you too|i'm your girlfriend|i am your girlfriend|i'm your boyfriend|i am your boyfriend|as your girlfriend|as your boyfriend|we're dating|we are dating|we're together|we are together|we're lovers|we are lovers)\b/i.test(
-      input.recentAssistantText,
-    );
-  const allRecentEstablished =
-    /\b(?:we're dating|we are dating|we're together|we are together|we're lovers|we are lovers)\b/i.test(
-      input.recentText,
-    );
 
-  return establishedMemory || (explicitUser && assistantAccepted) || allRecentEstablished;
+  return establishedMemory || hasSameTurnRomanceEvidence(input.recentMessages);
+}
+
+function hasSameTurnRomanceEvidence(messages: RecentMessageSignal[]): boolean {
+  let pendingUserIntent = false;
+
+  for (const message of [...messages].sort(
+    (left, right) => left.created_at.getTime() - right.created_at.getTime(),
+  )) {
+    if (message.role === "user") {
+      pendingUserIntent = explicitRomanceIntent(message.content);
+      continue;
+    }
+
+    if (message.role !== "assistant" || !pendingUserIntent) {
+      continue;
+    }
+
+    if (assistantRomanceDeferred(message.content)) {
+      pendingUserIntent = false;
+      continue;
+    }
+
+    if (assistantRomanceAccepted(message.content)) {
+      return true;
+    }
+
+    pendingUserIntent = false;
+  }
+
+  return false;
+}
+
+function explicitRomanceIntent(text: string): boolean {
+  return /\b(?:we (?:are|were) (?:lovers|dating|partners)|we're (?:lovers|dating|partners)|girlfriend|boyfriend|i love you|kiss me|be my girlfriend|be my boyfriend)\b/i.test(
+    text,
+  );
+}
+
+function assistantRomanceAccepted(text: string): boolean {
+  return /\b(?:i love you too|i'm your girlfriend|i am your girlfriend|i'm your boyfriend|i am your boyfriend|i'll be your girlfriend|i will be your girlfriend|i'll be your boyfriend|i will be your boyfriend|as your girlfriend|as your boyfriend|we're dating|we are dating|we're together|we are together|we're lovers|we are lovers)\b/i.test(
+    text,
+  );
+}
+
+function assistantRomanceDeferred(text: string): boolean {
+  return /\b(?:not yet|too fast|slow down|don't rush|do not rush|rush me into labels|take it slow|take this slow|not ready|can't be your girlfriend|cannot be your girlfriend|can't be your boyfriend|cannot be your boyfriend|not your girlfriend|not your boyfriend|we aren't dating|we are not dating|we're not dating|let's wait|lets wait)\b/i.test(
+    text,
+  );
 }
 
 function relationshipStateLabel(state: RelationshipState): string {
@@ -477,7 +527,9 @@ function deriveRecentSignals(input: {
     );
   }
 
-  if (/\b(?:romantic partnership|we're dating|we are dating|i love you too)\b/i.test(input.recentText)) {
+  if (
+    /\b(?:romantic partnership|we're dating|we are dating|i love you too)\b/i.test(input.recentText)
+  ) {
     signals.push("Recent turns include reciprocal romantic-state evidence.");
   }
 
@@ -495,17 +547,19 @@ function stageForDepth(
   relationship: RelationshipAnalysis,
 ): EvolutionStage {
   if (
-    relationshipDepth >= 72 ||
-    (memoryCount >= 12 && userMessageCount >= 28 && relationship.state !== "tense")
+    userMessageCount >= 30 &&
+    relationshipDepth >= 72 &&
+    relationship.state !== "tense" &&
+    relationship.state !== "rivalry"
   ) {
     return "bonded";
   }
 
-  if (relationshipDepth >= 44 || memoryCount >= 7 || userMessageCount >= 18) {
+  if (userMessageCount >= 12 && (relationshipDepth >= 44 || memoryCount >= 10)) {
     return "attuned";
   }
 
-  if (relationshipDepth >= 16 || memoryCount >= 2 || userMessageCount >= 5) {
+  if (userMessageCount >= 3 && (relationshipDepth >= 16 || memoryCount >= 2)) {
     return "warming";
   }
 
@@ -541,7 +595,9 @@ function deriveUserProfile(
   )?.[1];
 
   if (alias) {
-    profile.unshift(`User likes to be called ${clipMemory(alias.replace(/[.!?].*$/g, "").trim())}.`);
+    profile.unshift(
+      `User likes to be called ${clipMemory(alias.replace(/[.!?].*$/g, "").trim())}.`,
+    );
   }
 
   if (/\b(?:slow burn|don't rush|do not rush|slower)\b/i.test(recentUserText)) {
@@ -585,10 +641,14 @@ function deriveSoulProfile(
       "Character soul: romantic continuity is established in this room; affection should reference shared history instead of resetting.",
     );
   } else if (relationship.state === "friendly") {
-    profile.unshift("Character soul: familiar, warmer, and attentive to details the user has earned.");
+    profile.unshift(
+      "Character soul: familiar, warmer, and attentive to details the user has earned.",
+    );
   }
 
-  if (/\b(?:take it slow|take this slow|one step at a time|not rush)\b/i.test(recentAssistantText)) {
+  if (
+    /\b(?:take it slow|take this slow|one step at a time|not rush)\b/i.test(recentAssistantText)
+  ) {
     profile.push("Character soul: chooses slow escalation and explicitly protects pacing.");
   }
 
@@ -621,9 +681,7 @@ function deriveMilestones(
       recentText,
     )
   ) {
-    milestones.unshift(
-      "Milestone: romantic status was reciprocally established in recent turns.",
-    );
+    milestones.unshift("Milestone: romantic status was reciprocally established in recent turns.");
   }
 
   if (
@@ -634,6 +692,83 @@ function deriveMilestones(
   }
 
   return uniqueStrings(milestones).slice(0, 7);
+}
+
+function deriveRelationshipLedger(
+  memories: MemorySignal[],
+  recentMessages: RecentMessageSignal[],
+  relationship: RelationshipAnalysis,
+): string[] {
+  const ledger = memories
+    .filter(
+      (memory) =>
+        /^relationship ledger:/i.test(memory.text) ||
+        /^relationship state:/i.test(memory.text) ||
+        /^relationship event:/i.test(memory.text),
+    )
+    .sort(
+      (left, right) =>
+        right.updated_at.getTime() - left.updated_at.getTime() ||
+        right.importance - left.importance,
+    )
+    .slice(0, 6)
+    .map((memory) => clipMemory(memory.text));
+  const recentText = recentMessages
+    .slice(-10)
+    .map((message) => message.content)
+    .join("\n");
+
+  if (relationship.state === "rivalry" || relationship.state === "tense") {
+    ledger.unshift(
+      "Relationship ledger: active distrust/rivalry must persist until explicit repair earns a new state.",
+    );
+  }
+
+  if (
+    relationship.state === "repairing" &&
+    /\b(?:protected|saved|helped|cared for|forgive|trust)\b/i.test(recentText)
+  ) {
+    ledger.unshift(
+      "Relationship ledger: recent care or repair can soften the mood, but should not skip straight to romance.",
+    );
+  }
+
+  if (relationship.state === "romantic" || relationship.state === "intimate") {
+    ledger.unshift(
+      "Relationship ledger: reciprocal romance is established in this room and should be carried as continuity, not rediscovered every turn.",
+    );
+  }
+
+  return uniqueStrings(ledger).slice(0, 7);
+}
+
+function deriveSceneState(
+  memories: MemorySignal[],
+  recentMessages: RecentMessageSignal[],
+): string[] {
+  const scene: string[] = memories
+    .filter((memory) => /^scene (?:state|thread):/i.test(memory.text))
+    .sort(
+      (left, right) =>
+        right.updated_at.getTime() - left.updated_at.getTime() ||
+        right.importance - left.importance,
+    )
+    .slice(0, 4)
+    .map((memory) => clipMemory(memory.text));
+  const recentAssistantBeat = latestAssistantActionBeat(recentMessages);
+  const recentUserScene = latestUserSceneCue(recentMessages);
+
+  if (recentUserScene) {
+    scene.unshift(`Scene state: user-set scene cue is ${recentUserScene}.`);
+  }
+
+  if (recentAssistantBeat) {
+    scene.unshift(
+      `Scene state: last assistant visible action was "${recentAssistantBeat}"; continue forward without replaying it.`,
+    );
+  }
+
+  return uniqueStrings(scene).slice(0, 6);
 }
 
 function deriveAdaptiveSkills(
@@ -685,6 +820,15 @@ function deriveAdaptiveSkills(
     );
   }
 
+  if (
+    memories.some((memory) => /^scene state:/i.test(memory.text)) ||
+    latestAssistantActionBeat(recentMessages)
+  ) {
+    skills.push(
+      "Advance the current scene from the last visible action; avoid restarting at the greeting or first pose.",
+    );
+  }
+
   if (skills.length === 0) {
     skills.push(
       "Track continuity from concrete evidence: names, promises, conflicts, preferences, and unresolved scene beats.",
@@ -733,8 +877,10 @@ function buildEvolutionSummary(input: {
   const relationshipHint = input.styleProfile.relationship[0];
   const soulHint = input.styleProfile.soul[0];
   const milestoneHint = input.styleProfile.milestones[0];
+  const sceneHint = input.styleProfile.sceneState[0];
   const suffix = [
     skillHint ? `Adaptive habit: ${skillHint}` : "",
+    sceneHint ? `Scene state: ${sceneHint}` : "",
     soulHint ? `Soul cue: ${soulHint}` : "",
     milestoneHint ? `Latest milestone: ${milestoneHint}` : "",
     relationshipHint ? `Carry relationship continuity from: ${relationshipHint}` : "",
@@ -785,6 +931,8 @@ function normalizeStyleProfile(value: unknown): ConversationEvolutionSummary["st
     userProfile: stringArray(record["userProfile"]),
     soul: stringArray(record["soul"]),
     milestones: stringArray(record["milestones"]),
+    relationshipLedger: stringArray(record["relationshipLedger"]),
+    sceneState: stringArray(record["sceneState"]),
     adaptiveSkills: stringArray(record["adaptiveSkills"]),
     openLoops: stringArray(record["openLoops"]),
     recentSignals: stringArray(record["recentSignals"]),
@@ -802,6 +950,8 @@ function emptyStyleProfile(): ConversationEvolutionSummary["styleProfile"] {
     userProfile: [],
     soul: [],
     milestones: [],
+    relationshipLedger: [],
+    sceneState: [],
     adaptiveSkills: [],
     openLoops: [],
     recentSignals: [],
@@ -851,6 +1001,43 @@ function hasRepeatedAssistantBeat(recentMessages: RecentMessageSignal[]): boolea
   }
 
   return [...seen.values()].some((count) => count >= 2);
+}
+
+function latestAssistantActionBeat(recentMessages: RecentMessageSignal[]): string | null {
+  for (const message of [...recentMessages].reverse()) {
+    if (message.role !== "assistant") {
+      continue;
+    }
+
+    const beats = [...message.content.matchAll(/\*([^*\n]{3,180})\*/g)]
+      .map((match) => (match[1] ?? "").replace(/\s+/g, " ").trim())
+      .filter(Boolean);
+    const beat = beats.at(-1);
+
+    if (beat) {
+      return clipMemory(beat);
+    }
+  }
+
+  return null;
+}
+
+function latestUserSceneCue(recentMessages: RecentMessageSignal[]): string | null {
+  for (const message of [...recentMessages].reverse()) {
+    if (message.role !== "user") {
+      continue;
+    }
+
+    const match = message.content.match(
+      /\b(?:we are|we're|i am|i'm|you are|you're)\s+(in|at|inside|outside|on|near)\s+([^.!?\n]{3,110})/i,
+    );
+
+    if (match?.[1] && match[2]) {
+      return clipMemory(`${match[1]} ${match[2]}`);
+    }
+  }
+
+  return null;
 }
 
 function uniqueStrings(values: string[]): string[] {

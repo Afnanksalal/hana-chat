@@ -96,7 +96,7 @@ function applySecurityHeaders(app: NestFastifyApplication): void {
     reply.header("X-Content-Type-Options", "nosniff");
     reply.header("X-Frame-Options", "DENY");
     reply.header("X-Permitted-Cross-Domain-Policies", "none");
-    reply.header("Permissions-Policy", "camera=(), geolocation=(), microphone=(), payment=()");
+    reply.header("Permissions-Policy", "camera=(), geolocation=(), payment=()");
     done();
   });
 }

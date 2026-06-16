@@ -57,12 +57,7 @@ async function forward(request: Request, context: RouteContext, method: string):
 
   const response = await fetch(targetUrl, fetchInit);
   const responseHeaders = new Headers();
-  const passthroughHeaders = [
-    "content-type",
-    "content-length",
-    "cache-control",
-    "x-accel-buffering",
-  ];
+  const passthroughHeaders = ["content-type", "cache-control", "x-accel-buffering"];
 
   for (const header of passthroughHeaders) {
     const value = response.headers.get(header);

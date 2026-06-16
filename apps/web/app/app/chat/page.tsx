@@ -20,6 +20,7 @@ import {
   X,
 } from "lucide-react";
 import { useSearchParams } from "next/navigation";
+import type { CSSProperties } from "react";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { HanaLogo } from "../../components/hana-logo";
 import { apiJson, money } from "../api";
@@ -48,6 +49,8 @@ interface CharacterSummary {
     trialRemaining: number;
   };
 }
+
+type CharacterPayload = CharacterSummary | { character?: CharacterSummary };
 
 interface SettingsResponse {
   adultModeEnabled: boolean;
@@ -113,6 +116,7 @@ interface EvolutionSummary {
 
 interface ChatResponse {
   accepted: boolean;
+  duplicate?: boolean;
   conversationId?: string;
   assistantMessage?: {
     id: string;
@@ -203,6 +207,7 @@ const memoryKinds: Array<{ id: MemoryKind; label: string }> = [
 ];
 const pendingChatStorageKey = "hana:chat-pending-turns:v1";
 const pendingChatTtlMs = 15 * 60 * 1_000;
+const maxChatMessageChars = 8_000;
 
 function formatRoomTimestamp(value: string): string {
   const date = new Date(value);
@@ -370,6 +375,22 @@ function isPendingTurn(value: unknown): value is PendingChatTurn {
   );
 }
 
+function isUsableConversationId(value: string | undefined): value is string {
+  return Boolean(value && value !== "undefined" && value !== "null");
+}
+
+function unwrapCharacterPayload(payload: CharacterPayload): CharacterSummary | undefined {
+  if ("character" in payload) {
+    return payload.character;
+  }
+
+  const record = payload as Partial<CharacterSummary>;
+
+  return typeof record.id === "string" && typeof record.name === "string"
+    ? (record as CharacterSummary)
+    : undefined;
+}
+
 function ChatExperience() {
   const searchParams = useSearchParams();
   const requestedCharacterId = searchParams.get("characterId");
@@ -403,6 +424,11 @@ function ChatExperience() {
   const assistantMessageIdRef = useRef<string | null>(null);
   const assistantDoneRef = useRef(false);
   const assistantTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const draftCharacterCount = draft.length;
+  const draftNearLimit = draftCharacterCount > maxChatMessageChars * 0.9;
+  const draftLimitProgress = Math.min(100, (draftCharacterCount / maxChatMessageChars) * 100);
+  const draftRemaining = Math.max(0, maxChatMessageChars - draftCharacterCount);
+  const draftIsEmpty = draft.trim().length === 0;
 
   useEffect(() => {
     let cancelled = false;
@@ -497,12 +523,22 @@ function ChatExperience() {
         return;
       }
 
-      setConversations(conversationPayload.conversations);
+      const conversationList = Array.isArray(conversationPayload.conversations)
+        ? conversationPayload.conversations
+        : [];
+
+      setConversations(conversationList);
       setAdultModeEnabled(settingsPayload.adultModeEnabled);
       setStatus("");
 
       if (requestedConversationId) {
-        const requestedConversation = conversationPayload.conversations.find(
+        if (activeConversation?.id === requestedConversationId) {
+          setDirectCharacter(undefined);
+          setSelectedCharacterId(activeConversation.characterId);
+          return;
+        }
+
+        const requestedConversation = conversationList.find(
           (conversation) => conversation.id === requestedConversationId,
         );
 
@@ -528,7 +564,7 @@ function ChatExperience() {
 
       const existingConversation = forceFreshRoom
         ? undefined
-        : conversationPayload.conversations.find(
+        : conversationList.find(
             (conversation) => conversation.characterId === requestedCharacterId,
           );
 
@@ -537,13 +573,14 @@ function ChatExperience() {
         return;
       }
 
-      const characterPayload = await apiJson<{ character: CharacterSummary }>(
+      const characterPayload = await apiJson<CharacterPayload>(
         `/api/v1/characters/${encodeURIComponent(requestedCharacterId)}`,
       );
+      const character = unwrapCharacterPayload(characterPayload);
 
-      if (!isCancelled()) {
-        startCharacterChat(characterPayload.character);
-        replaceWithFreshRoom(characterPayload.character.id);
+      if (!isCancelled() && character) {
+        startCharacterChat(character);
+        replaceWithFreshRoom(character.id);
       }
     } catch (error) {
       if (!isCancelled()) {
@@ -556,8 +593,10 @@ function ChatExperience() {
     const payload = await apiJson<{ conversations: ConversationSummary[] }>(
       "/api/v1/chat/conversations",
     );
-    setConversations(payload.conversations);
-    return payload.conversations;
+    const conversationList = Array.isArray(payload.conversations) ? payload.conversations : [];
+
+    setConversations(conversationList);
+    return conversationList;
   }
 
   async function openConversation(conversation: ConversationSummary) {
@@ -575,7 +614,8 @@ function ChatExperience() {
         messages: Array<{ id: string; role: "assistant" | "user" | "system"; content: string }>;
         evolution?: EvolutionSummary | null;
       }>(`/api/v1/chat/conversations/${encodeURIComponent(conversation.id)}/messages`);
-      const persistedMessages = payload.messages
+      const sourceMessages = Array.isArray(payload.messages) ? payload.messages : [];
+      const persistedMessages = sourceMessages
         .filter(
           (message): message is { id: string; role: "assistant" | "user"; content: string } =>
             message.role === "assistant" || message.role === "user",
@@ -643,11 +683,13 @@ function ChatExperience() {
     setStatus(`Starting a fresh room with ${character.name}...`);
 
     try {
-      const payload = await apiJson<{ character: CharacterSummary }>(
+      const payload = await apiJson<CharacterPayload>(
         `/api/v1/characters/${encodeURIComponent(character.id)}`,
       );
-      startCharacterChat(payload.character);
-      replaceWithFreshRoom(payload.character.id);
+      const nextCharacter = unwrapCharacterPayload(payload) ?? character;
+
+      startCharacterChat(nextCharacter);
+      replaceWithFreshRoom(nextCharacter.id);
     } catch {
       startCharacterChat(character);
       replaceWithFreshRoom(character.id);
@@ -699,13 +741,20 @@ function ChatExperience() {
   }
 
   async function loadScopedMemories(nextCharacterId: string, nextConversationId: string) {
+    if (!isUsableConversationId(nextConversationId)) {
+      setMemories([]);
+      setMemoryEdits({});
+      return;
+    }
+
     try {
       const payload = await apiJson<MemoriesResponse>(
         `/api/v1/memories?characterId=${encodeURIComponent(
           nextCharacterId,
         )}&conversationId=${encodeURIComponent(nextConversationId)}`,
       );
-      const activeMemories = payload.memories.filter((memory) => memory.isActive);
+      const sourceMemories = Array.isArray(payload.memories) ? payload.memories : [];
+      const activeMemories = sourceMemories.filter((memory) => memory.isActive);
       setMemories(activeMemories);
       setMemoryEdits(Object.fromEntries(activeMemories.map((memory) => [memory.id, memory.text])));
     } catch {
@@ -717,7 +766,17 @@ function ChatExperience() {
   async function sendMessage() {
     const content = draft.trim();
 
-    if (!content || !selectedCharacter || isSending) {
+    if (!selectedCharacter || isSending) {
+      return;
+    }
+
+    if (!content) {
+      setStatus("Write a message before sending.");
+      return;
+    }
+
+    if (draft.length > maxChatMessageChars) {
+      setStatus(`Messages must be ${maxChatMessageChars.toLocaleString()} characters or less.`);
       return;
     }
 
@@ -782,6 +841,7 @@ function ChatExperience() {
       let nextConversationId = turn.conversationId ?? activeConversation?.id;
       let assistantId: string | undefined;
       let assistantAdded = false;
+      let replayingDuplicate = false;
       let wasBlocked = false;
 
       await readChatStream(response, {
@@ -794,6 +854,7 @@ function ChatExperience() {
         },
         meta: (payload) => {
           nextConversationId = payload.conversationId ?? nextConversationId;
+          replayingDuplicate = Boolean(payload.duplicate);
           if (nextConversationId) {
             patchPendingTurn(turn.id, { conversationId: nextConversationId, status: "sending" });
           }
@@ -809,10 +870,14 @@ function ChatExperience() {
           if (payload.assistantMessage?.id && !assistantAdded) {
             assistantId = payload.assistantMessage.id;
             assistantAdded = true;
-            ensureAssistantMessage(assistantId);
+            ensureAssistantMessage(assistantId, { replaceExisting: replayingDuplicate });
           }
         },
         token: (payload) => {
+          if (replayingDuplicate) {
+            return;
+          }
+
           const contentChunk = payload.content ?? "";
 
           if (!assistantAdded) {
@@ -837,7 +902,9 @@ function ChatExperience() {
 
           if (payload.assistantMessage) {
             assistantId = assistantId ?? payload.assistantMessage.id;
-            completeAssistantText(assistantId, payload.assistantMessage.content);
+            completeAssistantText(assistantId, payload.assistantMessage.content, {
+              replace: replayingDuplicate,
+            });
           } else {
             assistantDoneRef.current = true;
           }
@@ -902,12 +969,16 @@ function ChatExperience() {
     }
   }
 
-  function ensureAssistantMessage(messageId: string) {
+  function ensureAssistantMessage(messageId: string, options: { replaceExisting?: boolean } = {}) {
     assistantMessageIdRef.current = messageId;
     setTypingMessageId(messageId);
     setMessages((current) =>
       current.some((message) => message.id === messageId)
-        ? current
+        ? current.map((message) =>
+            message.id === messageId && options.replaceExisting
+              ? { ...message, content: "" }
+              : message,
+          )
         : [...current, { id: messageId, role: "assistant", content: "" }],
     );
     startAssistantAnimation();
@@ -920,7 +991,30 @@ function ChatExperience() {
     startAssistantAnimation();
   }
 
-  function completeAssistantText(messageId: string, finalContent: string) {
+  function completeAssistantText(
+    messageId: string,
+    finalContent: string,
+    options: { replace?: boolean } = {},
+  ) {
+    if (options.replace) {
+      resetAssistantTyping(false);
+      assistantMessageIdRef.current = messageId;
+      setTypingMessageId(null);
+      setMessages((current) => {
+        const nextMessage: ChatMessage = {
+          id: messageId,
+          role: "assistant",
+          content: finalContent,
+        };
+
+        return current.some((message) => message.id === messageId)
+          ? current.map((message) => (message.id === messageId ? nextMessage : message))
+          : [...current, nextMessage];
+      });
+      resetAssistantTyping();
+      return;
+    }
+
     ensureAssistantMessage(messageId);
     const visible = assistantVisibleRef.current;
     const queued = `${visible}${assistantBufferRef.current}`;
@@ -1016,7 +1110,9 @@ function ChatExperience() {
           method: "POST",
           body: JSON.stringify({
             characterId: selectedCharacter.id,
-            conversationId: activeConversation?.id,
+            ...(isUsableConversationId(activeConversation?.id)
+              ? { conversationId: activeConversation.id }
+              : {}),
             kind,
             text: content,
             importance: kind === "style" || kind === "boundary" ? 0.82 : 0.66,
@@ -1058,7 +1154,9 @@ function ChatExperience() {
           body: JSON.stringify({ text, importance: memory.importance }),
         },
       );
-      await loadScopedMemories(memory.characterId, memory.conversationId);
+      if (isUsableConversationId(memory.conversationId)) {
+        await loadScopedMemories(memory.characterId, memory.conversationId);
+      }
       setEvolution(payload.evolution ?? null);
       setStatus("");
     } catch (error) {
@@ -1076,7 +1174,9 @@ function ChatExperience() {
           method: "DELETE",
         },
       );
-      await loadScopedMemories(memory.characterId, memory.conversationId);
+      if (isUsableConversationId(memory.conversationId)) {
+        await loadScopedMemories(memory.characterId, memory.conversationId);
+      }
       setEvolution(payload.evolution ?? null);
       setStatus("");
     } catch (error) {
@@ -1259,7 +1359,6 @@ function ChatExperience() {
                   className="icon-control"
                   type="button"
                   aria-label="Start fresh room"
-                  title="Start fresh room"
                   onClick={() => void startFreshRoom()}
                 >
                   <RotateCcw size={18} />
@@ -1319,17 +1418,45 @@ function ChatExperience() {
                   void sendMessage();
                 }}
               >
-                <input
-                  aria-label={`Message ${selectedCharacter.name}`}
-                  placeholder={`Message ${selectedCharacter.name}...`}
-                  value={draft}
-                  onChange={(event) => setDraft(event.target.value)}
-                />
+                <div
+                  className="chat-composer-field"
+                  style={{ "--chat-limit-progress": `${draftLimitProgress}%` } as CSSProperties}
+                >
+                  <input
+                    aria-describedby="chat-message-limit"
+                    aria-label={`Message ${selectedCharacter.name}`}
+                    maxLength={maxChatMessageChars}
+                    placeholder={`Message ${selectedCharacter.name}...`}
+                    value={draft}
+                    onChange={(event) => {
+                      setDraft(event.target.value);
+                      if (status === "Write a message before sending.") {
+                        setStatus("");
+                      }
+                    }}
+                  />
+                  <span
+                    className={
+                      draftNearLimit ? "chat-composer-count near-limit" : "chat-composer-count"
+                    }
+                    id="chat-message-limit"
+                    aria-live="polite"
+                    aria-label={`${draftCharacterCount.toLocaleString()} of ${maxChatMessageChars.toLocaleString()} characters used. ${draftRemaining.toLocaleString()} remaining.`}
+                  >
+                    <span className="chat-composer-meter" aria-hidden="true">
+                      <span />
+                    </span>
+                    <span>
+                      {draftCharacterCount.toLocaleString()} /{" "}
+                      {maxChatMessageChars.toLocaleString()}
+                    </span>
+                  </span>
+                </div>
                 <button
                   className="send-control"
                   type="submit"
                   aria-label="Send message"
-                  disabled={isSending}
+                  disabled={isSending || draftIsEmpty}
                 >
                   <Send size={18} />
                 </button>

@@ -1,6 +1,7 @@
 import { loadConfig } from "@hana/config";
 import { createDatabase } from "@hana/database";
 import { Controller, Get, Headers } from "@nestjs/common";
+import { completedUserTurnCount, monthlyBillingWindowStart } from "./billable-messages";
 import { requireSession } from "./session";
 
 @Controller("/v1/dashboard")
@@ -121,16 +122,8 @@ async function monthlyUserMessageCount(
   db: ReturnType<typeof createDatabase>,
   userId: string,
 ): Promise<number> {
-  const start = new Date();
-  start.setUTCDate(1);
-  start.setUTCHours(0, 0, 0, 0);
-  const messages = await db
-    .selectFrom("chat.messages")
-    .select(["id"])
-    .where("user_id", "=", userId)
-    .where("role", "=", "user")
-    .where("created_at", ">=", start)
-    .execute();
-
-  return messages.length;
+  return completedUserTurnCount(db, {
+    userId,
+    since: monthlyBillingWindowStart(),
+  });
 }

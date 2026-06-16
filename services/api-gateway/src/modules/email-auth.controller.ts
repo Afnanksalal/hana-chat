@@ -52,14 +52,18 @@ export class EmailAuthController {
     const deviceIdHash = input.deviceId ? sha256Hex(input.deviceId) : null;
     const userAgentHash = userAgent ? sha256Hex(userAgent) : null;
     const ipAddressHash = hashClientIp(forwardedFor, realIp);
-
-    await enforceEmailVerificationRateLimits(this.db, {
-      emailHash,
-      deviceIdHash,
-      ipAddressHash,
-    });
-
     const configuredAdminEmail = this.isConfiguredAdminEmail(email);
+    const configuredSmokeEmail = this.isConfiguredSmokeEmail(email);
+    const staticLocalCode = this.staticLocalOtpFor(email);
+
+    if (!staticLocalCode) {
+      await enforceEmailVerificationRateLimits(this.db, {
+        emailHash,
+        deviceIdHash,
+        ipAddressHash,
+      });
+    }
+
     if (configuredAdminEmail) {
       await this.ensureConfiguredAdminAccount(email);
     }
@@ -72,17 +76,25 @@ export class EmailAuthController {
 
     if (input.mode === "signup") {
       if (existingCredential) {
-        throw new DomainError("CONFLICT", "An account already exists for this email. Sign in instead.");
+        throw new DomainError(
+          "CONFLICT",
+          "An account already exists for this email. Sign in instead.",
+        );
       }
 
-      await assertAccountCreationSignalsAvailable(this.db, this.config, {
-        ipAddressHash,
-        deviceIdHash,
-      });
+      if (!configuredSmokeEmail) {
+        await assertAccountCreationSignalsAvailable(this.db, this.config, {
+          ipAddressHash,
+          deviceIdHash,
+        });
+      }
     }
 
     if (input.mode === "signin" && !existingCredential) {
-      throw new DomainError("RESOURCE_NOT_FOUND", "No account exists for this email yet. Create one first.");
+      throw new DomainError(
+        "RESOURCE_NOT_FOUND",
+        "No account exists for this email yet. Create one first.",
+      );
     }
 
     const riskSignals = await buildEmailAuthRiskSignals(this.db, {
@@ -106,12 +118,17 @@ export class EmailAuthController {
     assertStartRiskAllowed(riskAction, riskScore.reasons);
 
     const verificationId = randomUUID();
-    const staticAdminCode = this.staticAdminOtpFor(email);
-    const localCode = staticAdminCode ?? randomNumericCode(this.config.AUTH_EMAIL_CODE_LENGTH);
-    const codeHash = hmacHex(`${emailHash}.${verificationId}.${localCode}`, this.config.SESSION_SECRET);
+    const localCode = staticLocalCode ?? randomNumericCode(this.config.AUTH_EMAIL_CODE_LENGTH);
+    const codeHash = hmacHex(
+      `${emailHash}.${verificationId}.${localCode}`,
+      this.config.SESSION_SECRET,
+    );
     const expiresAt = new Date(Date.now() + this.config.AUTH_EMAIL_CODE_TTL_MINUTES * 60 * 1000);
-    const encryptedEmail = encryptEmailAddress(email, this.config.EMAIL_ENCRYPTION_KEY_BASE64).value;
-    const delivery = staticAdminCode
+    const encryptedEmail = encryptEmailAddress(
+      email,
+      this.config.EMAIL_ENCRYPTION_KEY_BASE64,
+    ).value;
+    const delivery = staticLocalCode
       ? { provider: "local" as const, messageId: null }
       : await sendEmailCode({
           config: this.config,
@@ -148,7 +165,8 @@ export class EmailAuthController {
         mode: input.mode,
         emailDomain: emailDomain(email),
         provider: delivery.provider,
-        adminStaticOtp: Boolean(staticAdminCode),
+        adminStaticOtp: configuredAdminEmail && Boolean(staticLocalCode),
+        smokeStaticOtp: configuredSmokeEmail && Boolean(staticLocalCode),
         riskAction,
         riskScore: riskScore.score,
         riskReasons: riskScore.reasons,
@@ -178,6 +196,8 @@ export class EmailAuthController {
     const emailHash = hashEmailAddress(email, this.config.EMAIL_HASH_SECRET);
     const deviceIdHash = input.deviceId ? sha256Hex(input.deviceId) : null;
     const ipAddressHash = hashClientIp(forwardedFor, realIp);
+    const configuredAdminEmail = this.isConfiguredAdminEmail(email);
+    const configuredSmokeEmail = this.isConfiguredSmokeEmail(email);
     const verification = await findPendingEmailVerification(this.db, {
       emailHash,
       ...(input.verificationId ? { verificationId: input.verificationId } : {}),
@@ -187,12 +207,12 @@ export class EmailAuthController {
       throw new DomainError("AUTH_FORBIDDEN", "Invalid or expired verification code");
     }
 
-    const configuredAdminEmail = this.isConfiguredAdminEmail(email);
     const codeHash = hmacHex(
       `${emailHash}.${verification.id}.${input.code}`,
       this.config.SESSION_SECRET,
     );
-    const deviceApproved = !verification.device_id_hash || verification.device_id_hash === deviceIdHash;
+    const deviceApproved =
+      !verification.device_id_hash || verification.device_id_hash === deviceIdHash;
     const codeApproved =
       deviceApproved &&
       verification.attempts < this.config.AUTH_MAX_EMAIL_CODE_ATTEMPTS &&
@@ -214,7 +234,7 @@ export class EmailAuthController {
       email,
       ipAddressHash,
       deviceIdHash,
-      skipAccountSignalClaims: configuredAdminEmail,
+      skipAccountSignalClaims: configuredAdminEmail || configuredSmokeEmail,
     });
     if (configuredAdminEmail) {
       await this.ensureConfiguredAdminAccount(email, userId);
@@ -242,12 +262,27 @@ export class EmailAuthController {
     };
   }
 
-  private isConfiguredAdminEmail(email: string): boolean {
+  private isConfiguredAdminEmail(email: ReturnType<typeof normalizeEmailAddress>): boolean {
     return Boolean(this.config.ADMIN_EMAIL) && email === this.config.ADMIN_EMAIL;
   }
 
-  private staticAdminOtpFor(email: string): string | undefined {
+  private staticAdminOtpFor(email: ReturnType<typeof normalizeEmailAddress>): string | undefined {
     return this.isConfiguredAdminEmail(email) ? this.config.ADMIN_STATIC_OTP : undefined;
+  }
+
+  private isConfiguredSmokeEmail(email: ReturnType<typeof normalizeEmailAddress>): boolean {
+    return (
+      Boolean(this.config.SMOKE_EMAIL_DOMAIN && this.config.SMOKE_STATIC_OTP) &&
+      emailDomain(email) === this.config.SMOKE_EMAIL_DOMAIN
+    );
+  }
+
+  private staticSmokeOtpFor(email: ReturnType<typeof normalizeEmailAddress>): string | undefined {
+    return this.isConfiguredSmokeEmail(email) ? this.config.SMOKE_STATIC_OTP : undefined;
+  }
+
+  private staticLocalOtpFor(email: ReturnType<typeof normalizeEmailAddress>): string | undefined {
+    return this.staticAdminOtpFor(email) ?? this.staticSmokeOtpFor(email);
   }
 
   private async ensureConfiguredAdminAccount(
@@ -277,7 +312,8 @@ export class EmailAuthController {
         .values({
           user_id: userId,
           email_hash: emailHash,
-          encrypted_email: encryptEmailAddress(email, this.config.EMAIL_ENCRYPTION_KEY_BASE64).value,
+          encrypted_email: encryptEmailAddress(email, this.config.EMAIL_ENCRYPTION_KEY_BASE64)
+            .value,
           email_domain: emailDomain(email),
           is_primary: true,
         })
@@ -285,7 +321,10 @@ export class EmailAuthController {
     }
 
     if (preferredUserId && existingCredential && existingCredential.user_id !== preferredUserId) {
-      throw new DomainError("CONFLICT", "Configured admin email is already linked to another account");
+      throw new DomainError(
+        "CONFLICT",
+        "Configured admin email is already linked to another account",
+      );
     }
 
     await this.db
@@ -300,7 +339,7 @@ export class EmailAuthController {
         role: "admin",
         granted_by: userId,
       })
-        .onConflict((oc) => oc.columns(["user_id", "role"]).doNothing())
+      .onConflict((oc) => oc.columns(["user_id", "role"]).doNothing())
       .execute();
     await this.ensureConfiguredAdminEntitlements(userId);
 
@@ -309,7 +348,10 @@ export class EmailAuthController {
       action: "auth.admin_email.ensure",
       resourceType: "identity.user",
       resourceId: userId,
-      metadata: { emailDomain: emailDomain(email), staticOtp: Boolean(this.config.ADMIN_STATIC_OTP) },
+      metadata: {
+        emailDomain: emailDomain(email),
+        staticOtp: Boolean(this.config.ADMIN_STATIC_OTP),
+      },
     });
 
     return userId;
@@ -412,7 +454,10 @@ async function completeEmailAuth(
       .executeTakeFirst();
 
     if (input.verification.purpose === "signin" && !existingCredential) {
-      throw new DomainError("RESOURCE_NOT_FOUND", "No account exists for this email yet. Create one first.");
+      throw new DomainError(
+        "RESOURCE_NOT_FOUND",
+        "No account exists for this email yet. Create one first.",
+      );
     }
 
     if (existingCredential) {
@@ -763,9 +808,7 @@ async function buildEmailAuthRiskSignals(
     recentEmailVerificationCount(db, "email_hash", input.emailHash, oneHourAgo),
     failedEmailVerificationCount(db, "email_hash", input.emailHash, oneHourAgo),
     countEmailCredentials(db, input.emailHash),
-    input.deviceIdHash
-      ? countDeviceClaims(db, input.deviceIdHash)
-      : Promise.resolve(0),
+    input.deviceIdHash ? countDeviceClaims(db, input.deviceIdHash) : Promise.resolve(0),
     input.deviceIdHash
       ? countDistinctByFilter(db, "identity.email_verifications", "email_hash", {
           column: "device_id_hash",
@@ -773,9 +816,7 @@ async function buildEmailAuthRiskSignals(
           since: oneDayAgo,
         })
       : Promise.resolve(0),
-    input.ipAddressHash
-      ? countIpClaims(db, input.ipAddressHash)
-      : Promise.resolve(0),
+    input.ipAddressHash ? countIpClaims(db, input.ipAddressHash) : Promise.resolve(0),
     input.ipAddressHash
       ? recentEmailVerificationCount(db, "ip_address_hash", input.ipAddressHash, oneHourAgo)
       : Promise.resolve(0),
@@ -842,7 +883,9 @@ async function scoreAuthRiskWithBoundary(
         return {
           score: payload["score"],
           action,
-          reasons: payload["reasons"].filter((reason): reason is string => typeof reason === "string"),
+          reasons: payload["reasons"].filter(
+            (reason): reason is string => typeof reason === "string",
+          ),
         };
       }
     }
@@ -898,7 +941,8 @@ async function sendEmailCode(input: {
   const info = await getMailer(input.config).sendMail({
     from: input.config.SMTP_FROM,
     to: input.to,
-    subject: input.mode === "signup" ? "Confirm your Hana Chat account" : "Your Hana Chat sign-in code",
+    subject:
+      input.mode === "signup" ? "Confirm your Hana Chat account" : "Your Hana Chat sign-in code",
     text: `Your Hana Chat verification code is ${input.code}. It expires in ${input.config.AUTH_EMAIL_CODE_TTL_MINUTES} minutes.`,
     html: verificationEmailHtml(input.code, input.config.AUTH_EMAIL_CODE_TTL_MINUTES),
   });

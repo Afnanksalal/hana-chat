@@ -241,7 +241,6 @@ Actions:
 
 Optional:
 
-- Voice preview.
 - Example opening lines.
 - Memory compatibility hints.
 
@@ -287,7 +286,6 @@ flowchart TD
 Primary:
 
 - Send.
-- Voice.
 - Start fresh room.
 - Regenerate.
 - Edit last message.
@@ -316,7 +314,7 @@ Free users:
 Paid users:
 
 - Show usage only in settings unless near fair-use cap.
-- Voice and media should show credit usage clearly.
+- Generated media should show credit usage clearly.
 
 ## 7. Memory Flow
 
@@ -357,13 +355,12 @@ Memory screen categories:
 ```mermaid
 flowchart TD
   A["Create tab"] --> B["Choose template or blank"]
-  B --> C["Basics"]
-  C --> D["Personality"]
-  D --> E["Greeting"]
-  E --> F["Memory settings"]
-  F --> G["Safety rating"]
-  G --> H["Preview chat"]
-  H --> I{"Publish?"}
+  B --> C["Identity"]
+  C --> D["Look"]
+  D --> E["Persona"]
+  E --> F["Publish settings"]
+  F --> G["Review"]
+  G --> I{"Publish?"}
   I -->|Private| J["Private character created"]
   I -->|Public| K["Moderation checks"]
   K --> L{"Approved?"}
@@ -375,20 +372,19 @@ flowchart TD
 
 1. Quick Create
    - Name.
-   - Avatar.
    - Short description.
-   - Vibe.
+   - Template.
+   - Look presets.
    - Greeting.
    - Generate draft persona.
 
 2. Advanced Create
    - Full persona.
-   - Backstory.
-   - Example dialogue.
-   - Speaking style.
    - Scenario.
-   - Boundaries.
-   - Memory rules.
+   - Speaking style.
+   - Example dialogues.
+   - Profile and cover media upload/generation.
+   - Traits and tags.
    - Rating.
 
 3. Remix
@@ -514,7 +510,6 @@ Good upgrade moments:
 
 - Message limit reached.
 - User wants deeper memory.
-- User tries voice.
 - User wants more private characters.
 - User tries mature mode.
 - User wants longer context/story continuity.

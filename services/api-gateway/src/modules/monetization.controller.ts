@@ -11,6 +11,7 @@ import { DomainError } from "@hana/errors";
 import { Body, Controller, Get, Headers, Param, Patch, Post } from "@nestjs/common";
 import { Kysely, sql } from "kysely";
 import { createCipheriv, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
+import { completedUserTurnCount } from "./billable-messages";
 import { auditEvent, hmacHex, requireAdmin, requireSession } from "./session";
 
 type Db = Kysely<HanaDatabase>;
@@ -1216,14 +1217,10 @@ export async function paidCharacterTrialStatus(
     return { limit, used: 0, remaining: 0 };
   }
 
-  const result = await db
-    .selectFrom("chat.messages")
-    .select((eb) => eb.fn.countAll<number>().as("count"))
-    .where("user_id", "=", userId)
-    .where("character_id", "=", characterId)
-    .where("role", "=", "user")
-    .executeTakeFirst();
-  const used = Number(result?.count ?? 0);
+  const used = await completedUserTurnCount(db, {
+    userId,
+    characterId,
+  });
 
   return {
     limit,

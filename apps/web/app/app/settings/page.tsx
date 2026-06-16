@@ -94,6 +94,29 @@ const fallbackSettings: SettingsResponse = {
   marketingOptIn: false,
 };
 
+const fallbackBilling: BillingResponse = {
+  monetizationEnabled: false,
+  comingSoon: true,
+  plans: [
+    {
+      id: "free",
+      name: "Free",
+      monthlyPriceCents: 0,
+      currency: "USD",
+      monthlyMessageLimit: 30,
+      adultModeEnabled: false,
+      deepMemoryEnabled: true,
+      creatorPaidCharactersEnabled: false,
+      comingSoon: false,
+    },
+  ],
+  subscription: {
+    planId: "free",
+    status: "active",
+    currentPeriodEnd: null,
+  },
+};
+
 interface MediaAssetResponse {
   id: string;
   url: string;
@@ -124,10 +147,12 @@ export default function SettingsPage() {
         apiJson<SettingsResponse>("/api/v1/settings"),
         apiJson<BillingResponse>("/api/v1/billing/plans"),
       ]);
-      setSettings(settingsPayload);
-      setProfileName(settingsPayload.displayName ?? "");
-      setProfileAvatarUrl(settingsPayload.avatarUrl);
-      setBilling(billingPayload);
+      const nextSettings = normalizeSettings(settingsPayload);
+
+      setSettings(nextSettings);
+      setProfileName(nextSettings.displayName ?? "");
+      setProfileAvatarUrl(nextSettings.avatarUrl);
+      setBilling(normalizeBilling(billingPayload));
       setStatus("");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Settings unavailable.");
@@ -153,9 +178,11 @@ export default function SettingsPage() {
         method: "PATCH",
         body: JSON.stringify(input),
       });
-      setSettings(updated);
-      setProfileName(updated.displayName ?? "");
-      setProfileAvatarUrl(updated.avatarUrl);
+      const nextSettings = normalizeSettings(updated);
+
+      setSettings(nextSettings);
+      setProfileName(nextSettings.displayName ?? "");
+      setProfileAvatarUrl(nextSettings.avatarUrl);
       setStatus("Saved.");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Could not update setting.");
@@ -260,9 +287,14 @@ export default function SettingsPage() {
     }
   }
 
-  const activePlanId = billing?.subscription.planId ?? "free";
-  const activePlan = billing?.plans.find((plan) => plan.id === activePlanId);
-  const monetizationComingSoon = billing?.comingSoon ?? true;
+  const billingState = billing ?? fallbackBilling;
+  const plans =
+    Array.isArray(billingState.plans) && billingState.plans.length > 0
+      ? billingState.plans
+      : fallbackBilling.plans;
+  const activePlanId = billingState.subscription?.planId ?? "free";
+  const activePlan = plans.find((plan) => plan.id === activePlanId);
+  const monetizationComingSoon = billingState.comingSoon ?? true;
   const toggles = [
     {
       label: "18+ mode",
@@ -299,6 +331,7 @@ export default function SettingsPage() {
       <section className="settings-dashboard">
         <form
           className="settings-card profile-settings-card"
+          noValidate
           onSubmit={(event) => {
             event.preventDefault();
             void saveProfile();
@@ -313,11 +346,7 @@ export default function SettingsPage() {
           </div>
           <div className="profile-avatar-editor">
             <div className="profile-avatar-preview">
-              {profileAvatarUrl ? (
-                <img src={profileAvatarUrl} alt="" />
-              ) : (
-                <UserRound size={30} />
-              )}
+              {profileAvatarUrl ? <img src={profileAvatarUrl} alt="" /> : <UserRound size={30} />}
             </div>
             <div>
               <label className="media-upload-button profile-upload-button">
@@ -338,11 +367,7 @@ export default function SettingsPage() {
           </div>
           <label>
             Display name
-            <input
-              value={profileName}
-              onChange={(event) => setProfileName(event.target.value)}
-              required
-            />
+            <input value={profileName} onChange={(event) => setProfileName(event.target.value)} />
           </label>
           <button className="primary-action compact" type="submit">
             Save profile
@@ -438,7 +463,7 @@ export default function SettingsPage() {
       </section>
 
       <section className="pricing-grid app-pricing premium-plan-grid" id="settings-plans">
-        {billing?.plans.map((plan) => {
+        {plans.map((plan) => {
           const paidPlanId = plan.id === "plus" || plan.id === "ultra" ? plan.id : undefined;
 
           return (
@@ -484,6 +509,46 @@ export default function SettingsPage() {
       </section>
     </div>
   );
+}
+
+function normalizeSettings(payload: Partial<SettingsResponse>): SettingsResponse {
+  return {
+    displayName: payload.displayName ?? fallbackSettings.displayName,
+    avatarUrl: payload.avatarUrl ?? fallbackSettings.avatarUrl,
+    adultModeEnabled:
+      typeof payload.adultModeEnabled === "boolean"
+        ? payload.adultModeEnabled
+        : fallbackSettings.adultModeEnabled,
+    memoryEnabled:
+      typeof payload.memoryEnabled === "boolean"
+        ? payload.memoryEnabled
+        : fallbackSettings.memoryEnabled,
+    marketingOptIn:
+      typeof payload.marketingOptIn === "boolean"
+        ? payload.marketingOptIn
+        : fallbackSettings.marketingOptIn,
+  };
+}
+
+function normalizeBilling(payload: Partial<BillingResponse>): BillingResponse {
+  return {
+    monetizationEnabled:
+      typeof payload.monetizationEnabled === "boolean"
+        ? payload.monetizationEnabled
+        : fallbackBilling.monetizationEnabled,
+    comingSoon:
+      typeof payload.comingSoon === "boolean" ? payload.comingSoon : fallbackBilling.comingSoon,
+    plans:
+      Array.isArray(payload.plans) && payload.plans.length > 0
+        ? payload.plans
+        : fallbackBilling.plans,
+    subscription: {
+      planId: payload.subscription?.planId ?? fallbackBilling.subscription.planId,
+      status: payload.subscription?.status ?? fallbackBilling.subscription.status,
+      currentPeriodEnd:
+        payload.subscription?.currentPeriodEnd ?? fallbackBilling.subscription.currentPeriodEnd,
+    },
+  };
 }
 
 async function loadRazorpay(): Promise<RazorpayCheckout> {

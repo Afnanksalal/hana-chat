@@ -184,9 +184,23 @@ interface AdminAnalyticsResponse {
       calls: number;
       averageLatencyMs: number;
       inputTokens: number;
+      cachedInputTokens: number;
       outputTokens: number;
       estimatedCostUsd: number;
     }>;
+    imageGenerations: {
+      images: number;
+      estimatedCostUsd: number;
+      routes: Array<{
+        provider: string;
+        model: string;
+        purpose: string;
+        aspectRatio: string;
+        images: number;
+        estimatedCostUsd: number;
+      }>;
+    };
+    totalEstimatedCostUsd: number;
   };
   safety: {
     decisions: number;
@@ -334,6 +348,12 @@ const emptyAnalytics: AdminAnalyticsResponse = {
     averageLatencyMs: 0,
     p95LatencyMs: 0,
     routes: [],
+    imageGenerations: {
+      images: 0,
+      estimatedCostUsd: 0,
+      routes: [],
+    },
+    totalEstimatedCostUsd: 0,
   },
   safety: {
     decisions: 0,
@@ -588,6 +608,10 @@ export default function AdminPage() {
   const safetyDecisionTotal = Math.max(0, analytics.safety.decisions);
   const safetyActionMax = Math.max(1, ...analytics.safety.actions.map((item) => item.count));
   const safetyCategoryMax = Math.max(1, ...analytics.safety.categories.map((item) => item.count));
+  const totalAiCost =
+    analytics.modelHealth.totalEstimatedCostUsd ||
+    analytics.modelHealth.estimatedCostUsd +
+      analytics.modelHealth.imageGenerations.estimatedCostUsd;
 
   return (
     <div className="app-page admin-page">
@@ -789,25 +813,76 @@ export default function AdminPage() {
             </article>
 
             <article className="admin-panel">
-              <div className="panel-heading">
-                <span className="section-label">
-                  <Gauge size={15} /> Model
-                </span>
-                <h2>Model health</h2>
-              </div>
-              <MetricLine label="Calls" value={analytics.modelHealth.calls} />
-              <MetricLine label="P95 latency" value={`${analytics.modelHealth.p95LatencyMs}ms`} />
-              <MetricLine label="Output tokens" value={analytics.modelHealth.outputTokens} />
-              <MetricLine
-                label="Est. cost"
-                value={`$${analytics.modelHealth.estimatedCostUsd.toFixed(4)}`}
-              />
-              <div className="admin-pill-list stacked">
-                {analytics.modelHealth.routes.slice(0, 3).map((route) => (
-                  <span key={`${route.provider}:${route.model}`}>
-                    {route.model} <b>{route.calls}</b>
+              <div className="panel-heading split">
+                <div>
+                  <span className="section-label">
+                    <Gauge size={15} /> Model
                   </span>
+                  <h2>Model health</h2>
+                </div>
+                <small>{formatUsdCost(totalAiCost)} AI spend</small>
+              </div>
+              <div className="admin-cost-summary">
+                <span>
+                  <small>Text</small>
+                  <b>{formatUsdCost(analytics.modelHealth.estimatedCostUsd)}</b>
+                </span>
+                <span>
+                  <small>Images</small>
+                  <b>{formatUsdCost(analytics.modelHealth.imageGenerations.estimatedCostUsd)}</b>
+                </span>
+              </div>
+              <div className="admin-model-meter-grid">
+                <MetricLine label="Calls" value={analytics.modelHealth.calls} />
+                <MetricLine
+                  label="Avg latency"
+                  value={`${analytics.modelHealth.averageLatencyMs}ms`}
+                />
+                <MetricLine label="P95 latency" value={`${analytics.modelHealth.p95LatencyMs}ms`} />
+                <MetricLine
+                  label="Input tokens"
+                  value={formatCompactNumber(analytics.modelHealth.inputTokens)}
+                />
+                <MetricLine
+                  label="Cached input"
+                  value={formatCompactNumber(analytics.modelHealth.cachedInputTokens)}
+                />
+                <MetricLine
+                  label="Output tokens"
+                  value={formatCompactNumber(analytics.modelHealth.outputTokens)}
+                />
+              </div>
+              <div className="admin-model-route-list">
+                {analytics.modelHealth.routes.slice(0, 4).map((route) => (
+                  <div className="admin-model-route" key={`${route.provider}:${route.model}`}>
+                    <span>
+                      <strong>{route.model}</strong>
+                      <small>
+                        {route.provider} - {route.calls.toLocaleString()} calls -{" "}
+                        {route.averageLatencyMs}ms avg
+                      </small>
+                    </span>
+                    <b>{formatUsdCost(route.estimatedCostUsd)}</b>
+                  </div>
                 ))}
+                {analytics.modelHealth.imageGenerations.routes.slice(0, 3).map((route) => (
+                  <div
+                    className="admin-model-route"
+                    key={`${route.provider}:${route.model}:${route.purpose}:${route.aspectRatio}`}
+                  >
+                    <span>
+                      <strong>{route.purpose.replace(/_/g, " ")}</strong>
+                      <small>
+                        {route.model} - {route.images.toLocaleString()} images - {route.aspectRatio}
+                      </small>
+                    </span>
+                    <b>{formatUsdCost(route.estimatedCostUsd)}</b>
+                  </div>
+                ))}
+                {analytics.modelHealth.routes.length === 0 &&
+                analytics.modelHealth.imageGenerations.routes.length === 0 ? (
+                  <EmptyState icon={Gauge} title="No model calls yet" />
+                ) : null}
               </div>
             </article>
           </section>
@@ -1080,7 +1155,9 @@ export default function AdminPage() {
               <div className="admin-safety-tile">
                 <span>Blocked messages</span>
                 <strong>{analytics.safety.blockedDecisions.toLocaleString()}</strong>
-                <small>{formatPercent(analytics.safety.blockedDecisions, safetyDecisionTotal)} of checks.</small>
+                <small>
+                  {formatPercent(analytics.safety.blockedDecisions, safetyDecisionTotal)} of checks.
+                </small>
               </div>
               <div className="admin-safety-tile">
                 <span>Rewritten messages</span>
@@ -1135,9 +1212,7 @@ export default function AdminPage() {
                 <AlertTriangle size={15} /> Categories
               </span>
               <h2>Flag categories</h2>
-              <p className="admin-panel-helper">
-                The reason groups behind blocks or rewrites.
-              </p>
+              <p className="admin-panel-helper">The reason groups behind blocks or rewrites.</p>
             </div>
             <div className="admin-safety-list">
               {analytics.safety.categories.map((category) => (
@@ -1358,7 +1433,7 @@ function ProductPulse(props: { data: PulseDay[]; metrics: typeof pulseMetrics })
             >
               {shortDate(day.day)}
             </text>
-          ) : null
+          ) : null,
         )}
       </svg>
     </div>
@@ -1458,6 +1533,26 @@ function formatPulseAverage(value: number): string {
     maximumFractionDigits: value >= 10 ? 0 : 1,
     notation: value >= 1000 ? "compact" : "standard",
   }).format(value);
+}
+
+function formatUsdCost(value: number): string {
+  if (!Number.isFinite(value) || value <= 0) {
+    return "$0";
+  }
+
+  if (value < 0.0001) {
+    return `$${value.toFixed(8)}`;
+  }
+
+  if (value < 0.01) {
+    return `$${value.toFixed(6)}`;
+  }
+
+  if (value < 1) {
+    return `$${value.toFixed(4)}`;
+  }
+
+  return `$${value.toFixed(2)}`;
 }
 
 function formatTime(value: string): string {

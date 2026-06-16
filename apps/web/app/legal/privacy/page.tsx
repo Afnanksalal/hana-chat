@@ -1,9 +1,13 @@
 import { LegalPage } from "../legal-page";
+import { createPublicMetadata } from "../../seo";
+
+export const metadata = createPublicMetadata("/legal/privacy");
 
 export default function PrivacyPage() {
   return (
     <LegalPage
-      title="Privacy Policy"
+      path="/legal/privacy"
+      title="Hana Chat Privacy Policy"
       intro="This policy describes the information Hana uses to run chats, remember preferences, process payments, and protect accounts."
       sections={[
         {
@@ -11,7 +15,8 @@ export default function PrivacyPage() {
           body: (
             <p>
               Hana may collect account details, email address, subscription status, device signals,
-              messages, character settings, saved memories, and support requests.
+              messages, character settings, saved memories, creator profile details, marketplace
+              actions, reports, and support requests.
             </p>
           ),
         },
@@ -29,7 +34,9 @@ export default function PrivacyPage() {
           body: (
             <p>
               Saved memories are meant to make conversations feel continuous. Users should be able
-              to view, edit, and delete memories inside each chat's settings.
+              to view, edit, and delete memories inside each chat's settings. Memory is designed for
+              the current character room, not as a public profile or a cross-character advertising
+              record.
             </p>
           ),
         },
@@ -60,6 +67,17 @@ export default function PrivacyPage() {
             <p>
               Hana is not intended for children under 13. Mature spaces are only for users who meet
               the required age and access rules in their region.
+            </p>
+          ),
+        },
+        {
+          title: "User choices",
+          body: (
+            <p>
+              Users can update profile details, adjust safety preferences, delete rooms, remove
+              memories, cancel paid access when available, and contact support about account or data
+              questions. Some records may be retained when needed for security, billing, legal
+              compliance, dispute handling, or abuse prevention.
             </p>
           ),
         },

@@ -279,6 +279,7 @@ export interface AnalyticsModelCallsTable {
   cached_input_tokens: number;
   output_tokens: number;
   estimated_cost_usd: string;
+  cost_in_usd_ticks: DefaultColumn<number | null>;
   latency_ms: number;
   created_at: TimestampColumn;
 }

@@ -29,7 +29,10 @@ export const UsernameSchema = z
   .trim()
   .min(2)
   .max(40)
-  .regex(/^[A-Za-z0-9][A-Za-z0-9 ._-]*$/, "Use letters, numbers, spaces, dots, underscores, or dashes");
+  .regex(
+    /^[A-Za-z0-9][A-Za-z0-9 ._-]*$/,
+    "Use letters, numbers, spaces, dots, underscores, or dashes",
+  );
 
 export const EntitlementKeySchema = z.enum([
   "chat.free.daily_messages",
@@ -151,8 +154,8 @@ export const CreateCharacterRequestSchema = z.object({
   speakingStyle: z.string().max(500).optional().default(""),
   personalityTraits: z.array(z.string().min(1).max(32)).max(10).default([]),
   exampleDialogues: z.array(z.string().min(1).max(500)).max(8).default([]),
-  avatarUrl: z.string().max(500).optional().default("/assets/hana-icon-head.png"),
-  coverImageUrl: z.string().max(500).optional().default("/assets/hana-hero.png"),
+  avatarUrl: z.string().max(500).optional().default("/assets/character-avatar-default.svg"),
+  coverImageUrl: z.string().max(500).optional().default("/assets/character-cover-default.svg"),
   templateId: CharacterTemplateSchema.default("blank"),
   marketplaceCategory: z.string().min(1).max(48).default("featured"),
   marketplacePreview: z.string().max(220).optional().default(""),
@@ -202,6 +205,30 @@ export const CreateMediaAssetRequestSchema = z.object({
 });
 
 export type CreateMediaAssetRequest = z.infer<typeof CreateMediaAssetRequestSchema>;
+
+export const GenerateMediaAssetRequestSchema = z.object({
+  purpose: z.enum(["character_avatar", "character_cover"]),
+  prompt: z.string().trim().min(12).max(8_000),
+  characterName: z.string().trim().max(80).optional().default(""),
+  style: z.string().trim().max(1_200).optional().default("premium fictional character art"),
+  artDirection: z
+    .enum(["anime", "semi_real", "cinematic", "editorial", "painted", "comic", "soft_3d"])
+    .optional()
+    .default("anime"),
+  mood: z
+    .enum(["auto", "soft", "dramatic", "neon", "cozy", "dark", "spicy", "fantasy"])
+    .optional()
+    .default("auto"),
+  backdrop: z
+    .enum(["auto", "studio", "city", "nature", "cafe", "bedroom", "fantasy", "nightlife"])
+    .optional()
+    .default("auto"),
+  detailLevel: z.enum(["clean", "balanced", "rich"]).optional().default("balanced"),
+  aspectRatio: z.enum(["1:1", "16:9", "3:4", "4:3"]).optional().default("1:1"),
+  referenceImageUrl: z.string().trim().max(500).optional().default(""),
+});
+
+export type GenerateMediaAssetRequest = z.infer<typeof GenerateMediaAssetRequestSchema>;
 
 export const SendChatMessageRequestSchema = z.object({
   conversationId: z.string().optional(),

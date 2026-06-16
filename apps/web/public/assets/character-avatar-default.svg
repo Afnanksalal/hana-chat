@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Default character avatar">
+  <rect width="512" height="512" fill="#050006"/>
+  <circle cx="94" cy="92" r="42" fill="#ff1f6d" opacity=".28"/>
+  <circle cx="420" cy="126" r="74" fill="#16040d" opacity=".94"/>
+  <path d="M46 416c68-34 120-46 184-34 66 12 124 4 238-42" fill="none" stroke="#ff1f6d" stroke-width="10" opacity=".32"/>
+  <path d="M112 454c28-78 84-118 144-118s116 40 144 118" fill="#45001f"/>
+  <path d="M168 380c44 38 120 38 164 0l44 96H124l44-96Z" fill="#ff1f6d" opacity=".78"/>
+  <rect x="229" y="300" width="54" height="72" rx="26" fill="#dfb79e"/>
+  <path d="M146 264c0-95 42-158 110-158s110 63 110 158c0 48-24 88-57 112-30 21-78 21-108 0-33-24-55-64-55-112Z" fill="#201220"/>
+  <ellipse cx="256" cy="248" rx="88" ry="98" fill="#dfb79e"/>
+  <path d="M171 228c22-72 72-96 151-78 32 8 57 38 61 79-52-22-117-34-212-1Z" fill="#201220"/>
+  <path d="M216 258h1M296 258h1" stroke="#ff1f6d" stroke-width="16" stroke-linecap="round"/>
+  <path d="M232 305c22 14 46 14 68 0" fill="none" stroke="#ff1f6d" stroke-width="9" stroke-linecap="round"/>
+  <path d="M166 396c54 44 138 54 206 0" fill="none" stroke="#ff8bb7" stroke-width="7" opacity=".78"/>
+</svg>

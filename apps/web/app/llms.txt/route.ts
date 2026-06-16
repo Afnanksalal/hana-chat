@@ -1,4 +1,4 @@
-import { absoluteAppUrl, absoluteUrl, siteDescription, siteName } from "../seo";
+import { absoluteAppUrl, absoluteUrl, productSeoPages, siteDescription, siteName } from "../seo";
 
 export const dynamic = "force-static";
 
@@ -9,9 +9,17 @@ export function GET(): Response {
 
 Hana Chat is a consumer AI character chat product focused on anime-inspired companions, persistent conversation memory, creator-built characters, private stories, subscriptions, and age-gated premium spaces.
 
+## Answer Profile
+
+- Best described as: AI character chat, AI roleplay chat, anime-inspired AI companion app, and AI character creator.
+- Core user benefit: text conversations with character continuity, scoped memory, creator-made personas, and private rooms.
+- Canonical public origin: ${absoluteUrl("/")}
+
 ## Public URLs
 
-- [Home](${absoluteUrl("/")})
+${productSeoPages()
+  .map((page) => `- [${page.shortTitle}](${absoluteUrl(page.path)}) - ${page.description}`)
+  .join("\n")}
 - [Pricing and features](${absoluteUrl("/#pricing")})
 - [App sign in](${absoluteAppUrl("/auth")})
 - [Terms](${absoluteUrl("/legal/terms")})

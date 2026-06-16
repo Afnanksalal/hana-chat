@@ -1,17 +1,32 @@
 import {
   ArrowRight,
   BookHeart,
+  Brain,
   Check,
+  Compass,
   Download,
   MessageCircleHeart,
+  Palette,
   ShieldCheck,
 } from "lucide-react";
-import { cookies } from "next/headers";
 import Image from "next/image";
 import Link from "next/link";
 import { HanaLogo } from "./components/hana-logo";
 import { LandingSessionCta } from "./components/landing-session-cta";
-import { absoluteAppUrl, absoluteUrl, siteDescription, siteName } from "./seo";
+import {
+  absoluteAppUrl,
+  absoluteUrl,
+  createPublicMetadata,
+  jsonLd,
+  organizationJsonLd,
+  productSeoPages,
+  siteDescription,
+  siteName,
+  websiteJsonLd,
+} from "./seo";
+import { getInitialAuthenticated } from "./session-state";
+
+export const metadata = createPublicMetadata("/");
 
 const features = [
   {
@@ -28,6 +43,56 @@ const features = [
     icon: ShieldCheck,
     title: "Private spaces with clear controls",
     copy: "Keep conversations text-first with memory, account access, mature-space controls, and subscriber-only room depth.",
+  },
+];
+
+const topicHighlights = [
+  {
+    icon: Compass,
+    title: "AI character chat",
+    copy: "Start with a character, pick a room, and keep the relationship history attached to that room.",
+    href: "/ai-character-chat",
+  },
+  {
+    icon: BookHeart,
+    title: "AI roleplay chat",
+    copy: "Build longer scenes where tone, setup, boundaries, and unresolved story beats stay visible.",
+    href: "/ai-roleplay-chat",
+  },
+  {
+    icon: Brain,
+    title: "Companion memory",
+    copy: "Keep memories scoped to the exact user, character, and conversation so stories do not bleed together.",
+    href: "/ai-companion-memory",
+  },
+  {
+    icon: Palette,
+    title: "Character creator",
+    copy: "Package a persona with images, tags, opening scenes, and publishing controls.",
+    href: "/ai-character-creator",
+  },
+];
+
+const faqItems = [
+  {
+    question: "What is Hana Chat?",
+    answer:
+      "Hana Chat is a text-first AI character chat app for anime-inspired companions, private roleplay, creator-made characters, and conversations with persistent memory.",
+  },
+  {
+    question: "Does Hana Chat remember conversations?",
+    answer:
+      "Yes. Memory is designed around the current user, character, and room so each ongoing story can keep its own preferences, boundaries, relationship state, and scene details.",
+  },
+  {
+    question: "Can I create my own AI character?",
+    answer:
+      "Yes. The character creator supports profile art, cover art, persona, greeting, tags, rating, marketplace description, and publishing controls.",
+  },
+  {
+    question: "Is Hana Chat only for anime characters?",
+    answer:
+      "No. Hana supports anime-inspired characters, fantasy roles, comfort companions, study partners, trainers, original personas, and creator-built worlds.",
   },
 ];
 
@@ -62,37 +127,50 @@ const pricingPlans = [
 ];
 
 export default async function LandingPage() {
-  const cookieStore = await cookies();
-  const initialAuthenticated = Boolean(
-    cookieStore.get(process.env["AUTH_COOKIE_NAME"] ?? "hana_session")?.value,
-  );
+  const initialAuthenticated = await getInitialAuthenticated();
   const androidApkUrl = getAndroidApkDownloadUrl();
-  const structuredData = {
-    "@context": "https://schema.org",
-    "@type": "WebApplication",
-    name: siteName,
-    description: siteDescription,
-    url: absoluteUrl("/"),
-    image: absoluteUrl("/assets/hana-hero.png"),
-    applicationCategory: "EntertainmentApplication",
-    operatingSystem: "Web, iOS, Android",
-    installUrl: androidApkUrl ? absoluteUrl(androidApkUrl) : absoluteAppUrl("/auth"),
-    offers: pricingPlans.map((plan) => ({
-      "@type": "Offer",
-      name: plan.name,
-      price: plan.price.replace("$", ""),
-      priceCurrency: "USD",
-      availability: "https://schema.org/InStock",
-      url: absoluteAppUrl("/auth"),
-    })),
-    publisher: {
-      "@type": "Organization",
-      name: siteName,
-      url: absoluteUrl("/"),
-      logo: absoluteUrl("/assets/hana-icon-512.png"),
+  const structuredData = [
+    organizationJsonLd(),
+    websiteJsonLd(),
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      mainEntity: faqItems.map((item) => ({
+        "@type": "Question",
+        name: item.question,
+        acceptedAnswer: {
+          "@type": "Answer",
+          text: item.answer,
+        },
+      })),
     },
-  };
-  const structuredDataJson = JSON.stringify(structuredData).replace(/</g, "\\u003c");
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      name: siteName,
+      description: siteDescription,
+      url: absoluteUrl("/"),
+      image: absoluteUrl("/assets/hana-hero.png"),
+      applicationCategory: "EntertainmentApplication",
+      operatingSystem: "Web, iOS, Android",
+      installUrl: androidApkUrl ? absoluteUrl(androidApkUrl) : absoluteAppUrl("/auth"),
+      offers: pricingPlans.map((plan) => ({
+        "@type": "Offer",
+        name: plan.name,
+        price: plan.price.replace("$", ""),
+        priceCurrency: "USD",
+        availability: "https://schema.org/InStock",
+        url: absoluteAppUrl("/auth"),
+      })),
+      publisher: {
+        "@type": "Organization",
+        name: siteName,
+        url: absoluteUrl("/"),
+        logo: absoluteUrl("/assets/hana-icon-512.png"),
+      },
+    },
+  ];
+  const structuredDataJson = jsonLd(structuredData);
 
   return (
     <main className="site-shell">
@@ -166,6 +244,28 @@ export default async function LandingPage() {
         </div>
       </section>
 
+      <section className="topic-showcase" aria-labelledby="explore-hana">
+        <div className="section-intro">
+          <h2 id="explore-hana">Explore the parts people search for.</h2>
+          <p>
+            Hana is organized around character chat, roleplay continuity, memory, and creator tools.
+            These pages explain each surface clearly for humans and crawlers.
+          </p>
+        </div>
+        <div className="topic-grid">
+          {topicHighlights.map((topic) => (
+            <Link className="topic-card" href={topic.href} key={topic.href}>
+              <topic.icon size={22} />
+              <span>{topic.title}</span>
+              <p>{topic.copy}</p>
+              <strong>
+                Read more <ArrowRight size={16} />
+              </strong>
+            </Link>
+          ))}
+        </div>
+      </section>
+
       <section className="pricing-section" id="pricing">
         <div className="section-intro">
           <h2>Start free. Upgrade when Hana becomes part of your night.</h2>
@@ -210,6 +310,24 @@ export default async function LandingPage() {
         </div>
       </section>
 
+      <section className="faq-section" aria-labelledby="hana-faq">
+        <div className="section-intro">
+          <h2 id="hana-faq">Hana Chat FAQ</h2>
+          <p>
+            Quick answers for people comparing AI companion apps, character roleplay tools, and
+            memory-based chat experiences.
+          </p>
+        </div>
+        <div className="faq-list">
+          {faqItems.map((item) => (
+            <article className="faq-item" key={item.question}>
+              <h3>{item.question}</h3>
+              <p>{item.answer}</p>
+            </article>
+          ))}
+        </div>
+      </section>
+
       <footer className="site-footer">
         <Link className="brand-lockup" href="/">
           <span className="brand-symbol" aria-hidden="true">
@@ -218,6 +336,13 @@ export default async function LandingPage() {
           <span>Hana Chat</span>
         </Link>
         <nav aria-label="Legal links">
+          {productSeoPages()
+            .filter((page) => page.path !== "/")
+            .map((page) => (
+              <Link href={page.path} key={page.path}>
+                {page.shortTitle}
+              </Link>
+            ))}
           <Link href="/legal/terms">Terms</Link>
           <Link href="/legal/refunds">Refunds</Link>
           <Link href="/legal/privacy">Privacy</Link>

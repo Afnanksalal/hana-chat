@@ -1,8 +1,12 @@
 import { LegalPage } from "../legal-page";
+import { createPublicMetadata } from "../../seo";
+
+export const metadata = createPublicMetadata("/legal/community");
 
 export default function CommunityPage() {
   return (
     <LegalPage
+      path="/legal/community"
       title="Community Rules"
       intro="These rules keep public characters, creator pages, and shared spaces usable for everyone."
       sections={[
@@ -11,7 +15,9 @@ export default function CommunityPage() {
           body: (
             <p>
               Do not harass, threaten, stalk, dox, impersonate, or pressure other users. Hana can
-              restrict accounts that make the service unsafe or unusable.
+              restrict accounts that make the service unsafe or unusable. Treat creator profiles,
+              reports, support channels, and shared discovery spaces as community surfaces, not
+              places for spam or intimidation.
             </p>
           ),
         },
@@ -20,7 +26,9 @@ export default function CommunityPage() {
           body: (
             <p>
               Public characters must not use stolen identities, non-consensual sexual likenesses,
-              illegal content, hateful content, or content designed to exploit minors.
+              illegal content, hateful content, or content designed to exploit minors. Character
+              names, images, descriptions, greetings, tags, and examples should accurately describe
+              the experience a user is about to enter.
             </p>
           ),
         },
@@ -29,7 +37,9 @@ export default function CommunityPage() {
           body: (
             <p>
               Character pages should set clear expectations. Misleading titles, spam, bait listings,
-              and low-effort duplicate characters may be hidden or removed.
+              and low-effort duplicate characters may be hidden or removed. Creators should use
+              ratings and tags honestly so discovery, safety settings, and user expectations line
+              up.
             </p>
           ),
         },
@@ -39,6 +49,16 @@ export default function CommunityPage() {
             <p>
               Users should be able to report characters, messages, and profiles from inside the app.
               Reports may lead to review, limits, removal, or account action.
+            </p>
+          ),
+        },
+        {
+          title: "Marketplace behavior",
+          body: (
+            <p>
+              Do not manipulate marketplace visibility with fake engagement, duplicate listings,
+              deceptive tags, stolen art, or misleading creator identities. Public discovery should
+              help users find characters that match their intended tone, category, and rating.
             </p>
           ),
         },

@@ -24,6 +24,7 @@
     "android:twa:build": "node scripts/android-twa-build.mjs",
     "android:twa:assetlinks": "node scripts/android-twa-assetlinks.mjs",
     "deploy:playground": "node scripts/deploy-playground-vps.mjs",
+    "seo:audit": "node scripts/seo-audit.mjs",
     "ai:harness": "node scripts/ai-harness.mjs",
     "product:smoke": "node scripts/product-smoke.mjs",
     "web:smoke": "node scripts/web-smoke.mjs",

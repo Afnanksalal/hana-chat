@@ -41,6 +41,16 @@ function AuthForm() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   async function startVerification() {
+    if (mode === "signup" && !username.trim()) {
+      setStatus("Choose a username for your account.");
+      return;
+    }
+
+    if (!email.trim() || !email.includes("@")) {
+      setStatus("Enter the email address you want to use for Hana.");
+      return;
+    }
+
     setIsSubmitting(true);
     setStatus(undefined);
 
@@ -87,6 +97,11 @@ function AuthForm() {
   }
 
   async function verifyCode() {
+    if (!/^\d{6,8}$/.test(code.trim())) {
+      setStatus("Enter the 6 to 8 digit code from your email.");
+      return;
+    }
+
     setIsSubmitting(true);
     setStatus(undefined);
 
@@ -147,6 +162,7 @@ function AuthForm() {
 
         <form
           className="auth-panel"
+          noValidate
           onSubmit={(event) => {
             event.preventDefault();
             if (step === "email") {
@@ -201,7 +217,6 @@ function AuthForm() {
                   value={username}
                   onChange={(event) => setUsername(event.target.value)}
                   disabled={step === "code"}
-                  required
                 />
               </span>
             </label>
@@ -217,7 +232,6 @@ function AuthForm() {
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
                 disabled={step === "code"}
-                required
               />
             </span>
           </label>
@@ -230,7 +244,6 @@ function AuthForm() {
                 placeholder={devCode ? `Dev code ${devCode}` : "000000"}
                 value={code}
                 onChange={(event) => setCode(event.target.value)}
-                required
               />
             </label>
           ) : null}

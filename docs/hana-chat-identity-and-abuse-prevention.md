@@ -126,7 +126,7 @@ blocks should be reserved for obvious abuse or legal/safety risk.
 - Free quota tied to risk score.
 - Medium-risk users receive lower daily quota.
 - High-risk users cannot claim promos, referrals, or high-cost features.
-- No free voice/media for suspicious accounts.
+- No free high-cost generated media for suspicious accounts.
 - Cooldown after repeated full free-quota exhaustion.
 
 ### Device Graph Controls
@@ -215,7 +215,7 @@ Good UX:
 
 Avoid:
 
-- Making every screen sound like fraud enforcement.
+- Making every screen read like fraud enforcement.
 - Blocking legitimate families/shared devices with no appeal.
 - Overusing CAPTCHA for normal users.
 - Showing scary internal risk language to regular users.
