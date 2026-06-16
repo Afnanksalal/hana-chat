@@ -21,6 +21,7 @@
     "infra:logs": "docker compose logs -f",
     "mail:dkim": "node scripts/generate-mail-dkim.mjs",
     "seed:local": "node scripts/seed-local-test-cast.mjs",
+    "android:twa:validate": "node scripts/android-twa-validate.mjs",
     "android:twa:build": "node scripts/android-twa-build.mjs",
     "android:twa:assetlinks": "node scripts/android-twa-assetlinks.mjs",
     "deploy:playground": "node scripts/deploy-playground-vps.mjs",

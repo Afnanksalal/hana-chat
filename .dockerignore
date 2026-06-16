@@ -1,24 +1,95 @@
+# VCS and repo-only metadata
+.git
+.github
+.gitattributes
+.gitignore
+.dockerignore
+
+# Local agent/tool state
+.agents
+.codex
+.claude
+.cursor
+
+# Dependencies and package-manager caches
 node_modules
 **/node_modules
-.next
-**/.next
+.pnpm-store
+.npm
+.yarn
+
+# Build output and framework caches
 dist
 **/dist
+build
+**/build
+.next
+**/.next
+out
 .turbo
 **/.turbo
+.cache
+**/.cache
+.parcel-cache
+.vite
+.swc
+*.tsbuildinfo
+
+# Test, coverage, and reports
 coverage
-tmp
-.logs
-data
-.env
-.env.vps
-.env.local
-.env.*.local
-.git
-.vercel
+**/coverage
 playwright-report
 test-results
-npm-debug.log*
-pnpm-debug.log*
-yarn-debug.log*
-yarn-error.log*
+storybook-static
+
+# Local runtime state
+data
+**/data
+.logs
+tmp
+temp
+*.tmp
+*.temp
+
+# Environment and secrets
+.env
+.env.*
+.envrc
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.csr
+*.der
+*.sqlite
+*.sqlite3
+*.db
+*.dump
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+Desktop.ini
+.vs
+.vscode
+.idea
+*.swp
+*.swo
+*.swn
+*~
+
+# Non-container product artifacts
+apps/android-twa/.gradle
+apps/android-twa/app/build
+apps/android-twa/*.keystore
+apps/android-twa/*.jks
+apps/android-twa/*.apk
+apps/android-twa/*.aab
+apps/android-twa/*.idsig
+apps/web/public/downloads/*.apk
+apps/web/public/downloads/*.aab
+apps/web/public/downloads/*.idsig
+
+# Mail/DKIM private material
+infra/mail/opendkim/keys/*

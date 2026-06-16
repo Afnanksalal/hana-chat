@@ -13,7 +13,10 @@ export function renderRoleplayContent(content: string): ReactNode[] {
   return renderRoleplayText(content, { actionMaxLength: 220 });
 }
 
-export function renderRoleplayText(content: string, options: RoleplayTextOptions = {}): ReactNode[] {
+export function renderRoleplayText(
+  content: string,
+  options: RoleplayTextOptions = {},
+): ReactNode[] {
   const text = options.collapseWhitespace ? content.replace(/\s+/g, " ").trim() : content;
   const actionMaxLength = Math.max(1, Math.min(500, options.actionMaxLength ?? 220));
   const parts = text.split(new RegExp(`(\\*[^*\\n]{1,${actionMaxLength}}\\*)`, "g"));

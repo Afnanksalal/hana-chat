@@ -510,7 +510,9 @@ async function leaseOutboxEventsWithBoundary(
     if (response.ok) {
       const payload = (await response.json()) as Record<string, unknown>;
       const events = Array.isArray(payload["events"])
-        ? payload["events"].map(parseLeasedEvent).filter((event): event is LeasedEvent => Boolean(event))
+        ? payload["events"]
+            .map(parseLeasedEvent)
+            .filter((event): event is LeasedEvent => Boolean(event))
         : [];
 
       return {

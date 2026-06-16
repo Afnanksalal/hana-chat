@@ -8,4 +8,5 @@ coverage/
 tmp/
 data/
 apps/web/public/assets/*.svg
-.codex/skills/**
+.agents/**
+.codex/**

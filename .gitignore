@@ -1,31 +1,112 @@
+# Dependencies
 node_modules/
+**/node_modules/
+.pnpm-store/
+.npm/
+.yarn/
+!.yarn/releases/
+!.yarn/plugins/
+!.yarn/sdks/
+!.yarn/versions/
+
+# Build output and framework caches
 dist/
+**/dist/
 build/
+**/build/
 .next/
+**/.next/
+out/
+**/out/
 .turbo/
-coverage/
-.env
-.env.vps
-.env.local
-.env.*.local
-*.log
+**/.turbo/
+.cache/
+**/.cache/
+.parcel-cache/
+**/.parcel-cache/
+.vite/
+**/.vite/
+.swc/
+**/.swc/
 *.tsbuildinfo
-.DS_Store
-Thumbs.db
-.vs/
-.vercel/
+
+# Test, coverage, and reports
+coverage/
+**/coverage/
 playwright-report/
 test-results/
+storybook-static/
+
+# Local runtime state
 data/
+**/data/
 .logs/
 tmp/
+temp/
+*.tmp
+*.temp
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+!.env.*.example
+.envrc
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.csr
+*.der
+*.sqlite
+*.sqlite3
+*.db
+*.dump
+
+# Local agent and tool state
+.agents/
+.codex/
+.claude/
+.cursor/
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+Desktop.ini
+.vs/
+.vscode/
+.idea/
+*.swp
+*.swo
+*.swn
+*~
+
+# Hosted platform caches
+.vercel/
+.netlify/
+
+# Android TWA local build and signing artifacts
 apps/android-twa/.gradle/
 apps/android-twa/app/build/
 apps/android-twa/android.keystore
 apps/android-twa/*.keystore
 apps/android-twa/*.jks
-apps/android-twa/*release*.apk
-apps/android-twa/*release*.aab
+apps/android-twa/*.apk
+apps/android-twa/*.aab
 apps/android-twa/*.idsig
+apps/web/public/downloads/*.apk
+apps/web/public/downloads/*.aab
+apps/web/public/downloads/*.idsig
+
+# Mail/DKIM private material
 infra/mail/opendkim/keys/*
 !infra/mail/opendkim/keys/.gitkeep
