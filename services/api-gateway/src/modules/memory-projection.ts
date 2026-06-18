@@ -85,6 +85,7 @@ function toVectorRecord(memory: MemoryProjectionRow): MemoryVectorRecord {
 
 async function enqueueMemoryProjectionEvents(input: {
   db: Kysely<HanaDatabase>;
+  config: AppConfig;
   memory: MemoryProjectionRow;
   actorUserId: string;
   action: "create" | "update" | "extract" | "delete";
@@ -124,6 +125,41 @@ async function enqueueMemoryProjectionEvents(input: {
     }),
     payload,
   });
+
+  if (shouldRequestOgSnapshot(input)) {
+    await safeEnqueue(input.db, input.actorUserId, {
+      topic: "memory.snapshot.requested",
+      key: eventKey(input.memory.conversation_id ?? input.memory.id),
+      idempotencyKey: projectionIdempotencyKey({
+        topic: "memory.snapshot.requested",
+        resourceId: input.memory.conversation_id ?? input.memory.id,
+        action: input.action,
+        revision,
+      }),
+      payload: {
+        ...payload,
+        reason: "memory_projection",
+        minImportance: input.config.OG_STORAGE_SNAPSHOT_MIN_IMPORTANCE,
+      },
+    });
+  }
+}
+
+function shouldRequestOgSnapshot(input: {
+  config: AppConfig;
+  memory: MemoryProjectionRow;
+  action: "create" | "update" | "extract" | "delete";
+}): boolean {
+  return (
+    input.config.OG_ENABLED &&
+    input.config.OG_STORAGE_ENABLED &&
+    input.action !== "delete" &&
+    input.memory.is_active &&
+    input.memory.scope === "conversation" &&
+    Boolean(input.memory.character_id) &&
+    Boolean(input.memory.conversation_id) &&
+    input.memory.importance >= input.config.OG_STORAGE_SNAPSHOT_MIN_IMPORTANCE
+  );
 }
 
 async function runVectorProjection(

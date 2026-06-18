@@ -154,6 +154,20 @@ export const AppConfigSchema = z
     CREATOR_MIN_PAYOUT_CENTS: z.coerce.number().int().min(100).max(1_000_000).default(1_000),
     CREATOR_PAID_CHARACTER_TRIAL_MESSAGES: z.coerce.number().int().min(0).max(200).default(30),
 
+    OG_ENABLED: booleanEnvSchema.default(false),
+    OG_STORAGE_ENABLED: booleanEnvSchema.default(false),
+    OG_PAYMENTS_ENABLED: booleanEnvSchema.default(false),
+    OG_NETWORK: z.enum(["mainnet", "testnet", "local"]).default("mainnet"),
+    OG_CHAIN_ID: z.coerce.number().int().positive().default(16_661),
+    OG_RPC_URL: z.string().url().default("https://evmrpc.0g.ai"),
+    OG_STORAGE_INDEXER_URL: z.string().url().default("https://indexer-storage-turbo.0g.ai"),
+    OG_TREASURY_CONTRACT_ADDRESS: z.string().optional(),
+    OG_CREATOR_ESCROW_CONTRACT_ADDRESS: z.string().optional(),
+    OG_SERVER_WALLET_KEY_REF: z.string().optional(),
+    OG_CONFIRMATION_BLOCKS: z.coerce.number().int().min(1).max(10_000).default(12),
+    OG_STORAGE_SNAPSHOT_INTERVAL_TURNS: z.coerce.number().int().min(1).max(10_000).default(25),
+    OG_STORAGE_SNAPSHOT_MIN_IMPORTANCE: z.coerce.number().min(0).max(1).default(0.65),
+
     EMAIL_HASH_SECRET: z.string().default("hana-local-dev-email-hash-secret-change-me"),
     EMAIL_ENCRYPTION_KEY_BASE64: z.string().default(localDevAesKeyBase64),
     AUTH_EMAIL_CODE_TTL_MINUTES: z.coerce.number().int().min(3).max(30).default(10),
@@ -228,6 +242,30 @@ export const AppConfigSchema = z
         code: "custom",
         path: ["SMOKE_EMAIL_DOMAIN"],
         message: "SMOKE_EMAIL_DOMAIN requires SMOKE_STATIC_OTP",
+      });
+    }
+
+    if (config.OG_STORAGE_ENABLED && !config.OG_ENABLED) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["OG_STORAGE_ENABLED"],
+        message: "OG_STORAGE_ENABLED requires OG_ENABLED",
+      });
+    }
+
+    if (config.OG_PAYMENTS_ENABLED && !config.OG_ENABLED) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["OG_PAYMENTS_ENABLED"],
+        message: "OG_PAYMENTS_ENABLED requires OG_ENABLED",
+      });
+    }
+
+    if (config.OG_PAYMENTS_ENABLED && !config.MONETIZATION_ENABLED) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["OG_PAYMENTS_ENABLED"],
+        message: "OG_PAYMENTS_ENABLED cannot bypass MONETIZATION_ENABLED",
       });
     }
 
@@ -323,6 +361,22 @@ export const AppConfigSchema = z
             code: "custom",
             path: [key],
             message: `${key} must be configured when monetization is enabled`,
+          });
+        }
+      }
+    }
+
+    if (config.OG_PAYMENTS_ENABLED) {
+      for (const key of [
+        "OG_TREASURY_CONTRACT_ADDRESS",
+        "OG_CREATOR_ESCROW_CONTRACT_ADDRESS",
+        "OG_SERVER_WALLET_KEY_REF",
+      ] as const) {
+        if (!config[key]) {
+          ctx.addIssue({
+            code: "custom",
+            path: [key],
+            message: `${key} must be configured when 0G payments are enabled`,
           });
         }
       }

@@ -11,6 +11,7 @@ export const EventTopicSchema = z.enum([
   "memory.embedding.requested",
   "memory.qdrant.upsert.requested",
   "memory.neo4j.upsert.requested",
+  "memory.snapshot.requested",
   "memory.consolidation.requested",
   "moderation.review.requested",
   "billing.usage.metered",

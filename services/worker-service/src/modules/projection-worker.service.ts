@@ -1,6 +1,7 @@
 import { loadConfig, type AppConfig } from "@hana/config";
 import { createDatabase, type HanaDatabase } from "@hana/database";
 import { DomainError } from "@hana/errors";
+import { buildMemorySnapshotCommitment } from "@hana/og-bridge";
 import { Injectable, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
 import { sql, type Kysely } from "kysely";
 import neo4j, { type Driver } from "neo4j-driver";
@@ -10,6 +11,7 @@ const VECTOR_SIZE = 1536;
 const WORKER_TOPICS = [
   "memory.qdrant.upsert.requested",
   "memory.neo4j.upsert.requested",
+  "memory.snapshot.requested",
   "creator.character.qdrant.upsert.requested",
   "creator.character.neo4j.upsert.requested",
   "analytics.event.created",
@@ -112,6 +114,11 @@ export class ProjectionWorkerService implements OnModuleInit, OnModuleDestroy {
 
     if (event.topic === "memory.neo4j.upsert.requested") {
       await this.projectMemoryToNeo4j(event.payload_json);
+      return;
+    }
+
+    if (event.topic === "memory.snapshot.requested") {
+      await this.recordMemorySnapshotCommitment(event.payload_json);
       return;
     }
 
@@ -269,6 +276,84 @@ FOREACH (_ IN CASE WHEN $conversationId IS NULL THEN [] ELSE [1] END |
     } finally {
       await session.close();
     }
+  }
+
+  private async recordMemorySnapshotCommitment(payload: unknown): Promise<void> {
+    if (!this.config.OG_ENABLED || !this.config.OG_STORAGE_ENABLED) {
+      return;
+    }
+
+    const userId = payloadString(payload, "userId");
+    const characterId = payloadString(payload, "characterId");
+    const conversationId = payloadString(payload, "conversationId");
+    const minImportance = this.config.OG_STORAGE_SNAPSHOT_MIN_IMPORTANCE;
+    const facts = await this.db
+      .selectFrom("memory.facts")
+      .select([
+        "id",
+        "kind",
+        "text",
+        "importance",
+        "emotional_weight",
+        "source_message_ids",
+        "updated_at",
+      ])
+      .where("user_id", "=", userId)
+      .where("character_id", "=", characterId)
+      .where("conversation_id", "=", conversationId)
+      .where("scope", "=", "conversation")
+      .where("is_active", "=", true)
+      .where("importance", ">=", minImportance)
+      .orderBy("importance", "desc")
+      .orderBy("updated_at", "desc")
+      .limit(100)
+      .execute();
+
+    if (facts.length === 0) {
+      return;
+    }
+
+    const commitment = buildMemorySnapshotCommitment({
+      snapshotKind: "conversation_memory",
+      network: this.config.OG_NETWORK,
+      userId,
+      characterId,
+      conversationId,
+      facts: facts.map((fact) => ({
+        id: fact.id,
+        kind: fact.kind,
+        importance: fact.importance,
+        emotionalWeight: fact.emotional_weight,
+        updatedAt: fact.updated_at.toISOString(),
+        text: fact.text,
+        sourceMessageIds: fact.source_message_ids,
+      })),
+    });
+    const now = new Date();
+
+    await this.db
+      .insertInto("memory.decentralized_snapshots")
+      .values({
+        user_id: userId,
+        character_id: characterId,
+        conversation_id: conversationId,
+        snapshot_kind: "conversation_memory",
+        storage_network: this.config.OG_NETWORK,
+        root_hash: commitment.rootHash,
+        tx_hash: null,
+        manifest_hash: commitment.manifestHash,
+        encryption_mode: "manifest_hash_only",
+        encryption_key_ref: "0g-upload-disabled",
+        status: "pending_upload",
+        source_memory_ids: commitment.sourceMemoryIds,
+        manifest_json: commitment.manifest,
+        idempotency_key: `memory.snapshot:${conversationId}:${commitment.manifestHash}`,
+        failure_reason: null,
+        updated_at: now,
+        confirmed_at: null,
+      })
+      .onConflict((oc) => oc.column("idempotency_key").doNothing())
+      .execute();
   }
 
   private async projectCharacterToQdrant(payload: unknown): Promise<void> {

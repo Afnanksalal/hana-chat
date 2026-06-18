@@ -181,6 +181,8 @@ importers:
         specifier: ^4.4.3
         version: 4.4.3
 
+  packages/og-bridge: {}
+
   packages/queue-core: {}
 
   packages/retrieval-core:
@@ -688,6 +690,9 @@ importers:
       "@hana/nest-core":
         specifier: workspace:*
         version: link:../../packages/nest-core
+      "@hana/og-bridge":
+        specifier: workspace:*
+        version: link:../../packages/og-bridge
       "@nestjs/common":
         specifier: ^11.1.9
         version: 11.1.21(class-transformer@0.5.1)(class-validator@0.14.4)(reflect-metadata@0.2.2)(rxjs@7.8.2)

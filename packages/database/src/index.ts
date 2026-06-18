@@ -269,6 +269,28 @@ export interface MemoryFactsTable {
   superseded_by: string | null;
 }
 
+export interface MemoryDecentralizedSnapshotsTable {
+  id: Generated<string>;
+  user_id: string;
+  character_id: string | null;
+  conversation_id: string | null;
+  snapshot_kind: "conversation_memory" | "creator_soul_pack" | "user_export";
+  storage_network: string;
+  root_hash: string;
+  tx_hash: string | null;
+  manifest_hash: string;
+  encryption_mode: string;
+  encryption_key_ref: string;
+  status: "pending_upload" | "uploaded" | "confirmed" | "failed" | "disabled" | "unrecoverable";
+  source_memory_ids: DefaultColumn<string[]>;
+  manifest_json: unknown;
+  idempotency_key: string;
+  failure_reason: string | null;
+  created_at: TimestampColumn;
+  updated_at: TimestampColumn;
+  confirmed_at: TimestampColumn | null;
+}
+
 export interface AnalyticsModelCallsTable {
   id: Generated<string>;
   user_id: string | null;
@@ -463,6 +485,55 @@ export interface BillingCreatorPayoutsTable {
   updated_at: TimestampColumn;
 }
 
+export interface BillingCryptoPaymentsTable {
+  id: Generated<string>;
+  buyer_user_id: string;
+  purpose: string;
+  chain_id: number;
+  token_address: string | null;
+  amount_atomic: string;
+  amount_cents: number;
+  currency: string;
+  wallet_address: string | null;
+  provider_reference: string;
+  tx_hash: string | null;
+  status: "created" | "pending" | "finalizing" | "finalized" | "failed" | "expired" | "refunded";
+  expires_at: TimestampColumn;
+  finalized_at: TimestampColumn | null;
+  metadata_json: unknown;
+  created_at: TimestampColumn;
+  updated_at: TimestampColumn;
+}
+
+export interface BillingCryptoPayoutAccountsTable {
+  id: Generated<string>;
+  creator_user_id: string;
+  chain_id: number;
+  wallet_address: string;
+  token_preference: string | null;
+  status: "draft" | "pending_review" | "verified" | "disabled";
+  metadata_json: unknown;
+  created_at: TimestampColumn;
+  updated_at: TimestampColumn;
+  verified_at: TimestampColumn | null;
+}
+
+export interface Web3ChainTransactionsTable {
+  id: Generated<string>;
+  chain_id: number;
+  tx_hash: string;
+  provider_reference: string | null;
+  direction: "inbound" | "outbound";
+  status: "detected" | "confirming" | "confirmed" | "reorged" | "failed";
+  block_number: string | null;
+  confirmation_count: DefaultColumn<number>;
+  raw_payload_hash: string | null;
+  metadata_json: unknown;
+  created_at: TimestampColumn;
+  updated_at: TimestampColumn;
+  confirmed_at: TimestampColumn | null;
+}
+
 export interface PlatformAuditEventsTable {
   id: Generated<string>;
   actor_user_id: string | null;
@@ -512,6 +583,7 @@ export interface HanaDatabase {
   "chat.conversation_evolution": ChatConversationEvolutionTable;
   "chat.messages": ChatMessagesTable;
   "memory.facts": MemoryFactsTable;
+  "memory.decentralized_snapshots": MemoryDecentralizedSnapshotsTable;
   "safety.decisions": SafetyDecisionsTable;
   "analytics.model_calls": AnalyticsModelCallsTable;
   "billing.plans": BillingPlansTable;
@@ -525,6 +597,9 @@ export interface HanaDatabase {
   "billing.character_purchases": BillingCharacterPurchasesTable;
   "billing.creator_ledger_entries": BillingCreatorLedgerEntriesTable;
   "billing.creator_payouts": BillingCreatorPayoutsTable;
+  "billing.crypto_payments": BillingCryptoPaymentsTable;
+  "billing.crypto_payout_accounts": BillingCryptoPayoutAccountsTable;
+  "web3.chain_transactions": Web3ChainTransactionsTable;
   "platform.audit_events": PlatformAuditEventsTable;
   "platform.outbox_events": PlatformOutboxEventsTable;
 }
