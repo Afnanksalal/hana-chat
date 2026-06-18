@@ -84,6 +84,7 @@ pnpm web:smoke
 - [Guardrails and SSE](docs/guardrails-and-sse.md)
 - [AI Harness](docs/ai-harness.md)
 - [Product and Market Audit](docs/product-market-audit-2026.md)
+- [Production VPS Status Audit](docs/production-vps-status-audit-2026-06-18.md)
 - [Security Hardening Pass](docs/security-hardening-pass-2026-05-24.md)
 
 ## Agent Context
