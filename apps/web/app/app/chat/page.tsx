@@ -24,6 +24,7 @@ import type { CSSProperties } from "react";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { HanaLogo } from "../../components/hana-logo";
 import { apiJson, money } from "../api";
+import { completeCryptoPayment, type CryptoPaymentIntent } from "../crypto-payments";
 import { renderRoleplayContent, renderRoleplayPreview } from "../roleplay-preview";
 
 type MemoryKind = "preference" | "boundary" | "relationship" | "canon" | "event" | "style";
@@ -154,7 +155,7 @@ interface MemoriesResponse {
 }
 
 interface CharacterPurchaseResponse {
-  provider?: "mock" | "razorpay";
+  provider?: "mock" | "crypto";
   internalPurchaseId?: string;
   activated?: boolean;
   alreadyPurchased?: boolean;
@@ -162,39 +163,12 @@ interface CharacterPurchaseResponse {
   trialLimit?: number;
   trialUsed?: number;
   trialRemaining?: number;
-  keyId?: string;
-  order?: {
-    id: string;
-    amount: number;
-    currency: string;
-  };
+  payment?: CryptoPaymentIntent;
   character?: {
     id: string;
     name: string;
     priceCents: number;
   };
-}
-
-type RazorpayCheckout = new (options: {
-  key: string;
-  order_id: string;
-  amount: number;
-  currency: string;
-  name: string;
-  description: string;
-  handler: (response: {
-    razorpay_order_id: string;
-    razorpay_payment_id: string;
-    razorpay_signature: string;
-  }) => void;
-}) => {
-  open: () => void;
-};
-
-declare global {
-  interface Window {
-    Razorpay?: RazorpayCheckout;
-  }
 }
 
 const memoryKinds: Array<{ id: MemoryKind; label: string }> = [
@@ -1190,14 +1164,14 @@ function ChatExperience() {
     }
 
     setIsUnlocking(true);
-    setStatus(`Opening checkout for ${selectedCharacter.name}...`);
+    setStatus(`Preparing 0G unlock for ${selectedCharacter.name}...`);
 
     try {
       const purchase = await apiJson<CharacterPurchaseResponse>(
         "/api/v1/monetization/character-purchases",
         {
           method: "POST",
-          body: JSON.stringify({ characterId: selectedCharacter.id, provider: "razorpay" }),
+          body: JSON.stringify({ characterId: selectedCharacter.id, provider: "crypto" }),
         },
       );
 
@@ -1218,44 +1192,28 @@ function ChatExperience() {
       }
 
       if (
-        purchase.provider !== "razorpay" ||
-        !purchase.keyId ||
-        !purchase.order ||
+        purchase.provider !== "crypto" ||
+        !purchase.payment ||
         !purchase.internalPurchaseId
       ) {
         setStatus("Checkout could not start for this character.");
         return;
       }
 
-      const Razorpay = await loadRazorpay();
-      const checkout = new Razorpay({
-        key: purchase.keyId,
-        order_id: purchase.order.id,
-        amount: purchase.order.amount,
-        currency: purchase.order.currency,
-        name: "Hana Chat",
-        description: `Unlock ${purchase.character?.name ?? selectedCharacter.name}`,
-        handler: (response) => {
-          void apiJson("/api/v1/monetization/character-purchases/verify", {
-            method: "POST",
-            body: JSON.stringify({
-              internalPurchaseId: purchase.internalPurchaseId,
-              razorpayOrderId: response.razorpay_order_id,
-              razorpayPaymentId: response.razorpay_payment_id,
-              razorpaySignature: response.razorpay_signature,
-            }),
-          })
-            .then(() => {
-              setTrialStatus(null);
-              setStatus("Unlocked.");
-            })
-            .catch((error: unknown) =>
-              setStatus(error instanceof Error ? error.message : "Payment verification failed."),
-            );
+      setStatus(
+        `Confirm ${purchase.payment.amountDisplay} ${purchase.payment.tokenSymbol} in your wallet...`,
+      );
+      await completeCryptoPayment({
+        payment: purchase.payment,
+        verifyPath: "/api/v1/monetization/character-purchases/verify",
+        verifyBody: {
+          internalPurchaseId: purchase.internalPurchaseId,
+          paymentId: purchase.payment.id,
         },
+        onStatus: setStatus,
       });
-
-      checkout.open();
+      setTrialStatus(null);
+      setStatus("Unlocked.");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Could not unlock character.");
     } finally {
@@ -1827,27 +1785,6 @@ function numberDetail(details: Record<string, unknown>, key: string): number {
   const value = details[key];
 
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
-}
-
-async function loadRazorpay(): Promise<RazorpayCheckout> {
-  if (window.Razorpay) {
-    return window.Razorpay;
-  }
-
-  await new Promise<void>((resolve, reject) => {
-    const script = document.createElement("script");
-    script.src = "https://checkout.razorpay.com/v1/checkout.js";
-    script.async = true;
-    script.onload = () => resolve();
-    script.onerror = () => reject(new Error("Checkout script failed to load."));
-    document.body.appendChild(script);
-  });
-
-  if (!window.Razorpay) {
-    throw new Error("Checkout is unavailable.");
-  }
-
-  return window.Razorpay;
 }
 
 export default function ChatPage() {

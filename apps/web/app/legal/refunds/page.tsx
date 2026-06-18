@@ -47,7 +47,7 @@ export default function RefundPolicyPage() {
                 violations, abuse, chargeback fraud, banned accounts, or consumed digital access.
               </li>
               <li>
-                App Store, Google Play, Razorpay, card-network, bank, and local-law rules may
+                App Store, Google Play, wallet network, card-network, bank, and local-law rules may
                 control whether a refund is available and how it is processed.
               </li>
             </ul>

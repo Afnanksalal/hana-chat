@@ -361,7 +361,7 @@ export interface BillingPaymentOrdersTable {
   id: Generated<string>;
   user_id: string;
   plan_id: "plus" | "ultra";
-  provider: "razorpay" | "mock";
+  provider: "razorpay" | "mock" | "crypto";
   provider_order_id: string | null;
   amount_cents: number;
   currency: string;
@@ -414,7 +414,7 @@ export interface BillingCreatorPayoutProfilesTable {
   status: DefaultColumn<"draft" | "pending_review" | "verified" | "disabled">;
   display_name: string;
   legal_name: string | null;
-  payout_mode: DefaultColumn<"upi">;
+  payout_mode: DefaultColumn<"upi" | "crypto">;
   encrypted_vpa: string | null;
   vpa_last4: string | null;
   razorpay_contact_id: string | null;
@@ -433,7 +433,7 @@ export interface BillingCharacterPurchasesTable {
   currency: string;
   platform_fee_cents: number;
   creator_net_cents: number;
-  provider: "mock" | "razorpay";
+  provider: "mock" | "razorpay" | "crypto";
   provider_order_id: string | null;
   provider_payment_id: string | null;
   status: "created" | "paid" | "failed" | "refunded";
@@ -474,7 +474,7 @@ export interface BillingCreatorPayoutsTable {
   amount_cents: number;
   currency: string;
   status: "requested" | "approved" | "processing" | "paid" | "failed" | "canceled";
-  provider: "manual" | "mock" | "razorpayx";
+  provider: "manual" | "mock" | "razorpayx" | "crypto";
   provider_payout_id: string | null;
   idempotency_key: string;
   failure_reason: string | null;

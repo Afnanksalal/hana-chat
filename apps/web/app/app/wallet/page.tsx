@@ -15,6 +15,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import { apiJson, money } from "../api";
+import { requestWalletAddress } from "../crypto-payments";
 
 interface WalletResponse {
   monetizationEnabled: boolean;
@@ -32,8 +33,10 @@ interface WalletResponse {
     status: "draft" | "pending_review" | "verified" | "disabled";
     displayName: string;
     legalName: string | null;
-    payoutMode: "upi";
+    payoutMode: "crypto";
     vpaLast4: string | null;
+    walletAddress?: string | null;
+    walletLast4?: string | null;
     providerReady: boolean;
     updatedAt: string;
   } | null;
@@ -101,7 +104,7 @@ export default function CreatorWalletPage() {
   const [wallet, setWallet] = useState<WalletResponse>(emptyWallet);
   const [displayName, setDisplayName] = useState("");
   const [legalName, setLegalName] = useState("");
-  const [vpa, setVpa] = useState("");
+  const [walletAddress, setWalletAddress] = useState("");
   const [payoutAmount, setPayoutAmount] = useState("");
   const [status, setStatus] = useState("Loading wallet...");
 
@@ -115,6 +118,7 @@ export default function CreatorWalletPage() {
       setWallet(payload);
       setDisplayName(payload.payoutProfile?.displayName ?? "");
       setLegalName(payload.payoutProfile?.legalName ?? "");
+      setWalletAddress(payload.payoutProfile?.walletAddress ?? "");
       setStatus("");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Wallet unavailable.");
@@ -129,8 +133,8 @@ export default function CreatorWalletPage() {
       return;
     }
 
-    if (!wallet.payoutProfile && !vpa.trim()) {
-      setStatus("Enter the UPI ID for the payout profile.");
+    if (!walletAddress.trim()) {
+      setStatus("Enter a 0G wallet address for payouts.");
       return;
     }
 
@@ -142,15 +146,25 @@ export default function CreatorWalletPage() {
         body: JSON.stringify({
           displayName: displayName.trim(),
           legalName: legalName.trim(),
-          payoutMode: "upi",
-          vpa: vpa.trim(),
+          payoutMode: "crypto",
+          walletAddress: walletAddress.trim(),
         }),
       });
       await loadWallet();
-      setVpa("");
       setStatus("Payout profile saved.");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Could not save payout profile.");
+    }
+  }
+
+  async function fillConnectedWallet() {
+    setStatus("Connecting wallet...");
+
+    try {
+      setWalletAddress(await requestWalletAddress());
+      setStatus("");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Could not read wallet address.");
     }
   }
 
@@ -195,7 +209,7 @@ export default function CreatorWalletPage() {
           <h1>Earn from characters people love.</h1>
           <p>
             {monetizationComingSoon
-              ? "Creator monetization is coming soon while we choose a payment partner."
+              ? "Creator monetization is coming soon."
               : "Track paid unlocks, held earnings, available balance, payout requests, and buyer purchases in one place."}
           </p>
           {monetizationComingSoon ? <span className="coming-soon-pill">Coming soon</span> : null}
@@ -262,18 +276,26 @@ export default function CreatorWalletPage() {
             />
           </label>
           <label>
-            UPI ID
+            0G wallet address
             <input
-              value={vpa}
-              onChange={(event) => setVpa(event.target.value)}
+              value={walletAddress}
+              onChange={(event) => setWalletAddress(event.target.value)}
               disabled={monetizationComingSoon}
               placeholder={
-                wallet.payoutProfile?.vpaLast4
-                  ? `Saved ending ${wallet.payoutProfile.vpaLast4}`
-                  : "name@bank"
+                wallet.payoutProfile?.walletLast4
+                  ? `Saved ending ${wallet.payoutProfile.walletLast4}`
+                  : "0x..."
               }
             />
           </label>
+          <button
+            className="secondary-action compact"
+            type="button"
+            disabled={monetizationComingSoon}
+            onClick={() => void fillConnectedWallet()}
+          >
+            <WalletCards size={16} /> Use wallet
+          </button>
           <button
             className="primary-action compact"
             type="submit"
@@ -317,8 +339,8 @@ export default function CreatorWalletPage() {
             {monetizationComingSoon ? "Coming soon" : "Request payout"}
           </button>
           <small>
-            Admin approval is required before money leaves Hana. Failed provider payouts are
-            returned to your available balance.
+            Admin approval is required before money leaves Hana. Failed crypto payouts are returned
+            to your available balance.
           </small>
         </form>
       </section>

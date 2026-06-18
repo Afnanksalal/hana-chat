@@ -500,8 +500,8 @@ flowchart TD
   A["User hits value or limit"] --> B["Paywall"]
   B --> C["Compare tiers"]
   C --> D["Choose plan"]
-  D --> E["Razorpay checkout"]
-  E --> F["Webhook confirms"]
+  D --> E["0G wallet transfer"]
+  E --> F["API verifies tx hash"]
   F --> G["Entitlements updated"]
   G --> H["Return to chat"]
 ```

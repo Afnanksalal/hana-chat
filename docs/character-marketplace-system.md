@@ -47,11 +47,11 @@ flowchart TD
   receives an assistant reply; greetings, assistant rows, blocked inputs, and failed pending sends do
   not consume trial messages.
 - After the trial is exhausted, paid character chat access requires a `billing.character_purchases` row with `status = paid`, or creator ownership. Subscription plans do not bypass a creator's paid unlock.
-- Character purchase creation is idempotent per user and character. If trial messages remain, the purchase endpoint opens chat instead of starting checkout. Checkout is verified server-side with the payment signature and can also be supported through a webhook path.
+- Character purchase creation is idempotent per user and character. If trial messages remain, the purchase endpoint opens chat instead of starting checkout. Checkout creates a 0G payment intent and is finalized only after the API verifies the submitted transaction hash on-chain.
 - Creator revenue is posted to a signed wallet ledger: gross sale, platform fee, pending hold, available balance, payout reserve, payout release, settlement, and failure recovery.
 - Net paid-character earnings remain pending for a 7-day hold window before they can be requested for payout.
-- Creator payout profiles store encrypted UPI IDs, provider contact/fund account IDs when RazorpayX is configured, and a review status.
-- Admin monetization operations live at `/app/admin` and API prefix `/v1/admin/monetization`: profile verification, payout processing, provider refresh, and manual/mock settlement for local testing.
+- Creator payout profiles store 0G wallet destinations in `billing.crypto_payout_accounts` with admin review status.
+- Admin monetization operations live at `/app/admin` and API prefix `/v1/admin/monetization`: profile verification, crypto payout proof verification, provider refresh, and manual/mock settlement for local testing.
 - Creator wallet operations live at `/app/wallet` and API prefix `/v1/monetization`: payout profile, ledger, purchases, and payout requests.
 
 ## Marketplace Quality Rules

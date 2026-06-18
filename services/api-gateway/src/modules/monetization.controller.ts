@@ -10,12 +10,18 @@ import { createDatabase, type HanaDatabase } from "@hana/database";
 import { DomainError } from "@hana/errors";
 import { Body, Controller, Get, Headers, Param, Patch, Post } from "@nestjs/common";
 import { Kysely, sql } from "kysely";
-import { createCipheriv, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { completedUserTurnCount } from "./billable-messages";
-import { auditEvent, hmacHex, requireAdmin, requireSession } from "./session";
+import {
+  createCryptoPaymentIntent,
+  normalizeAddress,
+  verifyCryptoPaymentIntent,
+  verifyCryptoPayoutTransfer,
+} from "./crypto-payments";
+import { auditEvent, requireAdmin, requireSession } from "./session";
 
 type Db = Kysely<HanaDatabase>;
-type PayoutProvider = "manual" | "mock" | "razorpayx";
+type PayoutProvider = "manual" | "mock" | "crypto";
 
 @Controller("/v1/monetization")
 export class MonetizationController {
@@ -36,18 +42,23 @@ export class MonetizationController {
         .where("creator_user_id", "=", session.userId)
         .executeTakeFirstOrThrow(),
       this.db
-        .selectFrom("billing.creator_payout_profiles")
+        .selectFrom("billing.creator_payout_profiles as profiles")
+        .leftJoin("billing.crypto_payout_accounts as crypto", (join) =>
+          join
+            .onRef("crypto.creator_user_id", "=", "profiles.creator_user_id")
+            .on("crypto.chain_id", "=", this.config.OG_CHAIN_ID),
+        )
         .select([
-          "status",
-          "display_name",
-          "legal_name",
-          "payout_mode",
-          "vpa_last4",
-          "razorpay_contact_id",
-          "razorpay_fund_account_id",
-          "updated_at",
+          "profiles.status",
+          "profiles.display_name",
+          "profiles.legal_name",
+          "profiles.payout_mode",
+          "profiles.vpa_last4",
+          "profiles.updated_at",
+          "crypto.wallet_address as crypto_wallet_address",
+          "crypto.status as crypto_status",
         ])
-        .where("creator_user_id", "=", session.userId)
+        .where("profiles.creator_user_id", "=", session.userId)
         .executeTakeFirst(),
       this.db
         .selectFrom("billing.creator_ledger_entries as ledger")
@@ -112,7 +123,13 @@ export class MonetizationController {
             legalName: profile.legal_name,
             payoutMode: profile.payout_mode,
             vpaLast4: profile.vpa_last4,
-            providerReady: Boolean(profile.razorpay_contact_id && profile.razorpay_fund_account_id),
+            walletAddress: profile.crypto_wallet_address,
+            walletLast4: profile.crypto_wallet_address?.slice(-4) ?? profile.vpa_last4,
+            providerReady: Boolean(
+              profile.crypto_wallet_address &&
+                profile.status === "verified" &&
+                profile.crypto_status === "verified",
+            ),
             updatedAt: profile.updated_at.toISOString(),
           }
         : null,
@@ -165,60 +182,73 @@ export class MonetizationController {
 
     assertMonetizationEnabled(this.config);
 
-    const encryptedVpa = encryptSensitive(input.vpa, this.config.PAYOUT_ENCRYPTION_KEY_BASE64);
+    const walletAddress = normalizeAddress(input.walletAddress, "walletAddress");
     const now = new Date();
-    let razorpayContactId: string | null = null;
-    let razorpayFundAccountId: string | null = null;
-    let status: "verified" | "pending_review" = "verified";
-    let metadata: Record<string, unknown> = { provider: "mock" };
-
-    if (this.config.NODE_ENV === "production" || this.isRazorpayConfigured()) {
-      const contact = await createRazorpayXContact(this.config, {
-        userId: session.userId,
-        displayName: input.legalName || input.displayName,
-      });
-      const fundAccount = await createRazorpayXVpaFundAccount(this.config, {
-        contactId: contact.id,
-        vpa: input.vpa,
-      });
-
-      razorpayContactId = contact.id;
-      razorpayFundAccountId = fundAccount.id;
-      metadata = { provider: "razorpayx", contact, fundAccount };
-      status = "pending_review";
-    }
+    const status: "pending_review" = "pending_review";
+    const metadata: Record<string, unknown> = {
+      provider: "crypto",
+      chainId: this.config.OG_CHAIN_ID,
+      walletAddress,
+      tokenPreference: this.config.OG_PAYMENT_TOKEN_SYMBOL,
+    };
 
     await ensureCreatorWallet(this.db, session.userId, "USD");
-    await this.db
-      .insertInto("billing.creator_payout_profiles")
-      .values({
-        creator_user_id: session.userId,
-        status,
-        display_name: input.displayName,
-        legal_name: input.legalName || null,
-        payout_mode: "upi",
-        encrypted_vpa: encryptedVpa,
-        vpa_last4: input.vpa.slice(-4),
-        razorpay_contact_id: razorpayContactId,
-        razorpay_fund_account_id: razorpayFundAccountId,
-        metadata_json: metadata,
-        updated_at: now,
-      })
-      .onConflict((oc) =>
-        oc.column("creator_user_id").doUpdateSet({
+    await this.db.transaction().execute(async (tx) => {
+      await tx
+        .insertInto("billing.creator_payout_profiles")
+        .values({
+          creator_user_id: session.userId,
           status,
           display_name: input.displayName,
           legal_name: input.legalName || null,
-          payout_mode: "upi",
-          encrypted_vpa: encryptedVpa,
-          vpa_last4: input.vpa.slice(-4),
-          razorpay_contact_id: razorpayContactId,
-          razorpay_fund_account_id: razorpayFundAccountId,
+          payout_mode: "crypto",
+          encrypted_vpa: null,
+          vpa_last4: walletAddress.slice(-4),
+          razorpay_contact_id: null,
+          razorpay_fund_account_id: null,
           metadata_json: metadata,
           updated_at: now,
-        }),
-      )
-      .execute();
+        })
+        .onConflict((oc) =>
+          oc.column("creator_user_id").doUpdateSet({
+            status,
+            display_name: input.displayName,
+            legal_name: input.legalName || null,
+            payout_mode: "crypto",
+            encrypted_vpa: null,
+            vpa_last4: walletAddress.slice(-4),
+            razorpay_contact_id: null,
+            razorpay_fund_account_id: null,
+            metadata_json: metadata,
+            updated_at: now,
+          }),
+        )
+        .execute();
+
+      await tx
+        .insertInto("billing.crypto_payout_accounts")
+        .values({
+          creator_user_id: session.userId,
+          chain_id: this.config.OG_CHAIN_ID,
+          wallet_address: walletAddress,
+          token_preference: this.config.OG_PAYMENT_TOKEN_SYMBOL,
+          status,
+          metadata_json: metadata,
+          updated_at: now,
+          verified_at: null,
+        })
+        .onConflict((oc) =>
+          oc.columns(["creator_user_id", "chain_id"]).doUpdateSet({
+            wallet_address: walletAddress,
+            token_preference: this.config.OG_PAYMENT_TOKEN_SYMBOL,
+            status,
+            metadata_json: metadata,
+            updated_at: now,
+            verified_at: null,
+          }),
+        )
+        .execute();
+    });
 
     await auditEvent(this.db, {
       actorUserId: session.userId,
@@ -233,9 +263,10 @@ export class MonetizationController {
       payoutProfile: {
         status,
         displayName: input.displayName,
-        payoutMode: "upi",
-        vpaLast4: input.vpa.slice(-4),
-        providerReady: Boolean(razorpayContactId && razorpayFundAccountId),
+        payoutMode: "crypto",
+        walletAddress,
+        walletLast4: walletAddress.slice(-4),
+        providerReady: false,
       },
     };
   }
@@ -352,44 +383,41 @@ export class MonetizationController {
       };
     }
 
-    if (!this.config.RAZORPAY_KEY_ID || !this.config.RAZORPAY_KEY_SECRET) {
-      throw new DomainError("INTERNAL", "Razorpay is not configured");
-    }
-
-    const razorpayOrder = await createRazorpayOrder({
-      keyId: this.config.RAZORPAY_KEY_ID,
-      keySecret: this.config.RAZORPAY_KEY_SECRET,
-      amount: character.price_cents,
+    const payment = await createCryptoPaymentIntent({
+      db: this.db,
+      config: this.config,
+      buyerUserId: session.userId,
+      purpose: `character:${purchaseId}`,
+      amountCents: character.price_cents,
       currency: "USD",
-      receipt: purchaseId,
-      notes: {
+      metadata: {
+        type: "character_purchase",
         internalPurchaseId: purchaseId,
         characterId: character.id,
         creatorUserId: character.creator_user_id,
         buyerUserId: session.userId,
-        type: "character_purchase",
+        characterName: character.name,
       },
     });
 
     await this.db
       .updateTable("billing.character_purchases")
       .set({
-        provider_order_id: razorpayOrder.id,
-        metadata_json: { characterName: character.name, razorpayOrder },
+        provider_order_id: payment.id,
+        metadata_json: {
+          characterName: character.name,
+          cryptoPaymentId: payment.id,
+          providerReference: payment.providerReference,
+        },
         updated_at: new Date(),
       })
       .where("id", "=", purchaseId)
       .execute();
 
     return {
-      provider: "razorpay",
+      provider: "crypto",
       internalPurchaseId: purchaseId,
-      keyId: this.config.RAZORPAY_KEY_ID,
-      order: {
-        id: razorpayOrder.id,
-        amount: razorpayOrder.amount,
-        currency: razorpayOrder.currency,
-      },
+      payment,
       character: {
         id: character.id,
         name: character.name,
@@ -408,10 +436,6 @@ export class MonetizationController {
 
     assertMonetizationEnabled(this.config);
 
-    if (!this.config.RAZORPAY_KEY_SECRET) {
-      throw new DomainError("INTERNAL", "Razorpay is not configured");
-    }
-
     const purchase = await this.db
       .selectFrom("billing.character_purchases")
       .selectAll()
@@ -419,27 +443,43 @@ export class MonetizationController {
       .where("user_id", "=", session.userId)
       .executeTakeFirst();
 
-    if (!purchase || purchase.provider_order_id !== input.razorpayOrderId) {
+    if (!purchase || purchase.provider !== "crypto" || purchase.provider_order_id !== input.paymentId) {
       throw new DomainError("RESOURCE_NOT_FOUND", "Purchase order not found");
     }
 
-    const expected = hmacHex(
-      `${purchase.provider_order_id}|${input.razorpayPaymentId}`,
-      this.config.RAZORPAY_KEY_SECRET,
-    );
+    const verification = await verifyCryptoPaymentIntent({
+      db: this.db,
+      config: this.config,
+      buyerUserId: session.userId,
+      paymentId: input.paymentId,
+      txHash: input.txHash,
+      walletAddress: input.walletAddress,
+      expectedPurposePrefix: `character:${purchase.id}`,
+    });
 
-    if (!safeEqual(expected, input.razorpaySignature)) {
-      throw new DomainError("AUTH_FORBIDDEN", "Payment signature verification failed");
+    if (verification.status === "pending") {
+      return {
+        ok: false,
+        status: "pending",
+        confirmationCount: verification.confirmationCount,
+        requiredConfirmations: verification.requiredConfirmations,
+        characterId: purchase.character_id,
+      };
     }
 
-    await finalizeCharacterPurchase(this.db, this.config, purchase.id, input.razorpayPaymentId, {
-      verifiedBy: "client_signature",
+    await finalizeCharacterPurchase(this.db, this.config, purchase.id, verification.txHash, {
+      provider: "crypto",
+      cryptoPaymentId: input.paymentId,
+      walletAddress: verification.walletAddress,
+      confirmationCount: verification.confirmationCount,
     });
 
     return {
       ok: true,
+      status: "finalized",
       activated: true,
       characterId: purchase.character_id,
+      txHash: verification.txHash,
     };
   }
 
@@ -456,13 +496,23 @@ export class MonetizationController {
     await releasePendingEarnings(this.db, session.userId);
 
     const profile = await this.db
-      .selectFrom("billing.creator_payout_profiles")
-      .select(["status"])
-      .where("creator_user_id", "=", session.userId)
+      .selectFrom("billing.creator_payout_profiles as profiles")
+      .leftJoin("billing.crypto_payout_accounts as crypto", (join) =>
+        join
+          .onRef("crypto.creator_user_id", "=", "profiles.creator_user_id")
+          .on("crypto.chain_id", "=", this.config.OG_CHAIN_ID),
+      )
+      .select(["profiles.status", "crypto.status as crypto_status", "crypto.wallet_address"])
+      .where("profiles.creator_user_id", "=", session.userId)
       .executeTakeFirst();
 
-    if (!profile || profile.status !== "verified") {
-      throw new DomainError("ENTITLEMENT_REQUIRED", "Set up a verified payout profile first");
+    if (
+      !profile ||
+      profile.status !== "verified" ||
+      profile.crypto_status !== "verified" ||
+      !profile.wallet_address
+    ) {
+      throw new DomainError("ENTITLEMENT_REQUIRED", "Set up a verified crypto payout wallet first");
     }
 
     if (input.amountCents < this.config.CREATOR_MIN_PAYOUT_CENTS) {
@@ -540,10 +590,6 @@ export class MonetizationController {
 
     return { ok: true, payoutId: payout.id };
   }
-
-  private isRazorpayConfigured(): boolean {
-    return Boolean(this.config.RAZORPAY_KEY_ID && this.config.RAZORPAY_KEY_SECRET);
-  }
 }
 
 @Controller("/v1/admin/monetization")
@@ -586,6 +632,11 @@ export class AdminMonetizationController {
             "profiles.creator_user_id",
             "payouts.creator_user_id",
           )
+          .leftJoin("billing.crypto_payout_accounts as crypto", (join) =>
+            join
+              .onRef("crypto.creator_user_id", "=", "payouts.creator_user_id")
+              .on("crypto.chain_id", "=", this.config.OG_CHAIN_ID),
+          )
           .select([
             "payouts.id",
             "payouts.creator_user_id",
@@ -593,6 +644,8 @@ export class AdminMonetizationController {
             "profiles.display_name as payout_display_name",
             "profiles.status as profile_status",
             "profiles.vpa_last4",
+            "crypto.wallet_address as crypto_wallet_address",
+            "crypto.status as crypto_status",
             "payouts.amount_cents",
             "payouts.currency",
             "payouts.status",
@@ -608,6 +661,11 @@ export class AdminMonetizationController {
         this.db
           .selectFrom("billing.creator_payout_profiles as profiles")
           .innerJoin("identity.users as users", "users.id", "profiles.creator_user_id")
+          .leftJoin("billing.crypto_payout_accounts as crypto", (join) =>
+            join
+              .onRef("crypto.creator_user_id", "=", "profiles.creator_user_id")
+              .on("crypto.chain_id", "=", this.config.OG_CHAIN_ID),
+          )
           .select([
             "profiles.creator_user_id",
             "profiles.display_name",
@@ -615,8 +673,8 @@ export class AdminMonetizationController {
             "profiles.status",
             "profiles.payout_mode",
             "profiles.vpa_last4",
-            "profiles.razorpay_contact_id",
-            "profiles.razorpay_fund_account_id",
+            "crypto.wallet_address as crypto_wallet_address",
+            "crypto.status as crypto_status",
             "profiles.updated_at",
           ])
           .where("profiles.status", "=", "pending_review")
@@ -655,7 +713,14 @@ export class AdminMonetizationController {
         creatorUserId: payout.creator_user_id,
         creatorName: payout.payout_display_name ?? payout.display_name ?? "Creator",
         profileStatus: payout.profile_status,
-        vpaLast4: payout.vpa_last4,
+        vpaLast4: payout.crypto_wallet_address?.slice(-4) ?? payout.vpa_last4,
+        walletAddress: payout.crypto_wallet_address,
+        walletLast4: payout.crypto_wallet_address?.slice(-4) ?? payout.vpa_last4,
+        providerReady: Boolean(
+          payout.crypto_wallet_address &&
+            payout.profile_status === "verified" &&
+            payout.crypto_status === "verified",
+        ),
         amountCents: payout.amount_cents,
         currency: payout.currency,
         status: payout.status,
@@ -669,8 +734,14 @@ export class AdminMonetizationController {
         displayName: profile.display_name || profile.user_display_name || "Creator",
         status: profile.status,
         payoutMode: profile.payout_mode,
-        vpaLast4: profile.vpa_last4,
-        providerReady: Boolean(profile.razorpay_contact_id && profile.razorpay_fund_account_id),
+        vpaLast4: profile.crypto_wallet_address?.slice(-4) ?? profile.vpa_last4,
+        walletAddress: profile.crypto_wallet_address,
+        walletLast4: profile.crypto_wallet_address?.slice(-4) ?? profile.vpa_last4,
+        providerReady: Boolean(
+          profile.crypto_wallet_address &&
+            profile.status === "verified" &&
+            profile.crypto_status === "verified",
+        ),
         updatedAt: profile.updated_at.toISOString(),
       })),
       topCreators: topCreators.map((creator) => ({
@@ -705,6 +776,11 @@ export class AdminMonetizationController {
         "profiles.creator_user_id",
         "payouts.creator_user_id",
       )
+      .leftJoin("billing.crypto_payout_accounts as crypto", (join) =>
+        join
+          .onRef("crypto.creator_user_id", "=", "payouts.creator_user_id")
+          .on("crypto.chain_id", "=", this.config.OG_CHAIN_ID),
+      )
       .select([
         "payouts.id",
         "payouts.creator_user_id",
@@ -712,7 +788,8 @@ export class AdminMonetizationController {
         "payouts.currency",
         "payouts.status",
         "profiles.status as profile_status",
-        "profiles.razorpay_fund_account_id",
+        "crypto.wallet_address as crypto_wallet_address",
+        "crypto.status as crypto_status",
       ])
       .where("payouts.id", "=", payoutId)
       .executeTakeFirst();
@@ -731,20 +808,35 @@ export class AdminMonetizationController {
       throw new DomainError("CONFLICT", "Creator payout profile is not verified");
     }
 
-    if (provider === "razorpayx") {
-      const providerResult = await createRazorpayXPayout(this.config, {
+    if (provider === "crypto") {
+      if (!input.txHash) {
+        throw new DomainError("VALIDATION_FAILED", "Crypto payouts require a 0G transaction hash");
+      }
+
+      if (payout.crypto_status !== "verified" || !payout.crypto_wallet_address) {
+        throw new DomainError("CONFLICT", "Creator crypto payout wallet is not verified");
+      }
+
+      const providerResult = await verifyCryptoPayoutTransfer({
+        db: this.db,
+        config: this.config,
         payoutId: payout.id,
         amountCents: payout.amount_cents,
-        currency: payout.currency,
-        fundAccountId: payout.razorpay_fund_account_id,
+        txHash: input.txHash,
+        creatorWalletAddress: payout.crypto_wallet_address,
+        metadata: {
+          note: input.note,
+          creatorUserId: payout.creator_user_id,
+          verifiedBy: admin.userId,
+        },
       });
-      const paid = providerResult.status === "processed";
+      const paid = providerResult.status === "finalized";
 
       await this.markPayoutProcessed({
         payoutId: payout.id,
         adminUserId: admin.userId,
-        provider: "razorpayx",
-        providerPayoutId: providerResult.id,
+        provider: "crypto",
+        providerPayoutId: providerResult.txHash,
         status: paid ? "paid" : "processing",
         metadata: { note: input.note, providerResult },
       });
@@ -753,7 +845,9 @@ export class AdminMonetizationController {
         ok: true,
         payoutId: payout.id,
         status: paid ? "paid" : "processing",
-        providerPayoutId: providerResult.id,
+        providerPayoutId: providerResult.txHash,
+        confirmationCount: providerResult.confirmationCount,
+        requiredConfirmations: providerResult.requiredConfirmations,
       };
     }
 
@@ -776,30 +870,59 @@ export class AdminMonetizationController {
   ) {
     const admin = await requireAdmin(this.db, this.config, authorization);
     const payout = await this.db
-      .selectFrom("billing.creator_payouts")
-      .select(["id", "status", "provider", "provider_payout_id"])
-      .where("id", "=", payoutId)
+      .selectFrom("billing.creator_payouts as payouts")
+      .leftJoin("billing.crypto_payout_accounts as crypto", (join) =>
+        join
+          .onRef("crypto.creator_user_id", "=", "payouts.creator_user_id")
+          .on("crypto.chain_id", "=", this.config.OG_CHAIN_ID),
+      )
+      .select([
+        "payouts.id",
+        "payouts.creator_user_id",
+        "payouts.amount_cents",
+        "payouts.status",
+        "payouts.provider",
+        "payouts.provider_payout_id",
+        "crypto.wallet_address as crypto_wallet_address",
+        "crypto.status as crypto_status",
+      ])
+      .where("payouts.id", "=", payoutId)
       .executeTakeFirst();
 
     if (!payout) {
       throw new DomainError("RESOURCE_NOT_FOUND", "Payout not found");
     }
 
-    if (payout.provider !== "razorpayx" || !payout.provider_payout_id) {
-      throw new DomainError("CONFLICT", "Only RazorpayX payouts can be refreshed");
-    }
-
     if (payout.status !== "processing") {
       return { ok: true, payoutId, status: payout.status };
     }
 
-    const providerResult = await fetchRazorpayXPayout(this.config, payout.provider_payout_id);
+    if (payout.provider !== "crypto" || !payout.provider_payout_id) {
+      throw new DomainError("CONFLICT", "Only crypto payouts can be refreshed");
+    }
 
-    if (providerResult.status === "processed") {
+    if (payout.crypto_status !== "verified" || !payout.crypto_wallet_address) {
+      throw new DomainError("CONFLICT", "Creator crypto payout wallet is not verified");
+    }
+
+    const providerResult = await verifyCryptoPayoutTransfer({
+      db: this.db,
+      config: this.config,
+      payoutId: payout.id,
+      amountCents: payout.amount_cents,
+      txHash: payout.provider_payout_id,
+      creatorWalletAddress: payout.crypto_wallet_address,
+      metadata: {
+        creatorUserId: payout.creator_user_id,
+        refreshedBy: admin.userId,
+      },
+    });
+
+    if (providerResult.status === "finalized") {
       await this.markPayoutProcessed({
         payoutId: payout.id,
         adminUserId: admin.userId,
-        provider: "razorpayx",
+        provider: "crypto",
         providerPayoutId: payout.provider_payout_id,
         status: "paid",
         metadata: { providerResult, refreshedBy: admin.userId },
@@ -808,18 +931,13 @@ export class AdminMonetizationController {
       return { ok: true, payoutId, status: "paid" };
     }
 
-    if (["failed", "reversed", "cancelled", "rejected"].includes(providerResult.status)) {
-      await this.markPayoutFailed({
-        payoutId: payout.id,
-        adminUserId: admin.userId,
-        failureReason: providerResult.status,
-        metadata: { providerResult, refreshedBy: admin.userId },
-      });
-
-      return { ok: true, payoutId, status: "failed" };
-    }
-
-    return { ok: true, payoutId, status: "processing", providerStatus: providerResult.status };
+    return {
+      ok: true,
+      payoutId,
+      status: "processing",
+      confirmationCount: providerResult.confirmationCount,
+      requiredConfirmations: providerResult.requiredConfirmations,
+    };
   }
 
   @Post("/payout-profiles/:creatorUserId/verify")
@@ -838,18 +956,35 @@ export class AdminMonetizationController {
       throw new DomainError("RESOURCE_NOT_FOUND", "Payout profile not found");
     }
 
-    await this.db
-      .updateTable("billing.creator_payout_profiles")
-      .set({
-        status: "verified",
-        metadata_json: sql`metadata_json || ${JSON.stringify({
-          verifiedBy: admin.userId,
-          verifiedAt: new Date().toISOString(),
-        })}::jsonb`,
-        updated_at: new Date(),
-      })
-      .where("creator_user_id", "=", creatorUserId)
-      .execute();
+    await this.db.transaction().execute(async (tx) => {
+      await tx
+        .updateTable("billing.creator_payout_profiles")
+        .set({
+          status: "verified",
+          metadata_json: sql`metadata_json || ${JSON.stringify({
+            verifiedBy: admin.userId,
+            verifiedAt: new Date().toISOString(),
+          })}::jsonb`,
+          updated_at: new Date(),
+        })
+        .where("creator_user_id", "=", creatorUserId)
+        .execute();
+
+      await tx
+        .updateTable("billing.crypto_payout_accounts")
+        .set({
+          status: "verified",
+          verified_at: new Date(),
+          metadata_json: sql`metadata_json || ${JSON.stringify({
+            verifiedBy: admin.userId,
+            verifiedAt: new Date().toISOString(),
+          })}::jsonb`,
+          updated_at: new Date(),
+        })
+        .where("creator_user_id", "=", creatorUserId)
+        .where("chain_id", "=", this.config.OG_CHAIN_ID)
+        .execute();
+    });
 
     await auditEvent(this.db, {
       actorUserId: admin.userId,
@@ -1230,21 +1365,18 @@ export async function paidCharacterTrialStatus(
 }
 
 function resolvePaymentProvider(
-  provider: "razorpay" | "mock",
+  provider: "crypto" | "mock",
   config: AppConfig,
-): "razorpay" | "mock" {
+): "crypto" | "mock" {
   if (provider === "mock" && config.NODE_ENV === "production") {
     throw new DomainError("AUTH_FORBIDDEN", "Mock checkout is disabled in production");
   }
 
-  if (
-    provider === "mock" ||
-    (!config.RAZORPAY_KEY_ID && !config.RAZORPAY_KEY_SECRET && config.NODE_ENV !== "production")
-  ) {
+  if (provider === "mock") {
     return "mock";
   }
 
-  return "razorpay";
+  return "crypto";
 }
 
 function assertMonetizationEnabled(config: AppConfig): void {
@@ -1277,248 +1409,8 @@ function toWalletSummary(wallet: {
   };
 }
 
-function encryptSensitive(value: string, keyBase64: string): string {
-  const key = Buffer.from(keyBase64, "base64");
-
-  if (key.length !== 32) {
-    throw new DomainError("INTERNAL", "Payout encryption key is not configured correctly");
-  }
-
-  const iv = randomBytes(12);
-  const cipher = createCipheriv("aes-256-gcm", key, iv);
-  const encrypted = Buffer.concat([cipher.update(value, "utf8"), cipher.final()]);
-  const tag = cipher.getAuthTag();
-
-  return [iv, tag, encrypted].map((part) => part.toString("base64url")).join(".");
-}
-
-async function createRazorpayOrder(input: {
-  keyId: string;
-  keySecret: string;
-  amount: number;
-  currency: string;
-  receipt: string;
-  notes: Record<string, string>;
-}): Promise<{ id: string; amount: number; currency: string; status: string }> {
-  const response = await razorpayFetch(input.keyId, input.keySecret, "/v1/orders", {
-    method: "POST",
-    body: {
-      amount: input.amount,
-      currency: input.currency,
-      receipt: input.receipt,
-      notes: input.notes,
-    },
-  });
-
-  return {
-    id: assertString(response, "id"),
-    amount: assertNumber(response, "amount"),
-    currency: assertString(response, "currency"),
-    status: typeof response["status"] === "string" ? response["status"] : "created",
-  };
-}
-
-async function createRazorpayXContact(
-  config: AppConfig,
-  input: { userId: string; displayName: string },
-): Promise<{ id: string }> {
-  assertRazorpayConfigured(config);
-  const response = await razorpayFetch(
-    config.RAZORPAY_KEY_ID,
-    config.RAZORPAY_KEY_SECRET,
-    "/v1/contacts",
-    {
-      method: "POST",
-      body: {
-        name: input.displayName,
-        type: "vendor",
-        reference_id: input.userId,
-        notes: {
-          product: "hana_chat_creator",
-        },
-      },
-    },
-  );
-
-  return { id: assertString(response, "id") };
-}
-
-async function createRazorpayXVpaFundAccount(
-  config: AppConfig,
-  input: { contactId: string; vpa: string },
-): Promise<{ id: string }> {
-  assertRazorpayConfigured(config);
-  const response = await razorpayFetch(
-    config.RAZORPAY_KEY_ID,
-    config.RAZORPAY_KEY_SECRET,
-    "/v1/fund_accounts",
-    {
-      method: "POST",
-      body: {
-        contact_id: input.contactId,
-        account_type: "vpa",
-        vpa: {
-          address: input.vpa,
-        },
-      },
-    },
-  );
-
-  return { id: assertString(response, "id") };
-}
-
-async function createRazorpayXPayout(
-  config: AppConfig,
-  input: {
-    payoutId: string;
-    amountCents: number;
-    currency: string;
-    fundAccountId: string | null;
-  },
-): Promise<{ id: string; status: string }> {
-  assertRazorpayConfigured(config);
-
-  if (!config.RAZORPAYX_ACCOUNT_NUMBER) {
-    throw new DomainError("INTERNAL", "RazorpayX account number is not configured");
-  }
-
-  if (!input.fundAccountId) {
-    throw new DomainError("CONFLICT", "Creator does not have a RazorpayX fund account");
-  }
-
-  if (input.currency.toUpperCase() !== "INR") {
-    throw new DomainError("CONFLICT", "RazorpayX UPI payouts require an INR wallet");
-  }
-
-  const idempotencyKey = input.payoutId.replace(/[^a-zA-Z0-9_-]/g, "-").slice(0, 36);
-  const response = await razorpayFetch(
-    config.RAZORPAY_KEY_ID,
-    config.RAZORPAY_KEY_SECRET,
-    "/v1/payouts",
-    {
-      method: "POST",
-      idempotencyKey,
-      body: {
-        account_number: config.RAZORPAYX_ACCOUNT_NUMBER,
-        fund_account_id: input.fundAccountId,
-        amount: input.amountCents,
-        currency: input.currency,
-        mode: "UPI",
-        purpose: "payout",
-        queue_if_low_balance: true,
-        reference_id: input.payoutId,
-        narration: "Hana creator payout",
-      },
-    },
-  );
-
-  return {
-    id: assertString(response, "id"),
-    status: typeof response["status"] === "string" ? response["status"] : "processing",
-  };
-}
-
-async function fetchRazorpayXPayout(
-  config: AppConfig,
-  providerPayoutId: string,
-): Promise<{ id: string; status: string }> {
-  assertRazorpayConfigured(config);
-  const response = await razorpayFetch(
-    config.RAZORPAY_KEY_ID,
-    config.RAZORPAY_KEY_SECRET,
-    `/v1/payouts/${encodeURIComponent(providerPayoutId)}`,
-    { method: "GET" },
-  );
-
-  return {
-    id: assertString(response, "id"),
-    status: typeof response["status"] === "string" ? response["status"] : "processing",
-  };
-}
-
-async function razorpayFetch(
-  keyId: string | undefined,
-  keySecret: string | undefined,
-  path: string,
-  input:
-    | { method: "POST"; body: Record<string, unknown>; idempotencyKey?: string }
-    | { method: "GET" },
-): Promise<Record<string, unknown>> {
-  if (!keyId || !keySecret) {
-    throw new DomainError("INTERNAL", "Razorpay is not configured");
-  }
-
-  const headers: Record<string, string> = {
-    Authorization: `Basic ${Buffer.from(`${keyId}:${keySecret}`).toString("base64")}`,
-    "Content-Type": "application/json",
-  };
-
-  if ("idempotencyKey" in input && input.idempotencyKey) {
-    headers["X-Payout-Idempotency"] = input.idempotencyKey;
-  }
-
-  const requestInit: RequestInit = {
-    method: input.method,
-    headers,
-  };
-
-  if (input.method === "POST") {
-    requestInit.body = JSON.stringify(input.body);
-  }
-
-  const response = await fetch(`https://api.razorpay.com${path}`, requestInit);
-
-  const text = await response.text();
-  const payload = text ? (JSON.parse(text) as Record<string, unknown>) : {};
-
-  if (!response.ok) {
-    throw new DomainError("INTERNAL", "Razorpay request failed", {
-      status: response.status,
-      payload,
-    });
-  }
-
-  return payload;
-}
-
-function assertRazorpayConfigured(config: AppConfig): asserts config is AppConfig & {
-  RAZORPAY_KEY_ID: string;
-  RAZORPAY_KEY_SECRET: string;
-} {
-  if (!config.RAZORPAY_KEY_ID || !config.RAZORPAY_KEY_SECRET) {
-    throw new DomainError("INTERNAL", "Razorpay is not configured");
-  }
-}
-
-function assertString(payload: Record<string, unknown>, key: string): string {
-  const value = payload[key];
-
-  if (typeof value !== "string" || !value) {
-    throw new DomainError("INTERNAL", "Razorpay returned an invalid response", { key });
-  }
-
-  return value;
-}
-
-function assertNumber(payload: Record<string, unknown>, key: string): number {
-  const value = payload[key];
-
-  if (typeof value !== "number") {
-    throw new DomainError("INTERNAL", "Razorpay returned an invalid response", { key });
-  }
-
-  return value;
-}
-
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : {};
-}
-
-function safeEqual(left: string, right: string): boolean {
-  const leftBuffer = Buffer.from(left);
-  const rightBuffer = Buffer.from(right);
-
-  return leftBuffer.length === rightBuffer.length && timingSafeEqual(leftBuffer, rightBuffer);
 }

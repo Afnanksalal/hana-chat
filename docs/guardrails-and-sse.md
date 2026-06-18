@@ -61,7 +61,7 @@ Production reverse proxies must disable buffering for `api.hanachat.site` so tok
 
 ## Transport and Header Hardening
 
-- Next.js emits a CSP that allows Hana assets, same-origin API calls, and Razorpay checkout scripts/frames.
+- Next.js emits a CSP that allows Hana assets and same-origin API calls.
 - Next.js also emits HSTS, referrer policy, MIME-sniffing protection, frame-denial, DNS prefetch control, and a restrictive permissions policy.
 - Nest services emit matching defensive headers for API responses.
 - In production, unexpected API exceptions return a generic internal-error message so stack details, provider errors, paths, and infrastructure details are not exposed to clients.

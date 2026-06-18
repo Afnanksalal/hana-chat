@@ -268,26 +268,29 @@ export type UpdateMemoryRequest = z.infer<typeof UpdateMemoryRequestSchema>;
 
 export const CheckoutPlanRequestSchema = z.object({
   planId: z.enum(["plus", "ultra"]),
-  provider: z.enum(["razorpay", "mock"]).default("razorpay"),
+  provider: z.enum(["crypto", "mock"]).default("crypto"),
 });
 
 export type CheckoutPlanRequest = z.infer<typeof CheckoutPlanRequestSchema>;
 
-export const MonetizationProviderSchema = z.enum(["razorpay", "mock"]);
+export const MonetizationProviderSchema = z.enum(["crypto", "mock"]);
 export type MonetizationProvider = z.infer<typeof MonetizationProviderSchema>;
 
 export const CreateCharacterPurchaseRequestSchema = z.object({
   characterId: z.string().min(1),
-  provider: MonetizationProviderSchema.default("razorpay"),
+  provider: MonetizationProviderSchema.default("crypto"),
 });
 
 export type CreateCharacterPurchaseRequest = z.infer<typeof CreateCharacterPurchaseRequestSchema>;
 
 export const VerifyCharacterPurchaseRequestSchema = z.object({
   internalPurchaseId: z.string().min(1),
-  razorpayOrderId: z.string().min(1),
-  razorpayPaymentId: z.string().min(1),
-  razorpaySignature: z.string().min(1),
+  paymentId: z.string().min(1),
+  txHash: z.string().regex(/^0x[a-fA-F0-9]{64}$/, "Enter a valid transaction hash"),
+  walletAddress: z
+    .string()
+    .regex(/^0x[a-fA-F0-9]{40}$/, "Enter a valid wallet address")
+    .optional(),
 });
 
 export type VerifyCharacterPurchaseRequest = z.infer<typeof VerifyCharacterPurchaseRequestSchema>;
@@ -295,12 +298,8 @@ export type VerifyCharacterPurchaseRequest = z.infer<typeof VerifyCharacterPurch
 export const UpsertPayoutProfileRequestSchema = z.object({
   displayName: z.string().min(2).max(120),
   legalName: z.string().min(2).max(160).optional().default(""),
-  payoutMode: z.literal("upi").default("upi"),
-  vpa: z
-    .string()
-    .min(3)
-    .max(128)
-    .regex(/^[a-zA-Z0-9.\-_]{2,}@[a-zA-Z][a-zA-Z0-9.\-_]{1,}$/, "Enter a valid UPI ID"),
+  payoutMode: z.literal("crypto").default("crypto"),
+  walletAddress: z.string().regex(/^0x[a-fA-F0-9]{40}$/, "Enter a valid wallet address"),
 });
 
 export type UpsertPayoutProfileRequest = z.infer<typeof UpsertPayoutProfileRequestSchema>;
@@ -313,7 +312,11 @@ export const RequestCreatorPayoutRequestSchema = z.object({
 export type RequestCreatorPayoutRequest = z.infer<typeof RequestCreatorPayoutRequestSchema>;
 
 export const AdminProcessPayoutRequestSchema = z.object({
-  provider: z.enum(["mock", "razorpayx", "manual"]).default("mock"),
+  provider: z.enum(["mock", "crypto", "manual"]).default("mock"),
+  txHash: z
+    .string()
+    .regex(/^0x[a-fA-F0-9]{64}$/, "Enter a valid transaction hash")
+    .optional(),
   note: z.string().max(500).optional().default(""),
 });
 
@@ -332,21 +335,16 @@ export const AdminAnalyticsQuerySchema = z.object({
 
 export type AdminAnalyticsQuery = z.infer<typeof AdminAnalyticsQuerySchema>;
 
-export const VerifyRazorpayPaymentRequestSchema = z.object({
-  internalOrderId: z.string().min(1),
-  razorpayOrderId: z.string().min(1),
-  razorpayPaymentId: z.string().min(1),
-  razorpaySignature: z.string().min(1),
+export const VerifyCryptoPaymentRequestSchema = z.object({
+  paymentId: z.string().min(1),
+  txHash: z.string().regex(/^0x[a-fA-F0-9]{64}$/, "Enter a valid transaction hash"),
+  walletAddress: z
+    .string()
+    .regex(/^0x[a-fA-F0-9]{40}$/, "Enter a valid wallet address")
+    .optional(),
 });
 
-export type VerifyRazorpayPaymentRequest = z.infer<typeof VerifyRazorpayPaymentRequestSchema>;
-
-export const RazorpayWebhookRequestSchema = z.object({
-  event: z.string().min(1),
-  payload: z.record(z.string(), z.unknown()),
-});
-
-export type RazorpayWebhookRequest = z.infer<typeof RazorpayWebhookRequestSchema>;
+export type VerifyCryptoPaymentRequest = z.infer<typeof VerifyCryptoPaymentRequestSchema>;
 
 export const ApiHealthResponseSchema = z.object({
   service: z.string(),

@@ -8,8 +8,6 @@ const scriptSrc = [
   "'self'",
   "'unsafe-inline'",
   isProduction ? "" : "'unsafe-eval'",
-  "https://checkout.razorpay.com",
-  "https://*.razorpay.com",
 ]
   .filter(Boolean)
   .join(" ");
@@ -30,8 +28,8 @@ const nextConfig: NextConfig = {
           "style-src 'self' 'unsafe-inline'",
           "img-src 'self' data: blob: https:",
           "font-src 'self' data:",
-          "connect-src 'self' https://api.razorpay.com https://checkout.razorpay.com https://*.razorpay.com",
-          "frame-src https://api.razorpay.com https://checkout.razorpay.com https://*.razorpay.com",
+          "connect-src 'self'",
+          "frame-src 'none'",
           "form-action 'self'",
           shouldUpgradeInsecureRequests ? "upgrade-insecure-requests" : "",
         ]
@@ -44,7 +42,7 @@ const nextConfig: NextConfig = {
       { key: "X-DNS-Prefetch-Control", value: "on" },
       {
         key: "Permissions-Policy",
-        value: 'camera=(), geolocation=(), payment=(self "https://checkout.razorpay.com")',
+        value: "camera=(), geolocation=(), payment=()",
       },
       {
         key: "Strict-Transport-Security",

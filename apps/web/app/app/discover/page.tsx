@@ -16,6 +16,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { apiJson, money } from "../api";
+import { completeCryptoPayment, type CryptoPaymentIntent } from "../crypto-payments";
 import { renderRoleplayPreview } from "../roleplay-preview";
 
 interface CharacterSummary {
@@ -56,7 +57,7 @@ interface MarketplaceResponse {
 }
 
 interface CharacterPurchaseResponse {
-  provider?: "mock" | "razorpay";
+  provider?: "mock" | "crypto";
   internalPurchaseId?: string;
   activated?: boolean;
   alreadyPurchased?: boolean;
@@ -66,12 +67,7 @@ interface CharacterPurchaseResponse {
   trialLimit?: number;
   trialUsed?: number;
   trialRemaining?: number;
-  keyId?: string;
-  order?: {
-    id: string;
-    amount: number;
-    currency: string;
-  };
+  payment?: CryptoPaymentIntent;
   character?: {
     id: string;
     name: string;
@@ -82,28 +78,6 @@ interface CharacterPurchaseResponse {
 interface RatingResponse {
   score: number;
   stats: NonNullable<CharacterSummary["marketplaceStats"]>;
-}
-
-type RazorpayCheckout = new (options: {
-  key: string;
-  order_id: string;
-  amount: number;
-  currency: string;
-  name: string;
-  description: string;
-  handler: (response: {
-    razorpay_order_id: string;
-    razorpay_payment_id: string;
-    razorpay_signature: string;
-  }) => void;
-}) => {
-  open: () => void;
-};
-
-declare global {
-  interface Window {
-    Razorpay?: RazorpayCheckout;
-  }
 }
 
 const categories = ["all", "romance", "fantasy", "comfort", "drama", "anime", "original"];
@@ -212,7 +186,7 @@ function DiscoverExperience() {
         "/api/v1/monetization/character-purchases",
         {
           method: "POST",
-          body: JSON.stringify({ characterId: character.id, provider: "razorpay" }),
+          body: JSON.stringify({ characterId: character.id, provider: "crypto" }),
         },
       );
 
@@ -225,44 +199,28 @@ function DiscoverExperience() {
       }
 
       if (
-        purchase.provider !== "razorpay" ||
-        !purchase.keyId ||
-        !purchase.order ||
+        purchase.provider !== "crypto" ||
+        !purchase.payment ||
         !purchase.internalPurchaseId
       ) {
         setStatus("Checkout could not start for this character.");
         return;
       }
 
-      const Razorpay = await loadRazorpay();
-      const checkout = new Razorpay({
-        key: purchase.keyId,
-        order_id: purchase.order.id,
-        amount: purchase.order.amount,
-        currency: purchase.order.currency,
-        name: "Hana Chat",
-        description: `Unlock ${purchase.character?.name ?? character.name}`,
-        handler: (response) => {
-          void apiJson("/api/v1/monetization/character-purchases/verify", {
-            method: "POST",
-            body: JSON.stringify({
-              internalPurchaseId: purchase.internalPurchaseId,
-              razorpayOrderId: response.razorpay_order_id,
-              razorpayPaymentId: response.razorpay_payment_id,
-              razorpaySignature: response.razorpay_signature,
-            }),
-          })
-            .then(() => {
-              setStatus("Unlocked.");
-              router.push(freshChatPath(character.id));
-            })
-            .catch((error: unknown) =>
-              setStatus(error instanceof Error ? error.message : "Payment verification failed."),
-            );
+      setStatus(
+        `Confirm ${purchase.payment.amountDisplay} ${purchase.payment.tokenSymbol} in your wallet...`,
+      );
+      await completeCryptoPayment({
+        payment: purchase.payment,
+        verifyPath: "/api/v1/monetization/character-purchases/verify",
+        verifyBody: {
+          internalPurchaseId: purchase.internalPurchaseId,
+          paymentId: purchase.payment.id,
         },
+        onStatus: setStatus,
       });
-
-      checkout.open();
+      setStatus("Unlocked.");
+      router.push(freshChatPath(character.id));
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Could not unlock character.");
     }
@@ -572,25 +530,4 @@ async function recordCharacterEvent(
     method: "POST",
     body: JSON.stringify({ type }),
   }).catch(() => undefined);
-}
-
-async function loadRazorpay(): Promise<RazorpayCheckout> {
-  if (window.Razorpay) {
-    return window.Razorpay;
-  }
-
-  await new Promise<void>((resolve, reject) => {
-    const script = document.createElement("script");
-    script.src = "https://checkout.razorpay.com/v1/checkout.js";
-    script.async = true;
-    script.onload = () => resolve();
-    script.onerror = () => reject(new Error("Checkout script failed to load."));
-    document.body.appendChild(script);
-  });
-
-  if (!window.Razorpay) {
-    throw new Error("Checkout is unavailable.");
-  }
-
-  return window.Razorpay;
 }

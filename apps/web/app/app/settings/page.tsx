@@ -15,6 +15,7 @@ import {
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { apiJson, money } from "../api";
+import { completeCryptoPayment, type CryptoPaymentIntent } from "../crypto-payments";
 
 type PlanId = "free" | "plus" | "ultra";
 
@@ -50,40 +51,13 @@ interface BillingResponse {
 }
 
 interface CheckoutResponse {
-  provider: "mock" | "razorpay";
+  provider: "mock" | "crypto";
   internalOrderId: string;
   activated?: boolean;
-  keyId?: string;
-  order?: {
-    id: string;
-    amount: number;
-    currency: string;
-  };
+  payment?: CryptoPaymentIntent;
   plan?: {
     name: string;
   };
-}
-
-type RazorpayCheckout = new (options: {
-  key: string;
-  order_id: string;
-  amount: number;
-  currency: string;
-  name: string;
-  description: string;
-  handler: (response: {
-    razorpay_order_id: string;
-    razorpay_payment_id: string;
-    razorpay_signature: string;
-  }) => void;
-}) => {
-  open: () => void;
-};
-
-declare global {
-  interface Window {
-    Razorpay?: RazorpayCheckout;
-  }
 }
 
 const fallbackSettings: SettingsResponse = {
@@ -226,12 +200,12 @@ export default function SettingsPage() {
   }
 
   async function checkout(planId: "plus" | "ultra") {
-    setStatus("Opening checkout...");
+    setStatus("Preparing 0G payment...");
 
     try {
       const checkoutPayload = await apiJson<CheckoutResponse>("/api/v1/billing/checkout", {
         method: "POST",
-        body: JSON.stringify({ planId, provider: "razorpay" }),
+        body: JSON.stringify({ planId, provider: "crypto" }),
       });
 
       if (checkoutPayload.provider === "mock" || checkoutPayload.activated) {
@@ -240,38 +214,22 @@ export default function SettingsPage() {
         return;
       }
 
-      if (!checkoutPayload.keyId || !checkoutPayload.order) {
+      if (!checkoutPayload.payment) {
         setStatus("Checkout could not start.");
         return;
       }
 
-      const Razorpay = await loadRazorpay();
-      const instance = new Razorpay({
-        key: checkoutPayload.keyId,
-        order_id: checkoutPayload.order.id,
-        amount: checkoutPayload.order.amount,
-        currency: checkoutPayload.order.currency,
-        name: "Hana Chat",
-        description: checkoutPayload.plan?.name ?? "Hana subscription",
-        handler: (response) => {
-          void apiJson("/api/v1/billing/razorpay/verify", {
-            method: "POST",
-            body: JSON.stringify({
-              internalOrderId: checkoutPayload.internalOrderId,
-              razorpayOrderId: response.razorpay_order_id,
-              razorpayPaymentId: response.razorpay_payment_id,
-              razorpaySignature: response.razorpay_signature,
-            }),
-          })
-            .then(() => load())
-            .then(() => setStatus("Plan activated."))
-            .catch((error: unknown) =>
-              setStatus(error instanceof Error ? error.message : "Payment verification failed."),
-            );
-        },
+      setStatus(
+        `Confirm ${checkoutPayload.payment.amountDisplay} ${checkoutPayload.payment.tokenSymbol} in your wallet...`,
+      );
+      await completeCryptoPayment({
+        payment: checkoutPayload.payment,
+        verifyPath: "/api/v1/billing/crypto/verify",
+        verifyBody: { paymentId: checkoutPayload.payment.id },
+        onStatus: setStatus,
       });
-
-      instance.open();
+      await load();
+      setStatus("Plan activated.");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Checkout failed.");
     }
@@ -549,27 +507,6 @@ function normalizeBilling(payload: Partial<BillingResponse>): BillingResponse {
         payload.subscription?.currentPeriodEnd ?? fallbackBilling.subscription.currentPeriodEnd,
     },
   };
-}
-
-async function loadRazorpay(): Promise<RazorpayCheckout> {
-  if (window.Razorpay) {
-    return window.Razorpay;
-  }
-
-  await new Promise<void>((resolve, reject) => {
-    const script = document.createElement("script");
-    script.src = "https://checkout.razorpay.com/v1/checkout.js";
-    script.async = true;
-    script.onload = () => resolve();
-    script.onerror = () => reject(new Error("Checkout script failed to load."));
-    document.body.appendChild(script);
-  });
-
-  if (!window.Razorpay) {
-    throw new Error("Checkout is unavailable.");
-  }
-
-  return window.Razorpay;
 }
 
 function fileToDataUrl(file: File): Promise<string> {

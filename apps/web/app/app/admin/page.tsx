@@ -44,6 +44,9 @@ interface AdminMonetizationResponse {
     creatorName: string;
     profileStatus: string | null;
     vpaLast4: string | null;
+    walletAddress?: string | null;
+    walletLast4?: string | null;
+    providerReady?: boolean;
     amountCents: number;
     currency: string;
     status: string;
@@ -58,6 +61,8 @@ interface AdminMonetizationResponse {
     status: string;
     payoutMode: string;
     vpaLast4: string | null;
+    walletAddress?: string | null;
+    walletLast4?: string | null;
     providerReady: boolean;
     updatedAt: string;
   }>;
@@ -477,19 +482,33 @@ export default function AdminPage() {
     }
   }
 
-  async function processPayout(payoutId: string, provider: "mock" | "manual" | "razorpayx") {
+  async function processPayout(
+    payoutId: string,
+    provider: "mock" | "manual" | "crypto",
+    txHash?: string,
+  ) {
     setStatus("Processing payout...");
 
     try {
       await apiJson(`/api/v1/admin/monetization/payouts/${encodeURIComponent(payoutId)}/process`, {
         method: "POST",
-        body: JSON.stringify({ provider }),
+        body: JSON.stringify({ provider, txHash }),
       });
       await load();
       setStatus("Payout updated.");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Could not process payout.");
     }
+  }
+
+  async function processCryptoPayout(payoutId: string) {
+    const txHash = window.prompt("Paste the 0G payout transaction hash.");
+
+    if (!txHash) {
+      return;
+    }
+
+    await processPayout(payoutId, "crypto", txHash.trim());
   }
 
   async function refreshPayout(payoutId: string) {
@@ -934,8 +953,8 @@ export default function AdminPage() {
                     <div>
                       <strong>{profile.displayName}</strong>
                       <small>
-                        {profile.payoutMode.toUpperCase()} ending {profile.vpaLast4 ?? "new"} -{" "}
-                        {profile.providerReady ? "provider linked" : "manual review"}
+                        Wallet ending {profile.walletLast4 ?? profile.vpaLast4 ?? "new"} -{" "}
+                        {profile.providerReady ? "verified" : "manual review"}
                       </small>
                     </div>
                     <button
@@ -973,8 +992,8 @@ export default function AdminPage() {
                       <span>
                         <strong>{payout.creatorName}</strong>
                         <small>
-                          {payout.status} - profile {payout.profileStatus ?? "missing"} - UPI{" "}
-                          {payout.vpaLast4 ?? "unknown"}
+                          {payout.status} - profile {payout.profileStatus ?? "missing"} - wallet{" "}
+                          {payout.walletLast4 ?? payout.vpaLast4 ?? "unknown"}
                         </small>
                       </span>
                       <b>{money(payout.amountCents, payout.currency)}</b>
@@ -1007,9 +1026,9 @@ export default function AdminPage() {
                           <button
                             className="secondary-action compact"
                             type="button"
-                            onClick={() => void processPayout(payout.id, "razorpayx")}
+                            onClick={() => void processCryptoPayout(payout.id)}
                           >
-                            RazorpayX
+                            Crypto paid
                           </button>
                         </>
                       )}

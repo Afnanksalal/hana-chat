@@ -85,10 +85,6 @@ const placeholderSecrets = new Set([
   "replace-with-32-byte-session-secret",
   "replace-with-32-byte-base64-key",
   "replace-with-xai-key",
-  "replace-with-razorpay-key-id",
-  "replace-with-razorpay-key-secret",
-  "replace-with-razorpay-webhook-secret",
-  "replace-with-razorpayx-account-number",
   "replace-with-email-hash-secret",
   "replace-with-email-encryption-key",
   "replace-with-payout-encryption-key",
@@ -143,10 +139,6 @@ export const AppConfigSchema = z
       .max(20 * 1024 * 1024)
       .default(5 * 1024 * 1024),
 
-    RAZORPAY_KEY_ID: z.string().optional(),
-    RAZORPAY_KEY_SECRET: z.string().optional(),
-    RAZORPAY_WEBHOOK_SECRET: z.string().optional(),
-    RAZORPAYX_ACCOUNT_NUMBER: z.string().optional(),
     MONETIZATION_ENABLED: booleanEnvSchema.default(false),
     PAYOUT_ENCRYPTION_KEY_BASE64: z.string().default(localDevAesKeyBase64),
     CREATOR_PLATFORM_FEE_BPS: z.coerce.number().int().min(0).max(9_000).default(3_000),
@@ -162,8 +154,13 @@ export const AppConfigSchema = z
     OG_CHAIN_ID: z.coerce.number().int().positive().default(16_661),
     OG_RPC_URL: z.string().url().default("https://evmrpc.0g.ai"),
     OG_STORAGE_INDEXER_URL: z.string().url().default("https://indexer-storage-turbo.0g.ai"),
+    OG_TREASURY_WALLET_ADDRESS: z.string().optional(),
     OG_TREASURY_CONTRACT_ADDRESS: z.string().optional(),
     OG_CREATOR_ESCROW_CONTRACT_ADDRESS: z.string().optional(),
+    OG_PAYMENT_TOKEN_SYMBOL: z.string().trim().min(1).max(16).default("0G"),
+    OG_PAYMENT_TOKEN_DECIMALS: z.coerce.number().int().min(0).max(30).default(18),
+    OG_PAYMENT_TOKEN_USD_CENTS: z.coerce.number().int().min(1).max(1_000_000).default(100),
+    OG_PAYMENT_INTENT_TTL_MINUTES: z.coerce.number().int().min(5).max(24 * 60).default(30),
     OG_SERVER_WALLET_KEY_REF: z.string().optional(),
     OG_CONFIRMATION_BLOCKS: z.coerce.number().int().min(1).max(10_000).default(12),
     OG_STORAGE_SNAPSHOT_INTERVAL_TURNS: z.coerce.number().int().min(1).max(10_000).default(25),
@@ -366,29 +363,16 @@ export const AppConfigSchema = z
       });
     }
 
-    if (config.MONETIZATION_ENABLED) {
-      for (const key of [
-        "RAZORPAY_KEY_ID",
-        "RAZORPAY_KEY_SECRET",
-        "RAZORPAY_WEBHOOK_SECRET",
-        "RAZORPAYX_ACCOUNT_NUMBER",
-      ] as const) {
-        if (isMissingOrPlaceholder(config[key])) {
-          ctx.addIssue({
-            code: "custom",
-            path: [key],
-            message: `${key} must be configured when monetization is enabled`,
-          });
-        }
-      }
+    if (config.MONETIZATION_ENABLED && !config.OG_PAYMENTS_ENABLED) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["OG_PAYMENTS_ENABLED"],
+        message: "Production monetization requires 0G payments to be enabled",
+      });
     }
 
     if (config.OG_PAYMENTS_ENABLED) {
-      for (const key of [
-        "OG_TREASURY_CONTRACT_ADDRESS",
-        "OG_CREATOR_ESCROW_CONTRACT_ADDRESS",
-        "OG_SERVER_WALLET_KEY_REF",
-      ] as const) {
+      for (const key of ["OG_TREASURY_WALLET_ADDRESS"] as const) {
         if (!config[key]) {
           ctx.addIssue({
             code: "custom",

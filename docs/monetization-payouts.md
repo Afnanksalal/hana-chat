@@ -1,43 +1,30 @@
 # Creator Monetization and Payouts
 
-Hana monetization is a marketplace ledger, not a UI-only price flag. It is currently disabled by
-default with `MONETIZATION_ENABLED=false` while payment-provider fit is evaluated for the product
-category. The codebase still contains the full purchase, ledger, wallet, and payout model so it can
-be re-enabled behind the server flag once a provider is approved.
+Hana monetization is now crypto-native. `MONETIZATION_ENABLED=true` opens the paid product surface,
+and production monetization requires `OG_PAYMENTS_ENABLED=true` plus a configured
+`OG_TREASURY_WALLET_ADDRESS`.
 
 ## Provider Model
 
-- Razorpay Orders are used for paid character checkout only when `MONETIZATION_ENABLED=true` and live credentials are configured.
-- Local development can use mock checkout; production rejects mock checkout and mock payouts.
-- RazorpayX payouts use contacts, UPI fund accounts, idempotency keys, and the configured RazorpayX account number.
-- Razorpay Route is the long-term split-payment option if/when the account is eligible. Until then, Hana maintains an internal creator ledger and pays creators from available wallet balances.
-
-References:
-
-- Razorpay Route marketplace split payments: <https://razorpay.com/docs/payments/route/?locale=en-US>
-- RazorpayX payouts API: <https://razorpay.com/docs/api/x/payouts/?locale=en-US>
-- Razorpay webhooks: <https://razorpay.com/docs/webhooks/?preferred-country=IN>
-
-## Provider Compliance
-
-- Razorpay supports Individual/Unregistered Business onboarding paths, but live mode and settlements
-  require KYC approval, bank verification, and category approval.
-- Razorpay terms list adult-oriented goods/services and mature/friend-finder style businesses as
-  prohibited or high-risk categories. Do not assume live processing is approved until Razorpay has
-  explicitly accepted the final product category and content policy.
-- Marketplace payouts can run through Hana's internal ledger before provider approval, but money
-  should not leave the platform through RazorpayX until the master merchant, payout profile review,
-  tax, and sub-merchant obligations are confirmed.
+- Paid plans and paid character unlocks create `billing.crypto_payments` intents.
+- The browser asks the connected wallet to send native 0G to Hana's treasury wallet.
+- The API verifies the submitted transaction hash against the 0G RPC before activating access.
+- Creator payout destinations are 0G wallet addresses stored in `billing.crypto_payout_accounts`.
+- Admin payout settlement is proof-based: the admin sends the 0G payout transaction, then submits
+  the tx hash for server verification.
+- Local development can still use mock checkout/payout paths. Production rejects mock payment paths.
 
 ## Data Model
 
+- `billing.crypto_payments`: buyer payment intent, amount, chain, wallet, transaction hash, and finalization status.
+- `web3.chain_transactions`: inbound and outbound transaction proof records.
 - `billing.character_purchases`: idempotent buyer unlocks for paid characters.
 - `billing.creator_wallets`: creator balance snapshot by currency.
-- `billing.creator_ledger_entries`: signed accounting events for sales, fees, reserves, releases, reversals, and adjustments.
+- `billing.creator_ledger_entries`: accounting events for sales, fees, reserves, releases, reversals, and adjustments.
 - `billing.creator_earnings`: per-sale earning rows with `available_at` set after the creator hold window.
-- `billing.creator_payout_profiles`: encrypted payout destination and provider linkage.
-- `billing.creator_payouts`: payout requests and provider settlement status.
-- `identity.user_roles`: admin/support/moderator role gate for payout operations.
+- `billing.creator_payout_profiles`: creator-facing payout profile and review status.
+- `billing.crypto_payout_accounts`: creator wallet address, chain, token preference, and verification status.
+- `billing.creator_payouts`: payout requests and settlement status.
 
 ## Purchase Flow
 
@@ -46,54 +33,51 @@ flowchart TD
   Discover["Discover card"] --> CreatePurchase["POST /v1/monetization/character-purchases"]
   CreatePurchase --> AlreadyPaid{"Already unlocked?"}
   AlreadyPaid -- yes --> Chat["Open chat"]
-  AlreadyPaid -- no --> Trial{"30-message trial left?"}
-  Trial -- yes --> TrialChat["Open chat without checkout"]
+  AlreadyPaid -- no --> Trial{"Trial messages left?"}
+  Trial -- yes --> TrialChat["Open chat without payment"]
   TrialChat --> TrialDone["Trial messages count down"]
   TrialDone --> CreatePurchase
-  Trial -- no --> Order["Create Razorpay order or mock payment"]
-  Order --> Verify["Verify signature or webhook"]
+  Trial -- no --> Intent["Create 0G payment intent"]
+  Intent --> Wallet["Wallet sends native 0G to treasury"]
+  Wallet --> Verify["API verifies tx hash, amount, recipient, chain, and confirmations"]
   Verify --> Ledger["Ledger gross sale and platform fee"]
-  Ledger --> Wallet["Increase pending wallet balance with 7-day available_at"]
-  Wallet --> Access["Paid chat access granted"]
+  Ledger --> CreatorWallet["Increase pending wallet balance with hold-window available_at"]
+  CreatorWallet --> Access["Paid chat access granted"]
 ```
 
 ## Payout Flow
 
 ```mermaid
 flowchart TD
-  Wallet["Creator wallet"] --> Profile{"Verified payout profile?"}
-  Profile -- no --> Setup["Creator submits encrypted UPI profile"]
+  Wallet["Creator wallet"] --> Profile{"Verified crypto payout wallet?"}
+  Profile -- no --> Setup["Creator submits 0G wallet address"]
   Setup --> AdminVerify["Admin verifies payout profile"]
   Profile -- yes --> Request["Creator requests payout"]
   AdminVerify --> Request
   Request --> Reserve["Reserve available balance"]
-  Reserve --> AdminProcess["Admin processes payout"]
-  AdminProcess --> RazorpayX["RazorpayX provider"]
-  AdminProcess --> Manual["Manual settlement"]
-  RazorpayX --> Processed{"Processed?"}
-  Processed -- yes --> Paid["Mark payout paid and ledger settled"]
-  Processed -- no --> Refresh["Refresh provider status"]
-  Refresh --> Failed{"Failed?"}
-  Failed -- yes --> Release["Release reserved funds back to wallet"]
-  Failed -- no --> Paid
+  Reserve --> AdminTransfer["Admin sends 0G payout from treasury"]
+  AdminTransfer --> SubmitHash["Admin submits tx hash"]
+  SubmitHash --> Verify["API verifies sender, recipient, amount, chain, and confirmations"]
+  Verify --> Paid["Mark payout paid and ledger settled"]
+  Verify --> Confirming["Keep payout processing until confirmations complete"]
 ```
 
 ## Security Rules
 
-- The frontend never marks a paid character as unlocked. The API checks purchase rows before chat.
-- The trial is counted by persisted user messages for the exact buyer and character, so refreshing the app cannot reset it.
-- Razorpay signatures are verified server-side before `status = paid`.
-- Webhook events are stored idempotently before processing.
-- Payout destination data is encrypted with `PAYOUT_ENCRYPTION_KEY_BASE64`; only the last four characters of the UPI ID are returned to the UI.
+- The frontend never marks a paid character or plan active by itself.
+- The API checks purchase/subscription rows before granting paid access.
+- The trial is counted by persisted user messages for the exact buyer and character.
+- Payment verification checks transaction hash, chain ID, receipt success, recipient, sender when provided, amount, duplicate use, expiry, and confirmations.
+- Payout verification checks treasury sender, creator wallet recipient, amount, chain ID, receipt success, and confirmations.
 - Admin payout/profile routes require `identity.user_roles.role = admin`.
-- Failed payout refreshes return reserved funds through ledger entries instead of mutating balances silently.
+- Failed payout handling returns reserved funds through ledger entries instead of silently mutating balances.
 
 ## Operations
 
 - Creator wallet UI: `/app/wallet`.
 - Admin monetization UI: `/app/admin`.
 - While `MONETIZATION_ENABLED=false`, checkout, paid-character purchase, payout profile, and payout request endpoints return "coming soon" and the web UI disables paid controls.
-- Mandatory paid-character trial length is configured by `CREATOR_PAID_CHARACTER_TRIAL_MESSAGES` and defaults to 30.
-- Minimum payout and hold window are configured by `CREATOR_MIN_PAYOUT_CENTS` and `CREATOR_EARNING_HOLD_DAYS`; the product default is a 7-day creator earning hold.
+- Required payment env: `OG_ENABLED=true`, `OG_PAYMENTS_ENABLED=true`, `OG_CHAIN_ID`, `OG_RPC_URL`, `OG_TREASURY_WALLET_ADDRESS`, and `OG_PAYMENT_TOKEN_USD_CENTS`.
+- Mandatory paid-character trial length is configured by `CREATOR_PAID_CHARACTER_TRIAL_MESSAGES`.
+- Minimum payout and hold window are configured by `CREATOR_MIN_PAYOUT_CENTS` and `CREATOR_EARNING_HOLD_DAYS`.
 - Platform fee is configured by `CREATOR_PLATFORM_FEE_BPS`.
-- RazorpayX requires `RAZORPAYX_ACCOUNT_NUMBER`; UPI payouts require an INR wallet before live provider payout can be used.

@@ -158,11 +158,10 @@ Set and keep secret:
 - `MAIL_DKIM_KEYS_DIR`
 - `SMTP_RELAY_HOSTNAME`
 - `PAYOUT_ENCRYPTION_KEY_BASE64`
-- `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET`, and `RAZORPAYX_ACCOUNT_NUMBER` only when `MONETIZATION_ENABLED=true`
+- `OG_ENABLED`, `OG_PAYMENTS_ENABLED`, `OG_CHAIN_ID`, `OG_RPC_URL`, and `OG_TREASURY_WALLET_ADDRESS` when `MONETIZATION_ENABLED=true`
 
-The deployed Playground env currently has xAI configured. Monetization should stay disabled with
-`MONETIZATION_ENABLED=false` until a payment provider approves the product category. Payment
-provider values may stay placeholder/missing while the flag is off.
+The deployed Playground env currently has xAI configured. Monetization uses 0G native payments
+when the monetization and 0G payment flags are enabled.
 
 `ADMIN_EMAIL` and `ADMIN_STATIC_OTP` configure the owner/admin bootstrap. The login still uses the
 normal email/code flow, but the configured owner email can use the static env code instead of SMTP.

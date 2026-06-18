@@ -55,9 +55,9 @@ The web container overrides `API_GATEWAY_URL` to `http://api-gateway:4000` so we
 call the API over the private Docker network. Domain traffic uses `.hanachat.site` cookies; direct IP
 testing remains available but is not the canonical SEO/auth host.
 
-The Playground VPS env has xAI configured. Monetization remains disabled with
-`MONETIZATION_ENABLED=false` until a payment gateway that supports the product category is selected.
-Razorpay values may stay placeholder/missing while the flag is off. SMTP is handled by the
+The Playground VPS env has xAI configured. Monetization uses 0G payments when
+`MONETIZATION_ENABLED=true` and `OG_PAYMENTS_ENABLED=true`; set `OG_TREASURY_WALLET_ADDRESS`
+before enabling paid checkout. SMTP is handled by the
 lightweight `smtp-relay` Postfix container on the private Docker network; keep DKIM keys under
 `/opt/hana-chat/shared/opendkim-keys` and do not commit private keys.
 
