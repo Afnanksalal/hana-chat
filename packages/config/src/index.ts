@@ -156,6 +156,7 @@ export const AppConfigSchema = z
 
     OG_ENABLED: booleanEnvSchema.default(false),
     OG_STORAGE_ENABLED: booleanEnvSchema.default(false),
+    OG_STORAGE_UPLOAD_ENABLED: booleanEnvSchema.default(false),
     OG_PAYMENTS_ENABLED: booleanEnvSchema.default(false),
     OG_NETWORK: z.enum(["mainnet", "testnet", "local"]).default("mainnet"),
     OG_CHAIN_ID: z.coerce.number().int().positive().default(16_661),
@@ -250,6 +251,22 @@ export const AppConfigSchema = z
         code: "custom",
         path: ["OG_STORAGE_ENABLED"],
         message: "OG_STORAGE_ENABLED requires OG_ENABLED",
+      });
+    }
+
+    if (config.OG_STORAGE_UPLOAD_ENABLED && !config.OG_STORAGE_ENABLED) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["OG_STORAGE_UPLOAD_ENABLED"],
+        message: "OG_STORAGE_UPLOAD_ENABLED requires OG_STORAGE_ENABLED",
+      });
+    }
+
+    if (config.OG_STORAGE_UPLOAD_ENABLED && !config.OG_SERVER_WALLET_KEY_REF) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["OG_SERVER_WALLET_KEY_REF"],
+        message: "OG_SERVER_WALLET_KEY_REF must be configured when 0G storage uploads are enabled",
       });
     }
 

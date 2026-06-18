@@ -25,6 +25,20 @@ Use 0G as an optional decentralized settlement and storage lane, not as the live
 
 This gives Hana a Web3-native path without sacrificing latency, deletion controls, or prompt quality.
 
+## Implementation Status
+
+As of 2026-06-18, Hana has the backend foundation for Phase 0 and Phase 1:
+
+- `@hana/og-bridge` can build hash-only memory snapshot commitments.
+- `@hana/og-bridge` also has an optional 0G Storage SDK path for encrypted ECIES memory snapshot
+  upload and proof-enabled download/decryption.
+- The worker can store local commitments by default, or perform real 0G Storage uploads when
+  `OG_STORAGE_UPLOAD_ENABLED=true` and `OG_SERVER_WALLET_KEY_REF` resolves to a configured signer.
+- `pnpm og:storage:smoke` uploads and proof-downloads a harmless dummy snapshot when a funded 0G
+  signer is supplied through env.
+- Live production flags remain off by default. Wallet UI, checkout, watcher/finality, smart
+  contracts, creator payouts, and admin dashboards are still future phases.
+
 ## Current 0G Research Snapshot
 
 0G describes its stack as a modular AI-first chain with storage, compute, data availability, service
@@ -261,6 +275,7 @@ Keep this behind flags until testnet, audits, and legal review are done.
 ```bash
 OG_ENABLED=false
 OG_STORAGE_ENABLED=false
+OG_STORAGE_UPLOAD_ENABLED=false
 OG_PAYMENTS_ENABLED=false
 OG_NETWORK=mainnet
 OG_CHAIN_ID=16661
@@ -273,6 +288,11 @@ OG_CONFIRMATION_BLOCKS=12
 OG_STORAGE_SNAPSHOT_INTERVAL_TURNS=25
 OG_STORAGE_SNAPSHOT_MIN_IMPORTANCE=0.65
 ```
+
+`OG_STORAGE_ENABLED` allows the product to queue and record decentralized snapshot commitments.
+`OG_STORAGE_UPLOAD_ENABLED` turns on live 0G Storage SDK uploads and requires a server wallet key
+reference. For the current env-backed implementation, use `OG_SERVER_WALLET_KEY_REF=env:NAME` and
+provide the private key through the runtime secret environment, not in git.
 
 `MONETIZATION_ENABLED` must remain the top-level public monetization gate. `OG_PAYMENTS_ENABLED`
 should not bypass it.

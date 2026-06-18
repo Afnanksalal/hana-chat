@@ -1,7 +1,11 @@
 import { loadConfig, type AppConfig } from "@hana/config";
 import { createDatabase, type HanaDatabase } from "@hana/database";
 import { DomainError } from "@hana/errors";
-import { buildMemorySnapshotCommitment } from "@hana/og-bridge";
+import {
+  buildMemorySnapshotCommitment,
+  uploadEncryptedMemorySnapshotTo0g,
+  type OgMemorySnapshotFact,
+} from "@hana/og-bridge";
 import { Injectable, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
 import { sql, type Kysely } from "kysely";
 import neo4j, { type Driver } from "neo4j-driver";
@@ -313,22 +317,37 @@ FOREACH (_ IN CASE WHEN $conversationId IS NULL THEN [] ELSE [1] END |
       return;
     }
 
-    const commitment = buildMemorySnapshotCommitment({
+    const snapshotFacts: OgMemorySnapshotFact[] = facts.map((fact) => ({
+      id: fact.id,
+      kind: fact.kind,
+      importance: fact.importance,
+      emotionalWeight: fact.emotional_weight,
+      updatedAt: fact.updated_at.toISOString(),
+      text: fact.text,
+      sourceMessageIds: fact.source_message_ids,
+    }));
+    const snapshotInput = {
       snapshotKind: "conversation_memory",
       network: this.config.OG_NETWORK,
       userId,
       characterId,
       conversationId,
-      facts: facts.map((fact) => ({
-        id: fact.id,
-        kind: fact.kind,
-        importance: fact.importance,
-        emotionalWeight: fact.emotional_weight,
-        updatedAt: fact.updated_at.toISOString(),
-        text: fact.text,
-        sourceMessageIds: fact.source_message_ids,
-      })),
-    });
+      facts: snapshotFacts,
+    } as const;
+    const commitment = buildMemorySnapshotCommitment(snapshotInput);
+    let uploadResult: Awaited<ReturnType<typeof uploadEncryptedMemorySnapshotTo0g>> | null = null;
+
+    if (this.config.OG_STORAGE_UPLOAD_ENABLED) {
+      const keyRef = resolveOgKeyRef(this.config.OG_SERVER_WALLET_KEY_REF);
+
+      uploadResult = await uploadEncryptedMemorySnapshotTo0g(snapshotInput, {
+        rpcUrl: this.config.OG_RPC_URL,
+        indexerUrl: this.config.OG_STORAGE_INDEXER_URL,
+        signerPrivateKey: resolveOgPrivateKey(keyRef),
+        encryptionKeyRef: keyRef,
+      });
+    }
+
     const now = new Date();
 
     await this.db
@@ -339,14 +358,24 @@ FOREACH (_ IN CASE WHEN $conversationId IS NULL THEN [] ELSE [1] END |
         conversation_id: conversationId,
         snapshot_kind: "conversation_memory",
         storage_network: this.config.OG_NETWORK,
-        root_hash: commitment.rootHash,
-        tx_hash: null,
+        root_hash: uploadResult?.rootHash ?? commitment.rootHash,
+        tx_hash: uploadResult?.txHash ?? null,
         manifest_hash: commitment.manifestHash,
-        encryption_mode: "manifest_hash_only",
-        encryption_key_ref: "0g-upload-disabled",
-        status: "pending_upload",
+        encryption_mode: uploadResult?.encryptionMode ?? "manifest_hash_only",
+        encryption_key_ref: uploadResult?.encryptionKeyRef ?? "0g-upload-disabled",
+        status: uploadResult ? "uploaded" : "pending_upload",
         source_memory_ids: commitment.sourceMemoryIds,
-        manifest_json: commitment.manifest,
+        manifest_json: uploadResult
+          ? {
+              ...commitment.manifest,
+              storage: {
+                payloadHash: uploadResult.payloadHash,
+                signerAddress: uploadResult.signerAddress,
+                localMerkleRoot: uploadResult.localMerkleRoot,
+                uploadedAt: uploadResult.uploadedAt,
+              },
+            }
+          : commitment.manifest,
         idempotency_key: `memory.snapshot:${conversationId}:${commitment.manifestHash}`,
         failure_reason: null,
         updated_at: now,
@@ -842,6 +871,44 @@ function toClickHouseDateTime64(date: Date): string {
 
 function qdrantBaseUrl(config: AppConfig): string {
   return config.QDRANT_URL.replace(/\/+$/, "");
+}
+
+function resolveOgKeyRef(keyRef: string | undefined): string {
+  if (!keyRef) {
+    throw new DomainError("INTERNAL", "0G storage upload key reference is not configured");
+  }
+
+  return keyRef;
+}
+
+function resolveOgPrivateKey(keyRef: string | undefined): string {
+  if (!keyRef) {
+    throw new DomainError("INTERNAL", "0G storage upload key reference is not configured");
+  }
+
+  if (!keyRef.startsWith("env:")) {
+    throw new DomainError("INTERNAL", "Unsupported 0G storage upload key reference", {
+      keyRef,
+    });
+  }
+
+  const envName = keyRef.slice("env:".length);
+
+  if (!/^[A-Z0-9_]+$/.test(envName)) {
+    throw new DomainError("INTERNAL", "Invalid 0G storage upload env key reference", {
+      keyRef,
+    });
+  }
+
+  const privateKey = process.env[envName]?.trim();
+
+  if (!privateKey) {
+    throw new DomainError("INTERNAL", "0G storage upload private key is missing", {
+      envName,
+    });
+  }
+
+  return privateKey;
 }
 
 async function fetchWithTimeout(
