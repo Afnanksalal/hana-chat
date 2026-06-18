@@ -66,6 +66,7 @@ pnpm web:smoke
 - [Architecture](docs/architecture.md)
 - [Character Marketplace System](docs/character-marketplace-system.md)
 - [Creator Monetization and Payouts](docs/monetization-payouts.md)
+- [0G Memory and Crypto Monetization Strategy](docs/0g-memory-and-crypto-monetization.md)
 - [Admin Analytics and Observability](docs/admin-analytics-observability.md)
 - [Memory Architecture](docs/memory-architecture.md)
 - [Technical Blueprint](docs/hana-chat-technical-blueprint.md)
