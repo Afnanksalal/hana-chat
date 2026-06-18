@@ -29,7 +29,7 @@
     "ai:harness": "node scripts/ai-harness.mjs",
     "product:smoke": "node scripts/product-smoke.mjs",
     "web:smoke": "node scripts/web-smoke.mjs",
-    "og:storage:smoke": "pnpm --filter @hana/og-bridge build && node scripts/og-storage-smoke.mjs",
+    "og:storage:smoke": "corepack pnpm --filter @hana/og-bridge build && node scripts/og-storage-smoke.mjs",
     "clean": "turbo clean && rimraf node_modules"
   },
   "pnpm": {
