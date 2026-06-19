@@ -969,6 +969,10 @@ function getMailer(config: AppConfig): Transporter<SMTPPool.SentMessageInfo> {
     host: config.SMTP_HOST,
     port: config.SMTP_PORT,
     secure: config.SMTP_SECURE,
+    ignoreTLS: config.SMTP_IGNORE_TLS,
+    tls: {
+      rejectUnauthorized: config.SMTP_TLS_REJECT_UNAUTHORIZED,
+    },
     pool: true,
     maxConnections: config.SMTP_POOL_MAX_CONNECTIONS,
     maxMessages: config.SMTP_POOL_MAX_MESSAGES,

@@ -160,6 +160,8 @@ Priority order:
      - `SMTP_IGNORE_TLS=true` for private Docker relay mode, or
      - `SMTP_TLS_REJECT_UNAUTHORIZED=false` only for the internal relay, not internet SMTP.
    - Wire these into `nodemailer.createTransport`.
+   - Implemented on June 19, 2026. The VPS should use `SMTP_IGNORE_TLS=true` while the app sends to
+     the private `smtp-relay` container.
 2. Configure an upstream SMTP relay on port 587.
    - Set:
      - `SMTP_RELAY_UPSTREAM_HOST`

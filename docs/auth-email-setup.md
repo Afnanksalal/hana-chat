@@ -36,6 +36,8 @@ over the private Docker network:
 SMTP_HOST=smtp-relay
 SMTP_PORT=587
 SMTP_SECURE=false
+SMTP_IGNORE_TLS=true
+SMTP_TLS_REJECT_UNAUTHORIZED=true
 SMTP_USER=
 SMTP_PASSWORD=
 SMTP_FROM=Hana Chat <no-reply@app.hanachat.site>
@@ -47,6 +49,11 @@ MAIL_DKIM_KEYS_DIR=/opt/hana-chat/shared/opendkim-keys
 ```
 
 The relay binds to `127.0.0.1:1587` for VPS-local testing and is not exposed as a public open relay.
+`SMTP_IGNORE_TLS=true` is intentional for the private Docker-network hop from the app to the local
+relay. If the app is pointed directly at an internet SMTP provider instead, leave
+`SMTP_IGNORE_TLS=false` and only set `SMTP_TLS_REJECT_UNAUTHORIZED=false` for a trusted private
+relay with a self-signed certificate.
+
 If the VPS provider blocks outbound port 25, set `SMTP_RELAY_UPSTREAM_HOST`,
 `SMTP_RELAY_UPSTREAM_USERNAME`, and `SMTP_RELAY_UPSTREAM_PASSWORD` to use an approved upstream SMTP
 relay while keeping the app configured to `smtp-relay`.

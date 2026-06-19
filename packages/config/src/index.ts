@@ -180,6 +180,8 @@ export const AppConfigSchema = z
     SMTP_HOST: z.string().optional(),
     SMTP_PORT: portSchema.default(587),
     SMTP_SECURE: booleanEnvSchema.default(false),
+    SMTP_IGNORE_TLS: booleanEnvSchema.default(false),
+    SMTP_TLS_REJECT_UNAUTHORIZED: booleanEnvSchema.default(true),
     SMTP_USER: z.string().optional(),
     SMTP_PASSWORD: z.string().optional(),
     SMTP_FROM: z.string().default("Hana Chat <no-reply@app.hanachat.site>"),
