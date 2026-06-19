@@ -377,7 +377,11 @@ export default function SettingsPage() {
           <strong>
             {activePlan ? money(activePlan.monthlyPriceCents, activePlan.currency) : "$0"}
           </strong>
-          <span>{activePlan?.monthlyMessageLimit.toLocaleString() ?? "30"} monthly messages</span>
+          <div className="billing-plan-status">
+            <span>{activePlan?.monthlyMessageLimit.toLocaleString() ?? "30"} monthly messages</span>
+            <span>{activePlan?.deepMemoryEnabled ? "Deep memory" : "Basic memory"}</span>
+            <span>{monetizationComingSoon ? "0G checkout paused" : "0G checkout ready"}</span>
+          </div>
           <button
             className="secondary-action compact"
             type="button"
@@ -429,13 +433,22 @@ export default function SettingsPage() {
               className={plan.id === activePlanId ? "pricing-card featured" : "pricing-card"}
               key={plan.id}
             >
-              <WalletCards size={22} />
+              <div className="pricing-card-head">
+                <WalletCards size={22} />
+                <span>{paidPlanId ? "0G billing" : "Starter"}</span>
+              </div>
               <h3>{plan.name}</h3>
               {plan.comingSoon ? <span className="coming-soon-pill">Coming soon</span> : null}
               <strong>
                 {money(plan.monthlyPriceCents, plan.currency)}
                 <span>/mo</span>
               </strong>
+              <div className="plan-payment-note">
+                <CreditCard size={15} />
+                <span>
+                  {paidPlanId ? "Wallet checkout with on-chain verification" : "Free access"}
+                </span>
+              </div>
               <ul>
                 <li>
                   <Check size={15} /> {plan.monthlyMessageLimit.toLocaleString()} monthly messages

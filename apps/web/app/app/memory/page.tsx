@@ -3,10 +3,14 @@
 import {
   Archive,
   Brain,
+  CheckCircle2,
   Clock3,
+  Database,
   Download,
   FileJson,
   HardDriveUpload,
+  KeyRound,
+  Layers3,
   MessageSquareText,
   RefreshCw,
   ShieldCheck,
@@ -169,13 +173,23 @@ export default function MemoryVaultPage() {
       : "0G storage off";
   const newestSnapshot = vault.snapshots[0] ?? null;
   const creatorArchiveReady = characters.length > 0;
+  const uploadedTotal = vault.summary.uploadedSnapshots + vault.summary.confirmedSnapshots;
+  const uploadRate =
+    vault.summary.snapshots > 0 ? Math.round((uploadedTotal / vault.summary.snapshots) * 100) : 0;
+  const vaultHealth =
+    vault.summary.failedSnapshots > 0
+      ? `${vault.summary.failedSnapshots} failed`
+      : vault.summary.pendingSnapshots > 0
+        ? `${vault.summary.pendingSnapshots} pending`
+        : "Healthy";
+  const latestProof = newestSnapshot?.txHash ?? newestSnapshot?.rootHash ?? null;
   const metricCards = useMemo(
     () => [
       {
         label: "Snapshots",
         value: vault.summary.snapshots.toLocaleString(),
-        detail: `${vault.summary.uploadedSnapshots + vault.summary.confirmedSnapshots} uploaded`,
-        icon: HardDriveUpload,
+        detail: `${uploadRate}% uploaded or confirmed`,
+        icon: Database,
       },
       {
         label: "Rooms",
@@ -192,17 +206,17 @@ export default function MemoryVaultPage() {
       {
         label: "Network",
         value: vault.settings.network,
-        detail: storageLabel,
+        detail: vaultHealth,
         icon: ShieldCheck,
       },
     ],
-    [storageLabel, vault],
+    [uploadRate, vault, vaultHealth],
   );
 
   return (
     <div className="app-page wallet-page memory-page">
-      <section className="wallet-hero memory-hero">
-        <div>
+      <section className="wallet-hero memory-hero memory-command-hero">
+        <div className="memory-hero-copy">
           <span className="section-label">
             <Brain size={15} /> Memory Vault
           </span>
@@ -212,16 +226,54 @@ export default function MemoryVaultPage() {
             archives live here.
           </p>
           <div className="memory-status-strip" aria-label="0G memory status">
-            <StatusPill label={vault.settings.ogEnabled ? "0G enabled" : "0G disabled"} />
-            <StatusPill label={storageLabel} />
+            <StatusPill
+              tone={vault.settings.ogEnabled ? "positive" : "pending"}
+              label={vault.settings.ogEnabled ? "0G enabled" : "0G disabled"}
+            />
+            <StatusPill
+              tone={vault.settings.uploadEnabled ? "positive" : "pending"}
+              label={storageLabel}
+            />
             {newestSnapshot ? (
-              <StatusPill label={`Latest ${formatStatus(newestSnapshot.status)}`} />
+              <StatusPill
+                tone={statusClass(newestSnapshot.status)}
+                label={`Latest ${formatStatus(newestSnapshot.status)}`}
+              />
             ) : null}
           </div>
         </div>
-        <button className="secondary-action compact" type="button" onClick={() => void loadVault()}>
-          <RefreshCw size={15} /> Refresh
-        </button>
+        <div className="memory-proof-card" aria-label="Latest 0G memory proof">
+          <span>
+            <KeyRound size={15} /> Latest proof
+          </span>
+          <strong>{formatHash(latestProof)}</strong>
+          <small>
+            {newestSnapshot
+              ? `${formatSnapshotKind(newestSnapshot.kind)} - ${formatDate(newestSnapshot.createdAt)}`
+              : "Create a snapshot to publish the first encrypted commitment."}
+          </small>
+          <div className="memory-proof-grid">
+            <span>
+              <b>{uploadedTotal.toLocaleString()}</b>
+              uploaded
+            </span>
+            <span>
+              <b>{vault.summary.pendingSnapshots.toLocaleString()}</b>
+              pending
+            </span>
+            <span>
+              <b>{vault.summary.failedSnapshots.toLocaleString()}</b>
+              failed
+            </span>
+          </div>
+          <button
+            className="secondary-action compact"
+            type="button"
+            onClick={() => void loadVault()}
+          >
+            <RefreshCw size={15} /> Refresh
+          </button>
+        </div>
       </section>
 
       <section className="wallet-metric-grid">
@@ -236,7 +288,7 @@ export default function MemoryVaultPage() {
       </section>
 
       <section className="wallet-grid memory-action-grid">
-        <article className="wallet-table-panel">
+        <article className="wallet-table-panel memory-action-panel">
           <div className="panel-heading split">
             <div>
               <span className="section-label">
@@ -262,9 +314,20 @@ export default function MemoryVaultPage() {
               </small>
             </span>
           </div>
+          <div className="memory-process-list" aria-label="Export process">
+            <span>
+              <CheckCircle2 size={15} /> Encrypt memory facts
+            </span>
+            <span>
+              <Layers3 size={15} /> Write manifest hash
+            </span>
+            <span>
+              <ShieldCheck size={15} /> Queue 0G proof
+            </span>
+          </div>
         </article>
 
-        <article className="wallet-table-panel">
+        <article className="wallet-table-panel memory-action-panel">
           <div className="panel-heading split">
             <div>
               <span className="section-label">
@@ -434,8 +497,10 @@ function normalizeVault(payload: Partial<MemoryVaultResponse>): MemoryVaultRespo
   };
 }
 
-function StatusPill(props: { label: string }) {
-  return <span>{props.label}</span>;
+function StatusPill(props: { label: string; tone?: string }) {
+  return (
+    <span className={props.tone ? `memory-pill ${props.tone}` : "memory-pill"}>{props.label}</span>
+  );
 }
 
 function formatSnapshotKind(value: string): string {
