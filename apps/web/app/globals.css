@@ -3898,6 +3898,282 @@ select:hover,
   border-radius: calc(var(--radius) - 2px);
 }
 
+.payment-desk-hero,
+.memory-command-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(310px, 390px);
+  align-items: stretch;
+  padding: 18px;
+  background:
+    linear-gradient(135deg, rgba(255, 31, 109, 0.12), transparent 34%),
+    linear-gradient(160deg, #050507 0%, #07090b 58%, #0a0507 100%);
+  border-color: #332632;
+}
+
+.payment-desk-hero h1,
+.memory-command-hero h1 {
+  max-width: 760px;
+  font-size: clamp(32px, 3.4vw, 48px);
+}
+
+.payment-titlebar,
+.memory-titlebar,
+.payment-wallet-card-header,
+.memory-terminal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.payment-titlebar .secondary-action,
+.memory-titlebar .secondary-action {
+  min-height: 38px;
+}
+
+.payment-hero-copy,
+.memory-hero-copy {
+  min-height: 300px;
+  padding: 8px;
+}
+
+.payment-balance-hero,
+.memory-integrity-meter,
+.payment-minimum-meter {
+  display: grid;
+  gap: 8px;
+}
+
+.payment-balance-hero {
+  width: min(520px, 100%);
+  padding: 16px;
+  background: rgba(2, 2, 3, 0.78);
+  border: 1px solid #342935;
+  border-left: 4px solid var(--primary);
+  border-radius: calc(var(--radius) - 2px);
+}
+
+.payment-balance-hero span,
+.payment-minimum-meter span,
+.memory-integrity-meter span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.payment-balance-hero strong {
+  font-size: clamp(42px, 6vw, 72px);
+  line-height: 0.95;
+  letter-spacing: 0;
+}
+
+.payment-balance-hero small {
+  color: var(--muted);
+}
+
+.payment-minimum-meter,
+.memory-integrity-meter {
+  width: min(520px, 100%);
+}
+
+.payment-minimum-meter > div,
+.memory-integrity-meter > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.payment-minimum-meter b,
+.memory-integrity-meter strong {
+  color: #f8f4f7;
+  font-size: 13px;
+}
+
+.payment-minimum-meter i,
+.memory-integrity-meter i {
+  display: block;
+  overflow: hidden;
+  height: 9px;
+  background: #020203;
+  border: 1px solid #2c2630;
+  border-radius: 999px;
+}
+
+.payment-minimum-meter i span,
+.memory-integrity-meter i span {
+  display: block;
+  height: 100%;
+  background: #37d67a;
+  border-radius: inherit;
+}
+
+.payment-wallet-card,
+.memory-proof-terminal {
+  align-content: stretch;
+  min-height: 300px;
+  max-width: none;
+  background: #020405;
+  border-color: #33403c;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.payment-wallet-card-header span,
+.memory-terminal-header span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.payment-wallet-card-header b,
+.memory-terminal-header b {
+  min-height: 30px;
+  padding: 6px 9px;
+  color: #f6a6c5;
+  font-size: 12px;
+  border: 1px solid rgba(246, 166, 197, 0.44);
+  border-radius: calc(var(--radius) - 3px);
+}
+
+.payment-wallet-card-header b.ready {
+  color: #9bf0bd;
+  border-color: rgba(55, 214, 122, 0.5);
+}
+
+.payment-wallet-card > strong,
+.memory-proof-terminal > strong {
+  align-self: center;
+  padding: 14px 0;
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+}
+
+.memory-proof-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.memory-proof-list div {
+  display: grid;
+  grid-template-columns: 82px minmax(0, 1fr);
+  gap: 10px;
+  padding: 10px;
+  background: #050708;
+  border: 1px solid #25312f;
+  border-radius: calc(var(--radius) - 3px);
+}
+
+.memory-proof-list dt,
+.memory-proof-list dd {
+  min-width: 0;
+  margin: 0;
+}
+
+.memory-proof-list dt {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.memory-proof-list dd {
+  overflow-wrap: anywhere;
+  color: #f8f4f7;
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+}
+
+.payment-kpi-grid,
+.memory-metric-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.payment-kpi-card,
+.memory-stat-card {
+  min-height: 126px;
+  background: #040405;
+  border-color: #2b2730;
+}
+
+.payment-kpi-card.primary {
+  background: #0d080a;
+}
+
+.memory-stat-card {
+  border-left: 3px solid #33403c;
+}
+
+.memory-stat-card:first-child {
+  border-left-color: var(--primary);
+}
+
+.payment-flow-strip article {
+  position: relative;
+  overflow: hidden;
+}
+
+.payment-flow-strip article::after {
+  position: absolute;
+  right: 14px;
+  bottom: 12px;
+  width: 42px;
+  height: 2px;
+  content: "";
+  background: #3a313a;
+}
+
+.payment-flow-strip article.active::after {
+  background: #37d67a;
+}
+
+.memory-operations-grid {
+  grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr);
+}
+
+.memory-action-panel,
+.payout-profile-card,
+.payout-request-card,
+.payment-purchases-panel {
+  background: #040405;
+  border-color: #2b2730;
+}
+
+.memory-action-copy {
+  background: #070708;
+}
+
+.memory-action-copy.compact {
+  align-items: center;
+}
+
+.memory-action-copy b {
+  color: #f8f4f7;
+  font-size: clamp(30px, 4vw, 46px);
+  line-height: 0.95;
+}
+
+.memory-primary-action {
+  min-width: 150px;
+}
+
+.payout-profile-card,
+.payout-request-card {
+  gap: 18px;
+}
+
+.payout-request-summary {
+  padding: 0;
+}
+
+.payment-status-panel {
+  padding: 14px;
+  background: #070708;
+  border: 1px solid #2b2730;
+  border-radius: calc(var(--radius) - 2px);
+}
+
 .compact-empty {
   min-height: 180px;
   padding: 18px;
@@ -7475,5 +7751,47 @@ textarea {
 
   .field-limit-meter {
     font-size: 10.5px;
+  }
+}
+
+@media (max-width: 1120px) {
+  .payment-desk-hero,
+  .memory-command-hero,
+  .memory-operations-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .payment-wallet-card,
+  .memory-proof-terminal,
+  .payment-hero-copy,
+  .memory-hero-copy {
+    min-height: auto;
+  }
+}
+
+@media (max-width: 760px) {
+  .payment-titlebar,
+  .memory-titlebar,
+  .payment-wallet-card-header,
+  .memory-terminal-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .payment-titlebar .secondary-action,
+  .memory-titlebar .secondary-action,
+  .memory-primary-action {
+    width: 100%;
+  }
+
+  .payment-balance-hero strong {
+    font-size: clamp(38px, 14vw, 56px);
+  }
+
+  .payment-command-grid,
+  .memory-proof-grid,
+  .memory-proof-list div,
+  .payout-request-summary {
+    grid-template-columns: 1fr;
   }
 }

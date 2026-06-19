@@ -183,6 +183,12 @@ export default function MemoryVaultPage() {
         ? `${vault.summary.pendingSnapshots} pending`
         : "Healthy";
   const latestProof = newestSnapshot?.txHash ?? newestSnapshot?.rootHash ?? null;
+  const proofRows = [
+    ["Network", vault.settings.network],
+    ["Storage", storageLabel],
+    ["Root", formatHash(newestSnapshot?.rootHash ?? null)],
+    ["Manifest", formatHash(newestSnapshot?.manifestHash ?? null)],
+  ];
   const metricCards = useMemo(
     () => [
       {
@@ -217,13 +223,22 @@ export default function MemoryVaultPage() {
     <div className="app-page wallet-page memory-page">
       <section className="wallet-hero memory-hero memory-command-hero">
         <div className="memory-hero-copy">
-          <span className="section-label">
-            <Brain size={15} /> Memory Vault
-          </span>
-          <h1>Own the context your rooms remember.</h1>
+          <div className="memory-titlebar">
+            <span className="section-label">
+              <Brain size={15} /> Memory Vault
+            </span>
+            <button
+              className="secondary-action compact"
+              type="button"
+              onClick={() => void loadVault()}
+            >
+              <RefreshCw size={15} /> Refresh
+            </button>
+          </div>
+          <h1>0G memory control room</h1>
           <p>
-            Encrypted memory commitments, 0G storage uploads, user exports, and creator soul-pack
-            archives live here.
+            Review what is remembered, package private exports, and publish encrypted proofs without
+            hunting through chat history.
           </p>
           <div className="memory-status-strip" aria-label="0G memory status">
             <StatusPill
@@ -241,44 +256,46 @@ export default function MemoryVaultPage() {
               />
             ) : null}
           </div>
+          <div className="memory-integrity-meter">
+            <div>
+              <span>Upload coverage</span>
+              <strong>{uploadRate}%</strong>
+            </div>
+            <i aria-hidden="true">
+              <span style={{ width: `${uploadRate}%` }} />
+            </i>
+          </div>
         </div>
-        <div className="memory-proof-card" aria-label="Latest 0G memory proof">
-          <span>
-            <KeyRound size={15} /> Latest proof
-          </span>
+        <div
+          className="memory-proof-card memory-proof-terminal"
+          aria-label="Latest 0G memory proof"
+        >
+          <div className="memory-terminal-header">
+            <span>
+              <KeyRound size={15} /> Proof stream
+            </span>
+            <b>{vaultHealth}</b>
+          </div>
           <strong>{formatHash(latestProof)}</strong>
           <small>
             {newestSnapshot
               ? `${formatSnapshotKind(newestSnapshot.kind)} - ${formatDate(newestSnapshot.createdAt)}`
               : "Create a snapshot to publish the first encrypted commitment."}
           </small>
-          <div className="memory-proof-grid">
-            <span>
-              <b>{uploadedTotal.toLocaleString()}</b>
-              uploaded
-            </span>
-            <span>
-              <b>{vault.summary.pendingSnapshots.toLocaleString()}</b>
-              pending
-            </span>
-            <span>
-              <b>{vault.summary.failedSnapshots.toLocaleString()}</b>
-              failed
-            </span>
-          </div>
-          <button
-            className="secondary-action compact"
-            type="button"
-            onClick={() => void loadVault()}
-          >
-            <RefreshCw size={15} /> Refresh
-          </button>
+          <dl className="memory-proof-list">
+            {proofRows.map(([label, value]) => (
+              <div key={label}>
+                <dt>{label}</dt>
+                <dd>{value}</dd>
+              </div>
+            ))}
+          </dl>
         </div>
       </section>
 
-      <section className="wallet-metric-grid">
+      <section className="wallet-metric-grid memory-metric-grid">
         {metricCards.map((card) => (
-          <article className="wallet-metric" key={card.label}>
+          <article className="wallet-metric memory-stat-card" key={card.label}>
             <card.icon size={22} />
             <span>{card.label}</span>
             <strong>{card.value}</strong>
@@ -287,7 +304,7 @@ export default function MemoryVaultPage() {
         ))}
       </section>
 
-      <section className="wallet-grid memory-action-grid">
+      <section className="wallet-grid memory-action-grid memory-operations-grid">
         <article className="wallet-table-panel memory-action-panel">
           <div className="panel-heading split">
             <div>
@@ -297,7 +314,7 @@ export default function MemoryVaultPage() {
               <h2>Personal memory export</h2>
             </div>
             <button
-              className="primary-action compact"
+              className="primary-action compact memory-primary-action"
               type="button"
               disabled={busyAction !== null || vault.summary.roomsWithMemory === 0}
               onClick={() => void queueExport()}
@@ -308,7 +325,8 @@ export default function MemoryVaultPage() {
           <div className="memory-action-copy">
             <Brain size={22} />
             <span>
-              <strong>{vault.summary.roomsWithMemory.toLocaleString()} rooms ready</strong>
+              <b>{vault.summary.roomsWithMemory.toLocaleString()}</b>
+              <strong>rooms ready</strong>
               <small>
                 {vault.summary.snapshots.toLocaleString()} decentralized records created
               </small>
@@ -335,6 +353,14 @@ export default function MemoryVaultPage() {
               </span>
               <h2>Soul-packs</h2>
             </div>
+          </div>
+          <div className="memory-action-copy compact">
+            <Archive size={22} />
+            <span>
+              <b>{characters.length.toLocaleString()}</b>
+              <strong>creator characters</strong>
+              <small>Archive character context into portable 0G packages.</small>
+            </span>
           </div>
           <div className="wallet-table memory-creator-list">
             {characters.slice(0, 4).map((character) => (

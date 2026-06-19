@@ -211,6 +211,13 @@ export default function CreatorWalletPage() {
       ? `...${wallet.payoutProfile.walletLast4}`
       : "Not connected";
   const walletUpdatedAt = formatDate(wallet.wallet.updatedAt);
+  const minimumProgress =
+    wallet.policy.minimumPayoutCents > 0
+      ? Math.min(
+          100,
+          Math.round((wallet.wallet.availableCents / wallet.policy.minimumPayoutCents) * 100),
+        )
+      : 0;
   const recentPurchases = wallet.purchases.slice(0, 5);
   const paymentSteps = [
     {
@@ -237,29 +244,59 @@ export default function CreatorWalletPage() {
 
   return (
     <div className="app-page wallet-page">
-      <section className="wallet-hero payment-hero">
+      <section className="wallet-hero payment-hero payment-desk-hero">
         <div className="payment-hero-copy">
-          <span className="section-label">
-            <WalletCards size={15} /> Creator wallet
-          </span>
-          <h1>Earn from characters people love.</h1>
+          <div className="payment-titlebar">
+            <span className="section-label">
+              <WalletCards size={15} /> Creator wallet
+            </span>
+            <button
+              className="secondary-action compact"
+              type="button"
+              onClick={() => void loadWallet()}
+            >
+              <RefreshCw size={15} /> Refresh
+            </button>
+          </div>
+          <h1>Creator payment desk</h1>
           <p>
             {monetizationComingSoon
               ? "Creator monetization is coming soon."
-              : "Track paid unlocks, held earnings, available balance, payout requests, and buyer purchases in one place."}
+              : "See what buyers paid, what is on hold, what is ready to withdraw, and which wallet will receive payouts."}
           </p>
+          <div className="payment-balance-hero">
+            <span>Available balance</span>
+            <strong>{money(wallet.wallet.availableCents, wallet.wallet.currency)}</strong>
+            <small>Updated {walletUpdatedAt}</small>
+          </div>
+          <div className="payment-minimum-meter">
+            <div>
+              <span>Minimum payout progress</span>
+              <b>{minimumProgress}%</b>
+            </div>
+            <i aria-hidden="true">
+              <span style={{ width: `${minimumProgress}%` }} />
+            </i>
+          </div>
           <div className="payment-hero-chips" aria-label="Wallet status">
             {monetizationComingSoon ? <span>Coming soon</span> : <span>Crypto live</span>}
             <span>{formatStatus(profileStatus)}</span>
             <span>{walletDisplay}</span>
           </div>
         </div>
-        <div className="payment-command-card">
-          <span>
-            <Activity size={15} /> 0G settlement
-          </span>
-          <strong>{money(wallet.wallet.availableCents, wallet.wallet.currency)}</strong>
-          <small>Available balance - updated {walletUpdatedAt}</small>
+        <div className="payment-command-card payment-wallet-card">
+          <div className="payment-wallet-card-header">
+            <span>
+              <Activity size={15} /> 0G settlement
+            </span>
+            <b className={profileReady ? "ready" : ""}>{profileReady ? "Ready" : "Setup needed"}</b>
+          </div>
+          <strong>{walletDisplay}</strong>
+          <small>
+            {profileReady
+              ? "This wallet is ready for reviewed creator payouts."
+              : "Connect and save a wallet before requesting payouts."}
+          </small>
           <div className="payment-command-grid">
             <span>
               <b>{money(wallet.policy.minimumPayoutCents, wallet.wallet.currency)}</b>
@@ -270,36 +307,32 @@ export default function CreatorWalletPage() {
               creator net
             </span>
           </div>
-          <button
-            className="secondary-action compact"
-            type="button"
-            onClick={() => void loadWallet()}
-          >
-            <RefreshCw size={15} /> Refresh
-          </button>
+          <Link className="secondary-action compact" href="#payout-profile">
+            Edit payout setup <ArrowRight size={15} />
+          </Link>
         </div>
       </section>
 
-      <section className="wallet-metric-grid">
-        <article className="wallet-metric primary">
+      <section className="wallet-metric-grid payment-kpi-grid">
+        <article className="wallet-metric primary payment-kpi-card">
           <Banknote size={22} />
           <span>Available</span>
           <strong>{money(wallet.wallet.availableCents, wallet.wallet.currency)}</strong>
           <small>Ready after hold and approval</small>
         </article>
-        <article className="wallet-metric">
+        <article className="wallet-metric payment-kpi-card">
           <Clock3 size={22} />
           <span>Pending</span>
           <strong>{money(wallet.wallet.pendingCents, wallet.wallet.currency)}</strong>
           <small>{wallet.policy.earningHoldDays} day hold window</small>
         </article>
-        <article className="wallet-metric">
+        <article className="wallet-metric payment-kpi-card">
           <Landmark size={22} />
           <span>Paid out</span>
           <strong>{money(wallet.wallet.lifetimePaidCents, wallet.wallet.currency)}</strong>
           <small>{wallet.payouts.length.toLocaleString()} payout requests</small>
         </article>
-        <article className="wallet-metric">
+        <article className="wallet-metric payment-kpi-card">
           <ShieldCheck size={22} />
           <span>Creator net</span>
           <strong>{netRate}%</strong>
@@ -322,6 +355,7 @@ export default function CreatorWalletPage() {
       <section className="wallet-grid">
         <form
           className="settings-card payout-card payout-profile-card"
+          id="payout-profile"
           noValidate
           onSubmit={(event) => void savePayoutProfile(event)}
         >
