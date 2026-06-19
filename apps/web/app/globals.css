@@ -3589,27 +3589,11 @@ select:hover,
   color: var(--primary);
 }
 
-.memory-status-strip,
 .memory-action-copy,
 .memory-action-buttons {
   display: flex;
   align-items: center;
   gap: 8px;
-}
-
-.memory-status-strip {
-  flex-wrap: wrap;
-}
-
-.memory-status-strip span {
-  min-height: 32px;
-  padding: 7px 10px;
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 900;
-  background: #020203;
-  border: 1px solid #2a2530;
-  border-radius: calc(var(--radius) - 2px);
 }
 
 .memory-action-copy {
@@ -3632,6 +3616,54 @@ select:hover,
   align-items: center;
 }
 
+.memory-character-list {
+  display: grid;
+  gap: 10px;
+}
+
+.memory-character-card {
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  padding: 12px;
+  background: #050506;
+  border: 1px solid #26222b;
+  border-radius: calc(var(--radius) - 2px);
+}
+
+.memory-character-main {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.memory-character-main strong {
+  color: #f8f4f7;
+  font-size: 17px;
+}
+
+.memory-character-main small,
+.memory-room-mini-list span {
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.memory-room-mini-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.memory-room-mini-list span {
+  min-height: 28px;
+  padding: 5px 8px;
+  font-size: 12px;
+  background: #020203;
+  border: 1px solid #2a2530;
+  border-radius: calc(var(--radius) - 4px);
+}
+
 .memory-room-avatar {
   width: 42px;
   height: 42px;
@@ -3644,6 +3676,11 @@ select:hover,
 .memory-action-buttons {
   justify-content: flex-end;
   flex-wrap: wrap;
+}
+
+.memory-character-card .memory-action-buttons .secondary-action {
+  min-height: 38px;
+  padding-inline: 12px;
 }
 
 .memory-snapshot-row {
@@ -3782,7 +3819,6 @@ select:hover,
 
 .payment-hero-chips span,
 .billing-plan-status span,
-.memory-pill,
 .memory-process-list span {
   min-height: 32px;
   padding: 7px 10px;
@@ -3794,17 +3830,8 @@ select:hover,
   border-radius: calc(var(--radius) - 2px);
 }
 
-.memory-pill.positive,
 .payment-flow-strip article.active {
   border-color: rgba(55, 214, 122, 0.46);
-}
-
-.memory-pill.negative {
-  border-color: rgba(255, 31, 109, 0.58);
-}
-
-.memory-pill.pending {
-  border-color: rgba(246, 166, 197, 0.46);
 }
 
 .payment-flow-strip {
@@ -5268,9 +5295,19 @@ select:hover,
     grid-template-columns: 38px minmax(0, 1fr);
   }
 
+  .memory-character-card {
+    grid-template-columns: 38px minmax(0, 1fr);
+    align-items: start;
+  }
+
   .memory-action-buttons {
     grid-column: 1 / -1;
     justify-content: stretch;
+  }
+
+  .memory-character-card .memory-action-buttons .secondary-action {
+    flex: 1 1 130px;
+    justify-content: center;
   }
 
   .wallet-metric-grid,

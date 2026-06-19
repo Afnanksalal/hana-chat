@@ -167,10 +167,10 @@ export default function MemoryVaultPage() {
   }
 
   const storageLabel = vault.settings.uploadEnabled
-    ? "0G upload active"
+    ? "Decentralized"
     : vault.settings.storageEnabled
-      ? "Commitments active"
-      : "0G storage off";
+      ? "Proofs queued"
+      : "Local only";
   const newestSnapshot = vault.snapshots[0] ?? null;
   const creatorArchiveReady = characters.length > 0;
   const uploadedTotal = vault.summary.uploadedSnapshots + vault.summary.confirmedSnapshots;
@@ -185,10 +185,11 @@ export default function MemoryVaultPage() {
   const latestProof = newestSnapshot?.txHash ?? newestSnapshot?.rootHash ?? null;
   const proofRows = [
     ["Network", vault.settings.network],
-    ["Storage", storageLabel],
+    ["Mode", storageLabel],
     ["Root", formatHash(newestSnapshot?.rootHash ?? null)],
     ["Manifest", formatHash(newestSnapshot?.manifestHash ?? null)],
   ];
+  const groupedRooms = useMemo(() => groupMemoryRooms(vault.rooms), [vault.rooms]);
   const metricCards = useMemo(
     () => [
       {
@@ -240,22 +241,6 @@ export default function MemoryVaultPage() {
             Review what is remembered, package private exports, and publish encrypted proofs without
             hunting through chat history.
           </p>
-          <div className="memory-status-strip" aria-label="0G memory status">
-            <StatusPill
-              tone={vault.settings.ogEnabled ? "positive" : "pending"}
-              label={vault.settings.ogEnabled ? "0G enabled" : "0G disabled"}
-            />
-            <StatusPill
-              tone={vault.settings.uploadEnabled ? "positive" : "pending"}
-              label={storageLabel}
-            />
-            {newestSnapshot ? (
-              <StatusPill
-                tone={statusClass(newestSnapshot.status)}
-                label={`Latest ${formatStatus(newestSnapshot.status)}`}
-              />
-            ) : null}
-          </div>
           <div className="memory-integrity-meter">
             <div>
               <span>Upload coverage</span>
@@ -406,39 +391,52 @@ export default function MemoryVaultPage() {
               <h2>Conversation snapshots</h2>
             </div>
           </div>
-          <div className="wallet-table">
-            {vault.rooms.map((room) => (
-              <div className="wallet-table-row memory-room-row" key={room.conversationId}>
+          <div className="memory-character-list">
+            {groupedRooms.map((group) => (
+              <article className="memory-character-card" key={group.characterId}>
                 <img
                   className="memory-room-avatar"
-                  src={room.characterAvatarUrl ?? "/assets/character-avatar-default.svg"}
+                  src={group.characterAvatarUrl ?? "/assets/character-avatar-default.svg"}
                   alt=""
                 />
-                <span>
-                  <strong>{room.characterName}</strong>
+                <div className="memory-character-main">
+                  <strong>{group.characterName}</strong>
                   <small>
-                    {room.memoryCount.toLocaleString()} facts - {formatDate(room.latestMemoryAt)}
+                    {group.roomCount.toLocaleString()} rooms -{" "}
+                    {group.totalMemoryCount.toLocaleString()} facts - latest{" "}
+                    {formatDate(group.latestMemoryAt)}
                   </small>
-                </span>
+                  <div className="memory-room-mini-list">
+                    {group.recentRooms.map((room) => (
+                      <span key={room.conversationId}>
+                        {formatDate(room.latestMemoryAt)} · {room.memoryCount.toLocaleString()}{" "}
+                        facts
+                      </span>
+                    ))}
+                    {group.extraRoomCount > 0 ? (
+                      <span>{group.extraRoomCount.toLocaleString()} more rooms</span>
+                    ) : null}
+                  </div>
+                </div>
                 <div className="memory-action-buttons">
                   <Link
                     className="secondary-action compact"
                     href={`/app/chat?characterId=${encodeURIComponent(
-                      room.characterId,
-                    )}&conversationId=${encodeURIComponent(room.conversationId)}`}
+                      group.characterId,
+                    )}&conversationId=${encodeURIComponent(group.latestConversationId)}`}
                   >
                     Open
                   </Link>
                   <button
-                    className="primary-action compact"
+                    className="secondary-action compact"
                     type="button"
                     disabled={busyAction !== null}
-                    onClick={() => void queueRoomSnapshot(room.conversationId)}
+                    onClick={() => void queueRoomSnapshot(group.latestConversationId)}
                   >
                     <HardDriveUpload size={15} /> Snapshot
                   </button>
                 </div>
-              </div>
+              </article>
             ))}
             {vault.rooms.length === 0 ? (
               <div className="dashboard-empty-card compact-empty">
@@ -523,12 +521,6 @@ function normalizeVault(payload: Partial<MemoryVaultResponse>): MemoryVaultRespo
   };
 }
 
-function StatusPill(props: { label: string; tone?: string }) {
-  return (
-    <span className={props.tone ? `memory-pill ${props.tone}` : "memory-pill"}>{props.label}</span>
-  );
-}
-
 function formatSnapshotKind(value: string): string {
   if (value === "conversation_memory") {
     return "Conversation memory";
@@ -577,6 +569,74 @@ function formatHash(value: string | null): string {
   }
 
   return `${value.slice(0, 10)}...${value.slice(-6)}`;
+}
+
+function groupMemoryRooms(rooms: MemoryVaultResponse["rooms"]) {
+  const groups = new Map<
+    string,
+    {
+      characterId: string;
+      characterName: string;
+      characterAvatarUrl: string | null;
+      totalMemoryCount: number;
+      latestMemoryAt: string | null;
+      latestConversationId: string;
+      rooms: MemoryVaultResponse["rooms"];
+    }
+  >();
+
+  for (const room of rooms) {
+    const group = groups.get(room.characterId);
+
+    if (!group) {
+      groups.set(room.characterId, {
+        characterId: room.characterId,
+        characterName: room.characterName,
+        characterAvatarUrl: room.characterAvatarUrl,
+        totalMemoryCount: room.memoryCount,
+        latestMemoryAt: room.latestMemoryAt,
+        latestConversationId: room.conversationId,
+        rooms: [room],
+      });
+      continue;
+    }
+
+    group.totalMemoryCount += room.memoryCount;
+    group.rooms.push(room);
+
+    if (memoryTimestamp(room.latestMemoryAt) > memoryTimestamp(group.latestMemoryAt)) {
+      group.latestMemoryAt = room.latestMemoryAt;
+      group.latestConversationId = room.conversationId;
+    }
+  }
+
+  return Array.from(groups.values())
+    .map((group) => {
+      const recentRooms = [...group.rooms]
+        .sort(
+          (left, right) =>
+            memoryTimestamp(right.latestMemoryAt) - memoryTimestamp(left.latestMemoryAt),
+        )
+        .slice(0, 3);
+
+      return {
+        ...group,
+        roomCount: group.rooms.length,
+        recentRooms,
+        extraRoomCount: Math.max(0, group.rooms.length - recentRooms.length),
+      };
+    })
+    .sort(
+      (left, right) => memoryTimestamp(right.latestMemoryAt) - memoryTimestamp(left.latestMemoryAt),
+    );
+}
+
+function memoryTimestamp(value: string | null): number {
+  if (!value) {
+    return 0;
+  }
+
+  return new Date(value).getTime();
 }
 
 function formatDate(value: string | null): string {
