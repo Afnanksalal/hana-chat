@@ -1,7 +1,7 @@
 # 0G Memory and Crypto Monetization Strategy
 
-Status: research-backed design proposal
-Date: 2026-06-18
+Status: implementation in progress, product paths wired
+Date: 2026-06-19
 
 Hana can integrate the 0G ecosystem without replacing the parts that already make the product feel
 alive. The first useful 0G integration should be decentralized encrypted memory storage, verifiable
@@ -27,17 +27,28 @@ This gives Hana a Web3-native path without sacrificing latency, deletion control
 
 ## Implementation Status
 
-As of 2026-06-18, Hana has the backend foundation for Phase 0 and Phase 1:
+As of 2026-06-19, Hana has the product implementation for the first 0G memory and crypto lanes:
 
-- `@hana/og-bridge` can build hash-only memory snapshot commitments.
-- `@hana/og-bridge` also has an optional 0G Storage SDK path for encrypted ECIES memory snapshot
-  upload and proof-enabled download/decryption.
-- The worker can store local commitments by default, or perform real 0G Storage uploads when
-  `OG_STORAGE_UPLOAD_ENABLED=true` and `OG_SERVER_WALLET_KEY_REF` resolves to a configured signer.
-- `pnpm og:storage:smoke` uploads and proof-downloads a harmless dummy snapshot when a funded 0G
-  signer is supplied through env.
-- Live production flags remain off by default. Wallet UI, checkout, watcher/finality, smart
-  contracts, creator payouts, and admin dashboards are still future phases.
+- Crypto checkout is wired through browser wallets and server-side transaction verification for plan
+  checkout and paid character unlocks. Razorpay is removed from the active purchase path.
+- Creator payout profiles use 0G wallet addresses, admin payout processing accepts crypto settlement
+  transaction hashes, and the internal creator ledger remains the canonical accounting source.
+- `@hana/og-bridge` can build hash-only memory snapshot commitments and can optionally upload
+  encrypted ECIES snapshots through the 0G Storage SDK.
+- The worker now handles three snapshot kinds: `conversation_memory`, `user_export`, and
+  `creator_soul_pack`. Upload failures are recorded as failed decentralized snapshots instead of
+  silently dropping observability.
+- The user-facing Memory Vault at `/app/memory` shows 0G status, remembered rooms, snapshot ledger,
+  full-memory export queueing, room snapshot queueing, and creator soul-pack archive queueing.
+- The admin command center has a `0G Memory` tab with storage flags, snapshot totals by kind/status,
+  outbox state, and recent root/transaction records.
+- Live VPS flags can run real 0G uploads when `OG_STORAGE_UPLOAD_ENABLED=true` and
+  `OG_SERVER_WALLET_KEY_REF` resolves to a funded signer.
+
+Remaining external gates before calling this production-final: audited treasury/escrow contracts,
+formal 0G mainnet token/liquidity choice, tax/KYC/sanctions policy, and a production mail provider
+for OTP delivery. The current implementation is a working product integration, not an audited
+non-custodial protocol claim.
 
 ## Current 0G Research Snapshot
 

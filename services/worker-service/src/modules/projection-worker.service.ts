@@ -5,6 +5,8 @@ import {
   buildMemorySnapshotCommitment,
   uploadEncryptedMemorySnapshotTo0g,
   type OgMemorySnapshotFact,
+  type OgMemorySnapshotManifestInput,
+  type OgSnapshotKind,
 } from "@hana/og-bridge";
 import { Injectable, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
 import { sql, type Kysely } from "kysely";
@@ -287,6 +289,18 @@ FOREACH (_ IN CASE WHEN $conversationId IS NULL THEN [] ELSE [1] END |
       return;
     }
 
+    const snapshotKind = parseSnapshotKind(payloadOptionalString(payload, "snapshotKind"));
+
+    if (snapshotKind === "user_export") {
+      await this.recordUserExportSnapshot(payloadString(payload, "userId"));
+      return;
+    }
+
+    if (snapshotKind === "creator_soul_pack") {
+      await this.recordCreatorSoulPackSnapshot(payloadString(payload, "characterId"));
+      return;
+    }
+
     const userId = payloadString(payload, "userId");
     const characterId = payloadString(payload, "characterId");
     const conversationId = payloadString(payload, "conversationId");
@@ -334,18 +348,161 @@ FOREACH (_ IN CASE WHEN $conversationId IS NULL THEN [] ELSE [1] END |
       conversationId,
       facts: snapshotFacts,
     } as const;
+
+    await this.persistDecentralizedSnapshot(snapshotInput, `memory.snapshot:${conversationId}`);
+  }
+
+  private async recordUserExportSnapshot(userId: string): Promise<void> {
+    const facts = await this.db
+      .selectFrom("memory.facts")
+      .select([
+        "id",
+        "kind",
+        "text",
+        "importance",
+        "emotional_weight",
+        "source_message_ids",
+        "updated_at",
+      ])
+      .where("user_id", "=", userId)
+      .where("is_active", "=", true)
+      .orderBy("updated_at", "desc")
+      .limit(500)
+      .execute();
+
+    if (facts.length === 0) {
+      return;
+    }
+
+    await this.persistDecentralizedSnapshot(
+      {
+        snapshotKind: "user_export",
+        network: this.config.OG_NETWORK,
+        userId,
+        characterId: null,
+        conversationId: null,
+        facts: facts.map((fact) => ({
+          id: fact.id,
+          kind: fact.kind,
+          importance: fact.importance,
+          emotionalWeight: fact.emotional_weight,
+          updatedAt: fact.updated_at.toISOString(),
+          text: fact.text,
+          sourceMessageIds: fact.source_message_ids,
+        })),
+      },
+      `memory.export:${userId}`,
+    );
+  }
+
+  private async recordCreatorSoulPackSnapshot(characterId: string): Promise<void> {
+    const character = await this.db
+      .selectFrom("creator.characters as characters")
+      .innerJoin(
+        "creator.character_versions as versions",
+        "versions.id",
+        "characters.current_version_id",
+      )
+      .select([
+        "characters.id",
+        "characters.creator_user_id",
+        "characters.name",
+        "characters.description",
+        "characters.slug",
+        "characters.avatar_url",
+        "characters.cover_image_url",
+        "characters.marketplace_category",
+        "characters.marketplace_preview",
+        "characters.model_profile",
+        "characters.visibility",
+        "characters.moderation_status",
+        "versions.id as version_id",
+        "versions.persona_prompt",
+        "versions.greeting",
+        "versions.scenario_prompt",
+        "versions.first_message_style",
+        "versions.speaking_style",
+        "versions.personality_traits",
+        "versions.example_dialogues_json",
+        "versions.rating",
+        "versions.tags",
+        "versions.created_at",
+      ])
+      .where("characters.id", "=", characterId)
+      .executeTakeFirst();
+
+    if (!character) {
+      return;
+    }
+
+    const soulPack = {
+      characterId: character.id,
+      name: character.name,
+      description: character.description,
+      slug: character.slug,
+      avatarUrl: character.avatar_url,
+      coverImageUrl: character.cover_image_url,
+      marketplaceCategory: character.marketplace_category,
+      marketplacePreview: character.marketplace_preview,
+      modelProfile: character.model_profile,
+      visibility: character.visibility,
+      moderationStatus: character.moderation_status,
+      personaPrompt: character.persona_prompt,
+      greeting: character.greeting,
+      scenarioPrompt: character.scenario_prompt,
+      firstMessageStyle: character.first_message_style,
+      speakingStyle: character.speaking_style,
+      personalityTraits: character.personality_traits,
+      exampleDialogues: character.example_dialogues_json,
+      rating: character.rating,
+      tags: character.tags,
+    };
+
+    await this.persistDecentralizedSnapshot(
+      {
+        snapshotKind: "creator_soul_pack",
+        network: this.config.OG_NETWORK,
+        userId: character.creator_user_id,
+        characterId: character.id,
+        conversationId: null,
+        facts: [
+          {
+            id: character.version_id,
+            kind: "creator_soul_pack",
+            importance: 1,
+            emotionalWeight: 0,
+            updatedAt: character.created_at.toISOString(),
+            text: JSON.stringify(soulPack),
+            sourceMessageIds: [],
+          },
+        ],
+      },
+      `creator.soul_pack:${character.id}`,
+    );
+  }
+
+  private async persistDecentralizedSnapshot(
+    snapshotInput: OgMemorySnapshotManifestInput,
+    idempotencyPrefix: string,
+  ): Promise<void> {
     const commitment = buildMemorySnapshotCommitment(snapshotInput);
     let uploadResult: Awaited<ReturnType<typeof uploadEncryptedMemorySnapshotTo0g>> | null = null;
+    let failureReason: string | null = null;
 
     if (this.config.OG_STORAGE_UPLOAD_ENABLED) {
-      const keyRef = resolveOgKeyRef(this.config.OG_SERVER_WALLET_KEY_REF);
+      try {
+        const keyRef = resolveOgKeyRef(this.config.OG_SERVER_WALLET_KEY_REF);
 
-      uploadResult = await uploadEncryptedMemorySnapshotTo0g(snapshotInput, {
-        rpcUrl: this.config.OG_RPC_URL,
-        indexerUrl: this.config.OG_STORAGE_INDEXER_URL,
-        signerPrivateKey: resolveOgPrivateKey(keyRef),
-        encryptionKeyRef: keyRef,
-      });
+        uploadResult = await uploadEncryptedMemorySnapshotTo0g(snapshotInput, {
+          rpcUrl: this.config.OG_RPC_URL,
+          indexerUrl: this.config.OG_STORAGE_INDEXER_URL,
+          signerPrivateKey: resolveOgPrivateKey(keyRef),
+          encryptionKeyRef: keyRef,
+        });
+      } catch (error) {
+        failureReason =
+          error instanceof Error ? error.message.slice(0, 500) : "0G storage upload failed";
+      }
     }
 
     const now = new Date();
@@ -353,17 +510,17 @@ FOREACH (_ IN CASE WHEN $conversationId IS NULL THEN [] ELSE [1] END |
     await this.db
       .insertInto("memory.decentralized_snapshots")
       .values({
-        user_id: userId,
-        character_id: characterId,
-        conversation_id: conversationId,
-        snapshot_kind: "conversation_memory",
+        user_id: snapshotInput.userId,
+        character_id: snapshotInput.characterId,
+        conversation_id: snapshotInput.conversationId,
+        snapshot_kind: snapshotInput.snapshotKind,
         storage_network: this.config.OG_NETWORK,
         root_hash: uploadResult?.rootHash ?? commitment.rootHash,
         tx_hash: uploadResult?.txHash ?? null,
         manifest_hash: commitment.manifestHash,
         encryption_mode: uploadResult?.encryptionMode ?? "manifest_hash_only",
         encryption_key_ref: uploadResult?.encryptionKeyRef ?? "0g-upload-disabled",
-        status: uploadResult ? "uploaded" : "pending_upload",
+        status: failureReason ? "failed" : uploadResult ? "uploaded" : "pending_upload",
         source_memory_ids: commitment.sourceMemoryIds,
         manifest_json: uploadResult
           ? {
@@ -376,12 +533,33 @@ FOREACH (_ IN CASE WHEN $conversationId IS NULL THEN [] ELSE [1] END |
               },
             }
           : commitment.manifest,
-        idempotency_key: `memory.snapshot:${conversationId}:${commitment.manifestHash}`,
-        failure_reason: null,
+        idempotency_key: `${idempotencyPrefix}:${commitment.manifestHash}`,
+        failure_reason: failureReason,
         updated_at: now,
         confirmed_at: null,
       })
-      .onConflict((oc) => oc.column("idempotency_key").doNothing())
+      .onConflict((oc) =>
+        oc.column("idempotency_key").doUpdateSet({
+          status: failureReason ? "failed" : uploadResult ? "uploaded" : "pending_upload",
+          root_hash: uploadResult?.rootHash ?? commitment.rootHash,
+          tx_hash: uploadResult?.txHash ?? null,
+          encryption_mode: uploadResult?.encryptionMode ?? "manifest_hash_only",
+          encryption_key_ref: uploadResult?.encryptionKeyRef ?? "0g-upload-disabled",
+          manifest_json: uploadResult
+            ? {
+                ...commitment.manifest,
+                storage: {
+                  payloadHash: uploadResult.payloadHash,
+                  signerAddress: uploadResult.signerAddress,
+                  localMerkleRoot: uploadResult.localMerkleRoot,
+                  uploadedAt: uploadResult.uploadedAt,
+                },
+              }
+            : commitment.manifest,
+          failure_reason: failureReason,
+          updated_at: now,
+        }),
+      )
       .execute();
   }
 
@@ -948,6 +1126,14 @@ function payloadOptionalString(payload: unknown, key: string): string | null {
   const value = (payload as Record<string, unknown>)[key];
 
   return typeof value === "string" && value ? value : null;
+}
+
+function parseSnapshotKind(value: string | null): OgSnapshotKind {
+  if (value === "conversation_memory" || value === "creator_soul_pack" || value === "user_export") {
+    return value;
+  }
+
+  return "conversation_memory";
 }
 
 function embedTextForRetrieval(text: string): number[] {

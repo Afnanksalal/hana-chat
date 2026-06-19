@@ -19,8 +19,8 @@ export interface OgMemorySnapshotManifestInput {
   snapshotKind: OgSnapshotKind;
   network: string;
   userId: string;
-  characterId: string;
-  conversationId: string;
+  characterId: string | null;
+  conversationId: string | null;
   facts: OgMemorySnapshotFact[];
   createdAt?: string;
 }
@@ -30,8 +30,8 @@ export interface OgMemorySnapshotManifest {
   snapshotKind: OgSnapshotKind;
   network: string;
   userId: string;
-  characterId: string;
-  conversationId: string;
+  characterId: string | null;
+  conversationId: string | null;
   createdAt: string;
   factCount: number;
   sourceMemoryIds: string[];

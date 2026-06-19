@@ -3589,6 +3589,90 @@ select:hover,
   color: var(--primary);
 }
 
+.memory-status-strip,
+.memory-action-copy,
+.memory-action-buttons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.memory-status-strip {
+  flex-wrap: wrap;
+}
+
+.memory-status-strip span {
+  min-height: 32px;
+  padding: 7px 10px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+  background: #020203;
+  border: 1px solid #2a2530;
+  border-radius: calc(var(--radius) - 2px);
+}
+
+.memory-action-copy {
+  align-items: flex-start;
+  padding: 14px;
+  background: #020203;
+  border: 1px solid #24212a;
+  border-radius: calc(var(--radius) - 2px);
+}
+
+.memory-action-copy span {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.memory-room-row {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.memory-room-avatar {
+  width: 42px;
+  height: 42px;
+  object-fit: cover;
+  background: #08080b;
+  border: 1px solid rgba(255, 31, 109, 0.36);
+  border-radius: 50%;
+}
+
+.memory-action-buttons {
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.memory-snapshot-row {
+  align-items: flex-start;
+}
+
+.memory-hash {
+  overflow-wrap: anywhere;
+  white-space: normal;
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+}
+
+.memory-status {
+  color: var(--muted);
+  text-align: right;
+}
+
+.memory-status.positive {
+  color: #37d67a;
+}
+
+.memory-status.negative {
+  color: var(--primary);
+}
+
+.memory-status.pending {
+  color: #f6a6c5;
+}
+
 .compact-empty {
   min-height: 180px;
   padding: 18px;
@@ -4381,7 +4465,11 @@ select:hover,
 
 @media (max-width: 860px) {
   .app-nav {
-    grid-template-columns: repeat(5, minmax(54px, 1fr));
+    grid-template-columns: repeat(6, minmax(48px, 1fr));
+  }
+
+  .app-nav.has-admin {
+    grid-template-columns: repeat(7, minmax(46px, 1fr));
   }
 }
 
@@ -4673,6 +4761,15 @@ select:hover,
     display: grid;
     align-items: start;
     padding: 18px;
+  }
+
+  .memory-room-row {
+    grid-template-columns: 38px minmax(0, 1fr);
+  }
+
+  .memory-action-buttons {
+    grid-column: 1 / -1;
+    justify-content: stretch;
   }
 
   .wallet-metric-grid,
@@ -5877,11 +5974,11 @@ textarea:focus {
   }
 
   .app-nav {
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-columns: repeat(6, minmax(0, 1fr));
   }
 
   .app-nav.has-admin {
-    grid-template-columns: repeat(6, minmax(0, 1fr));
+    grid-template-columns: repeat(7, minmax(0, 1fr));
   }
 
   .app-nav-item {

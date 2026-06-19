@@ -255,6 +255,13 @@ export default function AppHomePage() {
                 <small>Persona, greeting, images, market profile.</small>
               </span>
             </Link>
+            <Link href="/app/memory">
+              <Brain size={18} />
+              <span>
+                <strong>Memory Vault</strong>
+                <small>0G snapshots, exports, and soul-pack archives.</small>
+              </span>
+            </Link>
             <Link href="/app/wallet">
               <WalletCards size={18} />
               <span>
