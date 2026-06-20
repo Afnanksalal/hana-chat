@@ -24,6 +24,7 @@ type Db = Kysely<HanaDatabase>;
 type Tx = Transaction<HanaDatabase>;
 type DbExecutor = Db | Tx;
 type EmailVerificationRateColumn = "email_hash" | "device_id_hash" | "ip_address_hash";
+type EmailDeliveryProvider = "local" | "smtp" | "sendgrid";
 
 let pooledMailer: Transporter<SMTPPool.SentMessageInfo> | null = null;
 
@@ -929,7 +930,21 @@ async function sendEmailCode(input: {
   to: ReturnType<typeof normalizeEmailAddress>;
   code: string;
   mode: "signup" | "signin";
-}): Promise<{ provider: "local" | "smtp"; messageId: string | null }> {
+}): Promise<{ provider: EmailDeliveryProvider; messageId: string | null }> {
+  if (input.config.EMAIL_PROVIDER === "local") {
+    if (input.config.NODE_ENV === "production") {
+      throw new DomainError("INTERNAL", "Email delivery is not configured");
+    }
+
+    return { provider: "local", messageId: null };
+  }
+
+  const message = buildVerificationEmailMessage(input);
+
+  if (input.config.EMAIL_PROVIDER === "sendgrid") {
+    return sendGridEmailCode(input.config, input.to, message);
+  }
+
   if (!input.config.SMTP_HOST) {
     if (input.config.NODE_ENV === "production") {
       throw new DomainError("INTERNAL", "Email delivery is not configured");
@@ -941,10 +956,9 @@ async function sendEmailCode(input: {
   const info = await getMailer(input.config).sendMail({
     from: input.config.SMTP_FROM,
     to: input.to,
-    subject:
-      input.mode === "signup" ? "Confirm your Hana Chat account" : "Your Hana Chat sign-in code",
-    text: `Your Hana Chat verification code is ${input.code}. It expires in ${input.config.AUTH_EMAIL_CODE_TTL_MINUTES} minutes.`,
-    html: verificationEmailHtml(input.code, input.config.AUTH_EMAIL_CODE_TTL_MINUTES),
+    subject: message.subject,
+    text: message.text,
+    html: message.html,
   });
 
   return {
@@ -980,6 +994,88 @@ function getMailer(config: AppConfig): Transporter<SMTPPool.SentMessageInfo> {
   });
 
   return pooledMailer;
+}
+
+function buildVerificationEmailMessage(input: {
+  config: AppConfig;
+  code: string;
+  mode: "signup" | "signin";
+}): { subject: string; text: string; html: string } {
+  const ttlMinutes = input.config.AUTH_EMAIL_CODE_TTL_MINUTES;
+
+  return {
+    subject:
+      input.mode === "signup" ? "Confirm your Hana Chat account" : "Your Hana Chat sign-in code",
+    text: `Your Hana Chat verification code is ${input.code}. It expires in ${ttlMinutes} minutes.`,
+    html: verificationEmailHtml(input.code, ttlMinutes),
+  };
+}
+
+async function sendGridEmailCode(
+  config: AppConfig,
+  to: ReturnType<typeof normalizeEmailAddress>,
+  message: { subject: string; text: string; html: string },
+): Promise<{ provider: "sendgrid"; messageId: string | null }> {
+  if (!config.SENDGRID_API_KEY) {
+    throw new DomainError("INTERNAL", "SendGrid delivery is not configured");
+  }
+
+  const response = await fetchWithTimeout(
+    `${config.SENDGRID_API_BASE_URL.replace(/\/+$/, "")}/v3/mail/send`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${config.SENDGRID_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        personalizations: [{ to: [{ email: to }] }],
+        from: parseEmailSender(config.SENDGRID_FROM),
+        subject: message.subject,
+        content: [
+          { type: "text/plain", value: message.text },
+          { type: "text/html", value: message.html },
+        ],
+        categories: ["auth", "email-otp"],
+      }),
+    },
+    5_000,
+  );
+
+  if (response.status !== 202) {
+    const details = await response.text().catch(() => "");
+
+    throw new DomainError("INTERNAL", "SendGrid email delivery failed", {
+      status: response.status,
+      details: details.slice(0, 500),
+    });
+  }
+
+  return {
+    provider: "sendgrid",
+    messageId: response.headers.get("x-message-id"),
+  };
+}
+
+function parseEmailSender(value: string): { email: string; name?: string } {
+  const match = value.match(/^\s*(?:"?([^"<]*)"?\s*)?<([^<>@\s]+@[^<>@\s]+)>\s*$/);
+
+  if (!match) {
+    return { email: value.trim() };
+  }
+
+  const name = match[1]?.trim();
+
+  const email = match[2];
+
+  if (!email) {
+    return { email: value.trim() };
+  }
+
+  return {
+    email,
+    ...(name ? { name } : {}),
+  };
 }
 
 function verificationEmailHtml(code: string, ttlMinutes: number): string {

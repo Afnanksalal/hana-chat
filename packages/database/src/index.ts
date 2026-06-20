@@ -70,7 +70,7 @@ export interface IdentityEmailVerificationsTable {
   device_id_hash: string | null;
   user_agent_hash: string | null;
   ip_address_hash: string | null;
-  provider: DefaultColumn<"local" | "smtp">;
+  provider: DefaultColumn<"local" | "smtp" | "sendgrid">;
   provider_message_id: string | null;
 }
 

@@ -89,6 +89,7 @@ const placeholderSecrets = new Set([
   "replace-with-email-encryption-key",
   "replace-with-payout-encryption-key",
   "replace-with-smtp-password",
+  "replace-with-sendgrid-api-key",
   "hana-local-dev-email-hash-secret-change-me",
   "hana-local-dev-session-secret-change-me",
   localDevAesKeyBase64,
@@ -160,7 +161,12 @@ export const AppConfigSchema = z
     OG_PAYMENT_TOKEN_SYMBOL: z.string().trim().min(1).max(16).default("0G"),
     OG_PAYMENT_TOKEN_DECIMALS: z.coerce.number().int().min(0).max(30).default(18),
     OG_PAYMENT_TOKEN_USD_CENTS: z.coerce.number().int().min(1).max(1_000_000).default(100),
-    OG_PAYMENT_INTENT_TTL_MINUTES: z.coerce.number().int().min(5).max(24 * 60).default(30),
+    OG_PAYMENT_INTENT_TTL_MINUTES: z.coerce
+      .number()
+      .int()
+      .min(5)
+      .max(24 * 60)
+      .default(30),
     OG_SERVER_WALLET_KEY_REF: z.string().optional(),
     OG_CONFIRMATION_BLOCKS: z.coerce.number().int().min(1).max(10_000).default(12),
     OG_STORAGE_SNAPSHOT_INTERVAL_TURNS: z.coerce.number().int().min(1).max(10_000).default(25),
@@ -177,6 +183,10 @@ export const AppConfigSchema = z
     ADMIN_STATIC_OTP: optionalStaticOtpSchema,
     SMOKE_EMAIL_DOMAIN: optionalEmailDomainSchema,
     SMOKE_STATIC_OTP: optionalStaticOtpSchema,
+    EMAIL_PROVIDER: z.enum(["local", "smtp", "sendgrid"]).default("smtp"),
+    SENDGRID_API_KEY: z.string().optional(),
+    SENDGRID_API_BASE_URL: z.string().url().default("https://api.sendgrid.com"),
+    SENDGRID_FROM: z.string().default("Hana Chat <no-reply@app.hanachat.site>"),
     SMTP_HOST: z.string().optional(),
     SMTP_PORT: portSchema.default(587),
     SMTP_SECURE: booleanEnvSchema.default(false),
@@ -341,7 +351,31 @@ export const AppConfigSchema = z
       }
     }
 
-    if (!config.SMTP_HOST) {
+    if (config.EMAIL_PROVIDER === "local") {
+      ctx.addIssue({
+        code: "custom",
+        path: ["EMAIL_PROVIDER"],
+        message: "EMAIL_PROVIDER cannot be local in production",
+      });
+    }
+
+    if (config.EMAIL_PROVIDER === "sendgrid" && isMissingOrPlaceholder(config.SENDGRID_API_KEY)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["SENDGRID_API_KEY"],
+        message: "SENDGRID_API_KEY must be configured when EMAIL_PROVIDER=sendgrid",
+      });
+    }
+
+    if (config.EMAIL_PROVIDER === "sendgrid" && !config.SENDGRID_FROM) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["SENDGRID_FROM"],
+        message: "SENDGRID_FROM must use the production Hana sender address",
+      });
+    }
+
+    if (config.EMAIL_PROVIDER === "smtp" && !config.SMTP_HOST) {
       ctx.addIssue({
         code: "custom",
         path: ["SMTP_HOST"],
@@ -349,7 +383,7 @@ export const AppConfigSchema = z
       });
     }
 
-    if (!config.SMTP_FROM) {
+    if (config.EMAIL_PROVIDER === "smtp" && !config.SMTP_FROM) {
       ctx.addIssue({
         code: "custom",
         path: ["SMTP_FROM"],
@@ -357,7 +391,11 @@ export const AppConfigSchema = z
       });
     }
 
-    if (config.SMTP_USER && isMissingOrPlaceholder(config.SMTP_PASSWORD)) {
+    if (
+      config.EMAIL_PROVIDER === "smtp" &&
+      config.SMTP_USER &&
+      isMissingOrPlaceholder(config.SMTP_PASSWORD)
+    ) {
       ctx.addIssue({
         code: "custom",
         path: ["SMTP_PASSWORD"],
