@@ -4,11 +4,7 @@ const isProduction = process.env["NODE_ENV"] === "production";
 const configuredSiteUrl = process.env["NEXT_PUBLIC_SITE_URL"] ?? process.env["WEB_ORIGIN"] ?? "";
 const shouldUpgradeInsecureRequests =
   isProduction && configuredSiteUrl.trim().startsWith("https://");
-const scriptSrc = [
-  "'self'",
-  "'unsafe-inline'",
-  isProduction ? "" : "'unsafe-eval'",
-]
+const scriptSrc = ["'self'", "'unsafe-inline'", isProduction ? "" : "'unsafe-eval'"]
   .filter(Boolean)
   .join(" ");
 

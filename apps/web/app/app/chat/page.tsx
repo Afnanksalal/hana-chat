@@ -1191,11 +1191,7 @@ function ChatExperience() {
         return;
       }
 
-      if (
-        purchase.provider !== "crypto" ||
-        !purchase.payment ||
-        !purchase.internalPurchaseId
-      ) {
+      if (purchase.provider !== "crypto" || !purchase.payment || !purchase.internalPurchaseId) {
         setStatus("Checkout could not start for this character.");
         return;
       }

@@ -140,7 +140,10 @@ export async function verifyCryptoPaymentIntent(input: {
 
   if (payment.status === "finalized") {
     if (payment.tx_hash && normalizeTxHash(payment.tx_hash) !== txHash) {
-      throw new DomainError("CONFLICT", "Crypto payment already finalized with another transaction");
+      throw new DomainError(
+        "CONFLICT",
+        "Crypto payment already finalized with another transaction",
+      );
     }
 
     const transfer = await verifyNativeTransfer({
@@ -444,8 +447,7 @@ async function verifyNativeTransfer(input: {
   }
 
   const confirmationCount = Math.max(0, latestBlockNumber - receipt.blockNumber + 1);
-  const status =
-    confirmationCount >= input.config.OG_CONFIRMATION_BLOCKS ? "finalized" : "pending";
+  const status = confirmationCount >= input.config.OG_CONFIRMATION_BLOCKS ? "finalized" : "pending";
 
   return {
     status,

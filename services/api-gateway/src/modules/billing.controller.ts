@@ -3,10 +3,7 @@ import { CheckoutPlanRequestSchema, VerifyCryptoPaymentRequestSchema } from "@ha
 import { createDatabase } from "@hana/database";
 import { DomainError } from "@hana/errors";
 import { Body, Controller, Get, Headers, Post } from "@nestjs/common";
-import {
-  createCryptoPaymentIntent,
-  verifyCryptoPaymentIntent,
-} from "./crypto-payments";
+import { createCryptoPaymentIntent, verifyCryptoPaymentIntent } from "./crypto-payments";
 import { auditEvent, requireSession } from "./session";
 
 @Controller("/v1/billing")
@@ -147,7 +144,10 @@ export class BillingController {
       .updateTable("billing.payment_orders")
       .set({
         provider_order_id: payment.id,
-        metadata_json: { cryptoPaymentId: payment.id, providerReference: payment.providerReference },
+        metadata_json: {
+          cryptoPaymentId: payment.id,
+          providerReference: payment.providerReference,
+        },
         updated_at: new Date(),
       })
       .where("id", "=", internalOrder.id)

@@ -64,9 +64,7 @@ export async function completeCryptoPayment<TResponse extends CryptoVerification
     const confirmationCount = result.confirmationCount ?? 0;
     const requiredConfirmations =
       result.requiredConfirmations ?? input.payment.requiredConfirmations;
-    input.onStatus(
-      `Waiting for 0G confirmations ${confirmationCount}/${requiredConfirmations}...`,
-    );
+    input.onStatus(`Waiting for 0G confirmations ${confirmationCount}/${requiredConfirmations}...`);
     await delay(5_000);
   }
 

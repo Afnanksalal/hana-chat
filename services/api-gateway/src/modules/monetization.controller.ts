@@ -127,8 +127,8 @@ export class MonetizationController {
             walletLast4: profile.crypto_wallet_address?.slice(-4) ?? profile.vpa_last4,
             providerReady: Boolean(
               profile.crypto_wallet_address &&
-                profile.status === "verified" &&
-                profile.crypto_status === "verified",
+              profile.status === "verified" &&
+              profile.crypto_status === "verified",
             ),
             updatedAt: profile.updated_at.toISOString(),
           }
@@ -443,7 +443,11 @@ export class MonetizationController {
       .where("user_id", "=", session.userId)
       .executeTakeFirst();
 
-    if (!purchase || purchase.provider !== "crypto" || purchase.provider_order_id !== input.paymentId) {
+    if (
+      !purchase ||
+      purchase.provider !== "crypto" ||
+      purchase.provider_order_id !== input.paymentId
+    ) {
       throw new DomainError("RESOURCE_NOT_FOUND", "Purchase order not found");
     }
 
@@ -718,8 +722,8 @@ export class AdminMonetizationController {
         walletLast4: payout.crypto_wallet_address?.slice(-4) ?? payout.vpa_last4,
         providerReady: Boolean(
           payout.crypto_wallet_address &&
-            payout.profile_status === "verified" &&
-            payout.crypto_status === "verified",
+          payout.profile_status === "verified" &&
+          payout.crypto_status === "verified",
         ),
         amountCents: payout.amount_cents,
         currency: payout.currency,
@@ -739,8 +743,8 @@ export class AdminMonetizationController {
         walletLast4: profile.crypto_wallet_address?.slice(-4) ?? profile.vpa_last4,
         providerReady: Boolean(
           profile.crypto_wallet_address &&
-            profile.status === "verified" &&
-            profile.crypto_status === "verified",
+          profile.status === "verified" &&
+          profile.crypto_status === "verified",
         ),
         updatedAt: profile.updated_at.toISOString(),
       })),
@@ -1364,10 +1368,7 @@ export async function paidCharacterTrialStatus(
   };
 }
 
-function resolvePaymentProvider(
-  provider: "crypto" | "mock",
-  config: AppConfig,
-): "crypto" | "mock" {
+function resolvePaymentProvider(provider: "crypto" | "mock", config: AppConfig): "crypto" | "mock" {
   if (provider === "mock" && config.NODE_ENV === "production") {
     throw new DomainError("AUTH_FORBIDDEN", "Mock checkout is disabled in production");
   }
