@@ -106,12 +106,13 @@ function AuthForm() {
     setStatus(undefined);
 
     try {
+      const verificationCode = code.trim();
       const response = await fetch("/api/auth/email/verify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           email: email.trim(),
-          code,
+          code: verificationCode,
           verificationId,
           deviceId: getOrCreateAuthDeviceId(),
         }),

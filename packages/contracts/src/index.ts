@@ -136,7 +136,10 @@ export type StartEmailAuthRequest = z.infer<typeof StartEmailAuthRequestSchema>;
 export const VerifyEmailAuthRequestSchema = z.object({
   email: EmailAddressSchema,
   verificationId: z.string().uuid().optional(),
-  code: z.string().regex(/^\d{6,8}$/),
+  code: z
+    .string()
+    .trim()
+    .regex(/^\d{6,8}$/),
   deviceId: z.string().min(8).max(256).optional(),
   riskSessionId: z.string().optional(),
 });
