@@ -36,6 +36,7 @@ coverage/
 playwright-report/
 test-results/
 storybook-static/
+artifacts/
 
 # Local runtime state
 data/
