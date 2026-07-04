@@ -243,6 +243,29 @@ export const SendChatMessageRequestSchema = z.object({
 
 export type SendChatMessageRequest = z.infer<typeof SendChatMessageRequestSchema>;
 
+export const CreateGroupConversationRequestSchema = z.object({
+  title: z.string().trim().max(80).optional().default(""),
+  characterIds: z
+    .array(z.string().min(1))
+    .min(2, "Choose at least two characters")
+    .max(10, "Group chats support up to 10 bots")
+    .refine((ids) => new Set(ids).size === ids.length, "Choose each character once"),
+});
+
+export type CreateGroupConversationRequest = z.infer<typeof CreateGroupConversationRequestSchema>;
+
+export const AddGroupConversationMembersRequestSchema = z.object({
+  characterIds: z
+    .array(z.string().min(1))
+    .min(1, "Choose at least one character")
+    .max(10, "Group chats support up to 10 bots")
+    .refine((ids) => new Set(ids).size === ids.length, "Choose each character once"),
+});
+
+export type AddGroupConversationMembersRequest = z.infer<
+  typeof AddGroupConversationMembersRequestSchema
+>;
+
 export const UpdateSettingsRequestSchema = z.object({
   displayName: z.string().min(1).max(80).nullable().optional(),
   avatarUrl: z

@@ -3,10 +3,13 @@
 import {
   Archive,
   ArrowLeft,
+  AtSign,
   Bot,
   Clock3,
+  Hash,
   Lock,
   MessageSquareText,
+  MinusCircle,
   Pencil,
   Plus,
   RotateCcw,
@@ -17,6 +20,8 @@ import {
   SlidersHorizontal,
   Sparkles,
   Trash2,
+  UserPlus,
+  UsersRound,
   X,
 } from "lucide-react";
 import { useSearchParams } from "next/navigation";
@@ -53,20 +58,36 @@ interface CharacterSummary {
 
 type CharacterPayload = CharacterSummary | { character?: CharacterSummary };
 
+interface ConversationMember {
+  characterId: string;
+  name: string;
+  description: string;
+  avatarUrl: string;
+  coverImageUrl: string;
+  mentionSlug: string;
+  position: number;
+  rating: "general" | "teen" | "mature" | "adult";
+}
+
 interface SettingsResponse {
   adultModeEnabled: boolean;
 }
 
 interface ConversationSummary {
   id: string;
+  type?: "direct" | "group";
+  title?: string;
+  responseMode?: "mentions";
   characterId: string;
   updatedAt: string;
   character: CharacterSummary;
+  members?: ConversationMember[];
   lastMessage: {
     id: string;
     role: "assistant" | "user" | "system";
     content: string;
     createdAt: string;
+    speaker?: ConversationMember | null;
   } | null;
 }
 
@@ -74,6 +95,7 @@ interface ChatMessage {
   id: string;
   role: "assistant" | "user";
   content: string;
+  speaker?: ConversationMember | null;
 }
 
 interface MemoryFact {
@@ -123,7 +145,18 @@ interface ChatResponse {
     id: string;
     role: "assistant";
     content: string;
+    speaker?: ConversationMember | null;
   };
+  assistantMessages?: Array<{
+    id: string;
+    role: "assistant";
+    content: string;
+    speaker?: ConversationMember | null;
+  }>;
+  group?: {
+    responseMode: "mentions";
+    mentioned: Array<{ characterId: string; mentionSlug: string; name: string }>;
+  } | null;
   usage?: {
     used: number;
     limit: number;
@@ -169,6 +202,10 @@ interface CharacterPurchaseResponse {
     name: string;
     priceCents: number;
   };
+}
+
+interface MarketplaceResponse {
+  characters: CharacterSummary[];
 }
 
 const memoryKinds: Array<{ id: MemoryKind; label: string }> = [
@@ -365,6 +402,46 @@ function unwrapCharacterPayload(payload: CharacterPayload): CharacterSummary | u
     : undefined;
 }
 
+function characterFromMember(member: ConversationMember): CharacterSummary {
+  return {
+    id: member.characterId,
+    name: member.name,
+    description: member.description,
+    rating: member.rating,
+    avatarUrl: member.avatarUrl,
+    coverImageUrl: member.coverImageUrl,
+  };
+}
+
+function conversationDisplayTitle(conversation: ConversationSummary): string {
+  if (conversation.type === "group") {
+    return (
+      conversation.title?.trim() ||
+      groupTitleFromMembers(conversation.members ?? []) ||
+      "Group chat"
+    );
+  }
+
+  return conversation.character.name;
+}
+
+function groupTitleFromMembers(members: ConversationMember[]): string {
+  const visible = members
+    .slice(0, 3)
+    .map((member) => member.name)
+    .join(", ");
+
+  return members.length > 3 ? `${visible} +${members.length - 3}` : visible;
+}
+
+function assistantMessagesFromPayload(payload: ChatResponse) {
+  if (payload.assistantMessages?.length) {
+    return payload.assistantMessages;
+  }
+
+  return payload.assistantMessage ? [payload.assistantMessage] : [];
+}
+
 function ChatExperience() {
   const searchParams = useSearchParams();
   const requestedCharacterId = searchParams.get("characterId");
@@ -392,7 +469,15 @@ function ChatExperience() {
   const [trialStatus, setTrialStatus] = useState<TrialStatus | null>(null);
   const [evolution, setEvolution] = useState<EvolutionSummary | null>(null);
   const [typingMessageId, setTypingMessageId] = useState<string | null>(null);
+  const [groupBuilderOpen, setGroupBuilderOpen] = useState(false);
+  const [groupCandidates, setGroupCandidates] = useState<CharacterSummary[]>([]);
+  const [groupCandidateSearch, setGroupCandidateSearch] = useState("");
+  const [groupTitleDraft, setGroupTitleDraft] = useState("");
+  const [groupSelection, setGroupSelection] = useState<string[]>([]);
+  const [groupAddSelection, setGroupAddSelection] = useState<string[]>([]);
+  const [isGroupSaving, setIsGroupSaving] = useState(false);
   const streamRef = useRef<HTMLDivElement | null>(null);
+  const draftInputRef = useRef<HTMLInputElement | null>(null);
   const assistantBufferRef = useRef("");
   const assistantVisibleRef = useRef("");
   const assistantMessageIdRef = useRef<string | null>(null);
@@ -403,6 +488,9 @@ function ChatExperience() {
   const draftLimitProgress = Math.min(100, (draftCharacterCount / maxChatMessageChars) * 100);
   const draftRemaining = Math.max(0, maxChatMessageChars - draftCharacterCount);
   const draftIsEmpty = draft.trim().length === 0;
+  const activeIsGroup = activeConversation?.type === "group";
+  const activeGroupMembers =
+    activeConversation?.type === "group" ? (activeConversation.members ?? []) : [];
 
   useEffect(() => {
     let cancelled = false;
@@ -423,12 +511,46 @@ function ChatExperience() {
 
   useEffect(() => () => resetAssistantTyping(false), []);
 
+  useEffect(() => {
+    if (!groupBuilderOpen && !(settingsOpen && activeIsGroup)) {
+      return;
+    }
+
+    void loadGroupCandidates();
+  }, [activeIsGroup, groupBuilderOpen, settingsOpen]);
+
   const selectedCharacter = useMemo(
     () =>
       activeConversation?.character ??
       (directCharacter?.id === selectedCharacterId ? directCharacter : undefined),
     [activeConversation, directCharacter, selectedCharacterId],
   );
+  const groupCandidateResults = useMemo(() => {
+    const query = groupCandidateSearch.trim().toLowerCase();
+    const members = new Set(activeGroupMembers.map((member) => member.characterId));
+
+    return groupCandidates
+      .filter((character) => {
+        if (members.has(character.id) && !groupBuilderOpen) {
+          return false;
+        }
+
+        if (!query) {
+          return true;
+        }
+
+        return [
+          character.name,
+          character.description,
+          character.marketplacePreview ?? "",
+          ...(character.tags ?? []),
+        ]
+          .join(" ")
+          .toLowerCase()
+          .includes(query);
+      })
+      .slice(0, 24);
+  }, [activeGroupMembers, groupBuilderOpen, groupCandidateSearch, groupCandidates]);
 
   useEffect(() => {
     document.body.classList.toggle("chat-room-open", Boolean(selectedCharacter));
@@ -477,8 +599,14 @@ function ChatExperience() {
 
     return conversations.filter((conversation) =>
       [
+        conversationDisplayTitle(conversation),
         conversation.character.name,
         conversation.character.description,
+        ...(conversation.members ?? []).flatMap((member) => [
+          member.name,
+          `@${member.mentionSlug}`,
+          member.description,
+        ]),
         conversation.lastMessage?.content ?? "",
       ]
         .join(" ")
@@ -486,6 +614,19 @@ function ChatExperience() {
         .includes(query),
     );
   }, [conversations, search]);
+
+  async function loadGroupCandidates() {
+    try {
+      const path = groupCandidateSearch.trim()
+        ? `/api/v1/characters/marketplace?query=${encodeURIComponent(groupCandidateSearch.trim())}`
+        : "/api/v1/characters/marketplace";
+      const payload = await apiJson<MarketplaceResponse>(path);
+      setGroupCandidates(Array.isArray(payload.characters) ? payload.characters : []);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Could not load characters.");
+    }
+  }
+
   async function loadChatShell(isCancelled: () => boolean) {
     try {
       const [conversationPayload, settingsPayload] = await Promise.all([
@@ -539,7 +680,8 @@ function ChatExperience() {
       const existingConversation = forceFreshRoom
         ? undefined
         : conversationList.find(
-            (conversation) => conversation.characterId === requestedCharacterId,
+            (conversation) =>
+              conversation.type !== "group" && conversation.characterId === requestedCharacterId,
           );
 
       if (existingConversation) {
@@ -585,25 +727,42 @@ function ChatExperience() {
 
     try {
       const payload = await apiJson<{
-        messages: Array<{ id: string; role: "assistant" | "user" | "system"; content: string }>;
+        messages: Array<{
+          id: string;
+          role: "assistant" | "user" | "system";
+          content: string;
+          speaker?: ConversationMember | null;
+        }>;
         evolution?: EvolutionSummary | null;
       }>(`/api/v1/chat/conversations/${encodeURIComponent(conversation.id)}/messages`);
       const sourceMessages = Array.isArray(payload.messages) ? payload.messages : [];
       const persistedMessages = sourceMessages
         .filter(
-          (message): message is { id: string; role: "assistant" | "user"; content: string } =>
-            message.role === "assistant" || message.role === "user",
+          (
+            message,
+          ): message is {
+            id: string;
+            role: "assistant" | "user";
+            content: string;
+            speaker?: ConversationMember | null;
+          } => message.role === "assistant" || message.role === "user",
         )
         .map((message) => ({
           id: message.id,
           role: message.role,
           content: message.content,
+          speaker: message.speaker ?? null,
         }));
       setMessages(
         mergePendingMessages(persistedMessages, conversation.characterId, conversation.id),
       );
       setEvolution(payload.evolution ?? null);
-      await loadScopedMemories(conversation.characterId, conversation.id);
+      if (conversation.type === "group") {
+        setMemories([]);
+        setMemoryEdits({});
+      } else {
+        await loadScopedMemories(conversation.characterId, conversation.id);
+      }
       setStatus("");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Could not open this chat.");
@@ -647,6 +806,145 @@ function ChatExperience() {
     setSettingsOpen(false);
     setDeleteArmed(false);
     setStatus("");
+  }
+
+  function toggleGroupSelection(characterId: string) {
+    setGroupSelection((current) => {
+      if (current.includes(characterId)) {
+        return current.filter((id) => id !== characterId);
+      }
+
+      return current.length >= 10 ? current : [...current, characterId];
+    });
+  }
+
+  function toggleGroupAddSelection(characterId: string) {
+    const remainingSlots = Math.max(0, 10 - activeGroupMembers.length);
+
+    setGroupAddSelection((current) => {
+      if (current.includes(characterId)) {
+        return current.filter((id) => id !== characterId);
+      }
+
+      return current.length >= remainingSlots ? current : [...current, characterId];
+    });
+  }
+
+  function resetGroupBuilder() {
+    setGroupBuilderOpen(false);
+    setGroupTitleDraft("");
+    setGroupSelection([]);
+    setGroupCandidateSearch("");
+  }
+
+  async function createGroupConversation() {
+    if (groupSelection.length < 2) {
+      setStatus("Choose at least two bots.");
+      return;
+    }
+
+    setIsGroupSaving(true);
+    setStatus("Creating group...");
+
+    try {
+      const payload = await apiJson<{ conversation: { id: string } }>(
+        "/api/v1/chat/group-conversations",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            title: groupTitleDraft,
+            characterIds: groupSelection,
+          }),
+        },
+      );
+      const nextConversations = await refreshConversations();
+      const conversation = nextConversations.find((item) => item.id === payload.conversation.id);
+
+      if (conversation) {
+        resetGroupBuilder();
+        await openConversation(conversation);
+      }
+
+      setStatus("");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Group could not be created.");
+    } finally {
+      setIsGroupSaving(false);
+    }
+  }
+
+  async function addMembersToActiveGroup() {
+    if (!activeConversation || !activeIsGroup || groupAddSelection.length === 0) {
+      return;
+    }
+
+    setIsGroupSaving(true);
+    setStatus("Updating group...");
+
+    try {
+      await apiJson<{ ok: boolean; members: ConversationMember[] }>(
+        `/api/v1/chat/conversations/${encodeURIComponent(activeConversation.id)}/members`,
+        {
+          method: "POST",
+          body: JSON.stringify({ characterIds: groupAddSelection }),
+        },
+      );
+      const nextConversations = await refreshConversations();
+      const conversation = nextConversations.find((item) => item.id === activeConversation.id);
+
+      if (conversation) {
+        setActiveConversation(conversation);
+      }
+
+      setGroupAddSelection([]);
+      setStatus("");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Group could not be updated.");
+    } finally {
+      setIsGroupSaving(false);
+    }
+  }
+
+  async function removeGroupMember(characterId: string) {
+    if (!activeConversation || !activeIsGroup) {
+      return;
+    }
+
+    setIsGroupSaving(true);
+    setStatus("Updating group...");
+
+    try {
+      await apiJson<{ ok: boolean; members: ConversationMember[] }>(
+        `/api/v1/chat/conversations/${encodeURIComponent(
+          activeConversation.id,
+        )}/members/${encodeURIComponent(characterId)}`,
+        { method: "DELETE" },
+      );
+      const nextConversations = await refreshConversations();
+      const conversation = nextConversations.find((item) => item.id === activeConversation.id);
+
+      if (conversation) {
+        setActiveConversation(conversation);
+        setSelectedCharacterId(conversation.characterId);
+      }
+
+      setStatus("");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Group member could not be removed.");
+    } finally {
+      setIsGroupSaving(false);
+    }
+  }
+
+  function insertMention(member: ConversationMember) {
+    const handle = `@${member.mentionSlug}`;
+    setDraft((current) => {
+      const trimmedEnd = current.replace(/\s+$/g, "");
+      const prefix = trimmedEnd ? `${trimmedEnd} ` : "";
+
+      return `${prefix}${handle} `;
+    });
+    window.requestAnimationFrame(() => draftInputRef.current?.focus());
   }
 
   async function startFreshRoom(character = selectedCharacter) {
@@ -754,7 +1052,7 @@ function ChatExperience() {
       return;
     }
 
-    if (isPaidLocked(selectedCharacter, trialStatus)) {
+    if (!activeIsGroup && isPaidLocked(selectedCharacter, trialStatus)) {
       setStatus("Free trial finished. Unlock this character to keep chatting.");
       return;
     }
@@ -817,6 +1115,7 @@ function ChatExperience() {
       let assistantAdded = false;
       let replayingDuplicate = false;
       let wasBlocked = false;
+      let noResponseQueued = false;
 
       await readChatStream(response, {
         ready: () => setStatus(""),
@@ -841,10 +1140,17 @@ function ChatExperience() {
             setEvolution(payload.evolution);
           }
 
-          if (payload.assistantMessage?.id && !assistantAdded) {
-            assistantId = payload.assistantMessage.id;
+          const assistantPayloads = assistantMessagesFromPayload(payload);
+
+          if (assistantPayloads.length && !assistantAdded) {
+            assistantId = assistantPayloads[0]?.id;
             assistantAdded = true;
-            ensureAssistantMessage(assistantId, { replaceExisting: replayingDuplicate });
+            for (const message of assistantPayloads) {
+              ensureAssistantMessage(message.id, {
+                replaceExisting: replayingDuplicate,
+                speaker: message.speaker ?? null,
+              });
+            }
           }
         },
         token: (payload) => {
@@ -853,6 +1159,14 @@ function ChatExperience() {
           }
 
           const contentChunk = payload.content ?? "";
+          const tokenMessageId = payload.messageId;
+
+          if (tokenMessageId) {
+            assistantId = assistantId ?? tokenMessageId;
+            assistantAdded = true;
+            appendAssistantToken(tokenMessageId, contentChunk, payload.speaker ?? null);
+            return;
+          }
 
           if (!assistantAdded) {
             assistantId = crypto.randomUUID();
@@ -873,8 +1187,20 @@ function ChatExperience() {
 
           nextConversationId = payload.conversationId ?? nextConversationId;
           removePendingTurn(turn.id);
+          const finalAssistantMessages = assistantMessagesFromPayload(payload);
 
-          if (payload.assistantMessage) {
+          if (finalAssistantMessages.length) {
+            for (const message of finalAssistantMessages) {
+              finalizeAssistantMessage(message.id, message.content, {
+                speaker: message.speaker ?? null,
+              });
+            }
+          } else if (payload.group) {
+            noResponseQueued = true;
+            setTypingMessageId(null);
+            resetAssistantTyping(false);
+            setStatus("No response queued.");
+          } else if (payload.assistantMessage) {
             assistantId = assistantId ?? payload.assistantMessage.id;
             completeAssistantText(assistantId, payload.assistantMessage.content, {
               replace: replayingDuplicate,
@@ -914,10 +1240,15 @@ function ChatExperience() {
           replaceWithConversation(conversation.id);
         }
 
-        await loadScopedMemories(turn.characterId, nextConversationId);
+        if (conversation?.type === "group") {
+          setMemories([]);
+          setMemoryEdits({});
+        } else {
+          await loadScopedMemories(turn.characterId, nextConversationId);
+        }
       }
 
-      if (!wasBlocked) {
+      if (!wasBlocked && !noResponseQueued) {
         setStatus("");
       }
     } catch (error) {
@@ -943,19 +1274,90 @@ function ChatExperience() {
     }
   }
 
-  function ensureAssistantMessage(messageId: string, options: { replaceExisting?: boolean } = {}) {
+  function ensureAssistantMessage(
+    messageId: string,
+    options: { replaceExisting?: boolean; speaker?: ConversationMember | null } = {},
+  ) {
     assistantMessageIdRef.current = messageId;
     setTypingMessageId(messageId);
     setMessages((current) =>
       current.some((message) => message.id === messageId)
         ? current.map((message) =>
             message.id === messageId && options.replaceExisting
-              ? { ...message, content: "" }
-              : message,
+              ? { ...message, content: "", speaker: options.speaker ?? message.speaker ?? null }
+              : message.id === messageId && options.speaker
+                ? { ...message, speaker: options.speaker }
+                : message,
           )
-        : [...current, { id: messageId, role: "assistant", content: "" }],
+        : [
+            ...current,
+            {
+              id: messageId,
+              role: "assistant",
+              content: "",
+              speaker: options.speaker ?? null,
+            },
+          ],
     );
     startAssistantAnimation();
+  }
+
+  function appendAssistantToken(
+    messageId: string,
+    content: string,
+    speaker?: ConversationMember | null,
+  ) {
+    resetAssistantTyping(false);
+    setTypingMessageId(messageId);
+    setMessages((current) =>
+      current.some((message) => message.id === messageId)
+        ? current.map((message) =>
+            message.id === messageId
+              ? {
+                  ...message,
+                  content: `${message.content}${content}`,
+                  speaker: speaker ?? message.speaker ?? null,
+                }
+              : message,
+          )
+        : [
+            ...current,
+            {
+              id: messageId,
+              role: "assistant",
+              content,
+              speaker: speaker ?? null,
+            },
+          ],
+    );
+  }
+
+  function finalizeAssistantMessage(
+    messageId: string,
+    finalContent: string,
+    options: { speaker?: ConversationMember | null } = {},
+  ) {
+    resetAssistantTyping(false);
+    setTypingMessageId(null);
+    setMessages((current) => {
+      const nextMessage: ChatMessage = {
+        id: messageId,
+        role: "assistant",
+        content: finalContent,
+        speaker: options.speaker ?? null,
+      };
+
+      return current.some((message) => message.id === messageId)
+        ? current.map((message) =>
+            message.id === messageId
+              ? {
+                  ...nextMessage,
+                  speaker: options.speaker ?? message.speaker ?? null,
+                }
+              : message,
+          )
+        : [...current, nextMessage];
+    });
   }
 
   function queueAssistantText(messageId: string, content: string) {
@@ -1217,11 +1619,12 @@ function ChatExperience() {
     }
   }
 
-  const paidLocked = selectedCharacter ? isPaidLocked(selectedCharacter, trialStatus) : false;
+  const paidLocked =
+    selectedCharacter && !activeIsGroup ? isPaidLocked(selectedCharacter, trialStatus) : false;
 
   return (
     <div className={settingsOpen ? "app-page chat-layer settings-active" : "app-page chat-layer"}>
-      <aside className="chat-inbox">
+      <aside className={groupBuilderOpen ? "chat-inbox group-builder-active" : "chat-inbox"}>
         <div className="chat-inbox-header">
           <div>
             <span className="section-label">
@@ -1229,6 +1632,14 @@ function ChatExperience() {
             </span>
             <h1>Your rooms</h1>
           </div>
+          <button
+            className={groupBuilderOpen ? "icon-control active" : "icon-control"}
+            type="button"
+            aria-label="New group chat"
+            onClick={() => setGroupBuilderOpen((current) => !current)}
+          >
+            <UsersRound size={18} />
+          </button>
         </div>
 
         <label className="premium-search">
@@ -1241,6 +1652,69 @@ function ChatExperience() {
           />
         </label>
 
+        {groupBuilderOpen ? (
+          <section className="group-builder-panel">
+            <div className="panel-heading split">
+              <div>
+                <Hash size={18} />
+                <h3>New group</h3>
+              </div>
+              <button
+                className="icon-control compact-icon"
+                type="button"
+                aria-label="Close group builder"
+                onClick={resetGroupBuilder}
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <input
+              aria-label="Group name"
+              maxLength={80}
+              placeholder="Group name"
+              value={groupTitleDraft}
+              onChange={(event) => setGroupTitleDraft(event.target.value)}
+            />
+            <label className="premium-search compact-search">
+              <Search size={15} />
+              <input
+                aria-label="Search bots"
+                placeholder="Search bots"
+                value={groupCandidateSearch}
+                onChange={(event) => setGroupCandidateSearch(event.target.value)}
+              />
+            </label>
+            <div className="group-candidate-list premium-scroll">
+              {groupCandidateResults.map((character) => {
+                const active = groupSelection.includes(character.id);
+
+                return (
+                  <button
+                    className={active ? "group-candidate active" : "group-candidate"}
+                    type="button"
+                    key={character.id}
+                    onClick={() => toggleGroupSelection(character.id)}
+                  >
+                    <Avatar character={character} small />
+                    <span>
+                      <strong>{character.name}</strong>
+                      <small>{character.rating}</small>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            <button
+              className="primary-action compact"
+              type="button"
+              disabled={isGroupSaving || groupSelection.length < 2}
+              onClick={() => void createGroupConversation()}
+            >
+              <UsersRound size={16} /> Create {groupSelection.length}/10
+            </button>
+          </section>
+        ) : null}
+
         <div className="chat-list premium-scroll">
           {filteredConversations.map((conversation) => (
             <button
@@ -1251,13 +1725,20 @@ function ChatExperience() {
               key={conversation.id}
               onClick={() => void openConversation(conversation)}
             >
-              <Avatar character={conversation.character} />
+              {conversation.type === "group" ? (
+                <GroupAvatarStack members={conversation.members ?? []} />
+              ) : (
+                <Avatar character={conversation.character} />
+              )}
               <div className="chat-thread-copy">
                 <div className="chat-thread-title">
-                  <strong>{conversation.character.name}</strong>
+                  <strong>{conversationDisplayTitle(conversation)}</strong>
                   <em>{formatRoomTimestamp(conversation.updatedAt)}</em>
                 </div>
                 <small>
+                  {conversation.lastMessage?.speaker
+                    ? `${conversation.lastMessage.speaker.name}: `
+                    : ""}
                   {renderRoleplayPreview(conversation.lastMessage?.content ?? "No messages yet")}
                 </small>
               </div>
@@ -1295,28 +1776,45 @@ function ChatExperience() {
               >
                 <ArrowLeft size={18} />
               </button>
-              <Avatar character={selectedCharacter} />
+              {activeIsGroup ? (
+                <GroupAvatarStack members={activeGroupMembers} />
+              ) : (
+                <Avatar character={selectedCharacter} />
+              )}
               <div>
-                <h2>{selectedCharacter.name}</h2>
-                <p>
-                  {selectedCharacter.rating} mode
+                <h2>
                   {activeConversation
-                    ? ` | ${formatRoomTimestamp(activeConversation.updatedAt)} room | ${memories.length} saved memories`
-                    : " | fresh room"}
-                  {trialStatus && selectedCharacter.monetizationEnabled
+                    ? conversationDisplayTitle(activeConversation)
+                    : selectedCharacter.name}
+                </h2>
+                <p>
+                  {activeIsGroup
+                    ? `${activeGroupMembers.length} bots | ${formatRoomTimestamp(
+                        activeConversation?.updatedAt ?? new Date().toISOString(),
+                      )} room`
+                    : `${selectedCharacter.rating} mode${
+                        activeConversation
+                          ? ` | ${formatRoomTimestamp(
+                              activeConversation.updatedAt,
+                            )} room | ${memories.length} saved memories`
+                          : " | fresh room"
+                      }`}
+                  {!activeIsGroup && trialStatus && selectedCharacter.monetizationEnabled
                     ? ` | trial ${trialStatus.remaining}/${trialStatus.limit}`
                     : ""}
                 </p>
               </div>
               <div className="chat-actions">
-                <button
-                  className="icon-control"
-                  type="button"
-                  aria-label="Start fresh room"
-                  onClick={() => void startFreshRoom()}
-                >
-                  <RotateCcw size={18} />
-                </button>
+                {!activeIsGroup ? (
+                  <button
+                    className="icon-control"
+                    type="button"
+                    aria-label="Start fresh room"
+                    onClick={() => void startFreshRoom()}
+                  >
+                    <RotateCcw size={18} />
+                  </button>
+                ) : null}
                 <button
                   className={settingsOpen ? "icon-control active" : "icon-control"}
                   type="button"
@@ -1331,6 +1829,13 @@ function ChatExperience() {
             <div className="message-stream premium-scroll" ref={streamRef}>
               {messages.map((message) => (
                 <div className={`message-row ${message.role}`} key={message.id}>
+                  {activeIsGroup && message.role === "assistant" && message.speaker ? (
+                    <div className="message-speaker">
+                      <Avatar character={characterFromMember(message.speaker)} small />
+                      <span>{message.speaker.name}</span>
+                      <small>@{message.speaker.mentionSlug}</small>
+                    </div>
+                  ) : null}
                   <div className="message-bubble">
                     {message.content ? (
                       renderRoleplayContent(message.content)
@@ -1372,15 +1877,40 @@ function ChatExperience() {
                   void sendMessage();
                 }}
               >
+                {activeIsGroup ? (
+                  <div className="mention-strip" aria-label="Mention bot">
+                    {activeGroupMembers.map((member) => (
+                      <button
+                        type="button"
+                        key={member.characterId}
+                        onClick={() => insertMention(member)}
+                      >
+                        <AtSign size={14} />
+                        {member.mentionSlug}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
                 <div
                   className="chat-composer-field"
                   style={{ "--chat-limit-progress": `${draftLimitProgress}%` } as CSSProperties}
                 >
                   <input
+                    ref={draftInputRef}
                     aria-describedby="chat-message-limit"
-                    aria-label={`Message ${selectedCharacter.name}`}
+                    aria-label={
+                      activeIsGroup
+                        ? `Message ${
+                            activeConversation
+                              ? conversationDisplayTitle(activeConversation)
+                              : selectedCharacter.name
+                          }`
+                        : `Message ${selectedCharacter.name}`
+                    }
                     maxLength={maxChatMessageChars}
-                    placeholder={`Message ${selectedCharacter.name}...`}
+                    placeholder={
+                      activeIsGroup ? "Mention @bot..." : `Message ${selectedCharacter.name}...`
+                    }
                     value={draft}
                     onChange={(event) => {
                       setDraft(event.target.value);
@@ -1439,7 +1969,11 @@ function ChatExperience() {
               <span className="section-label">
                 <SlidersHorizontal size={15} /> Chat settings
               </span>
-              <h2>{selectedCharacter.name}</h2>
+              <h2>
+                {activeConversation
+                  ? conversationDisplayTitle(activeConversation)
+                  : selectedCharacter.name}
+              </h2>
             </div>
             <button
               className="icon-control"
@@ -1451,28 +1985,109 @@ function ChatExperience() {
             </button>
           </div>
 
-          <section className="tuning-card evolution-card">
-            <div className="panel-heading split">
-              <div>
-                <Sparkles size={18} />
-                <h3>Evolving profile</h3>
+          {activeIsGroup ? (
+            <section className="tuning-card group-members-card">
+              <div className="panel-heading split">
+                <div>
+                  <UsersRound size={18} />
+                  <h3>Group members</h3>
+                </div>
+                <span>{activeGroupMembers.length}/10</span>
               </div>
-              <span>{evolution ? evolution.stage : "new"}</span>
-            </div>
-            <p>
-              {evolution
-                ? evolution.summary
-                : "This room will adapt as saved memories and repeated choices build up."}
-            </p>
-            <div className="evolution-meter" aria-label="Relationship depth">
-              <span style={{ width: `${evolution?.relationshipDepth ?? 0}%` }} />
-            </div>
-            <small>
-              {evolution
-                ? `${evolution.relationshipDepth}/100 depth | ${evolution.memoryCount} memories | ${evolution.userMessageCount} turns`
-                : "0/100 depth | no saved memories yet"}
-            </small>
-          </section>
+              <div className="group-member-list">
+                {activeGroupMembers.map((member) => (
+                  <article className="group-member-row" key={member.characterId}>
+                    <Avatar character={characterFromMember(member)} small />
+                    <span>
+                      <strong>{member.name}</strong>
+                      <small>@{member.mentionSlug}</small>
+                    </span>
+                    <button
+                      className="icon-control compact-icon"
+                      type="button"
+                      aria-label={`Remove ${member.name}`}
+                      disabled={isGroupSaving || activeGroupMembers.length <= 2}
+                      onClick={() => void removeGroupMember(member.characterId)}
+                    >
+                      <MinusCircle size={16} />
+                    </button>
+                  </article>
+                ))}
+              </div>
+
+              {activeGroupMembers.length < 10 ? (
+                <>
+                  <label className="premium-search compact-search">
+                    <Search size={15} />
+                    <input
+                      aria-label="Search bots to add"
+                      placeholder="Search bots"
+                      value={groupCandidateSearch}
+                      onChange={(event) => setGroupCandidateSearch(event.target.value)}
+                    />
+                  </label>
+                  <div className="group-candidate-list compact premium-scroll">
+                    {groupCandidateResults
+                      .filter(
+                        (character) =>
+                          !activeGroupMembers.some((member) => member.characterId === character.id),
+                      )
+                      .map((character) => {
+                        const active = groupAddSelection.includes(character.id);
+
+                        return (
+                          <button
+                            className={active ? "group-candidate active" : "group-candidate"}
+                            type="button"
+                            key={character.id}
+                            onClick={() => toggleGroupAddSelection(character.id)}
+                          >
+                            <Avatar character={character} small />
+                            <span>
+                              <strong>{character.name}</strong>
+                              <small>{character.rating}</small>
+                            </span>
+                          </button>
+                        );
+                      })}
+                  </div>
+                  <button
+                    className="primary-action compact"
+                    type="button"
+                    disabled={isGroupSaving || groupAddSelection.length === 0}
+                    onClick={() => void addMembersToActiveGroup()}
+                  >
+                    <UserPlus size={16} /> Add {groupAddSelection.length}
+                  </button>
+                </>
+              ) : null}
+            </section>
+          ) : null}
+
+          {!activeIsGroup ? (
+            <section className="tuning-card evolution-card">
+              <div className="panel-heading split">
+                <div>
+                  <Sparkles size={18} />
+                  <h3>Evolving profile</h3>
+                </div>
+                <span>{evolution ? evolution.stage : "new"}</span>
+              </div>
+              <p>
+                {evolution
+                  ? evolution.summary
+                  : "This room will adapt as saved memories and repeated choices build up."}
+              </p>
+              <div className="evolution-meter" aria-label="Relationship depth">
+                <span style={{ width: `${evolution?.relationshipDepth ?? 0}%` }} />
+              </div>
+              <small>
+                {evolution
+                  ? `${evolution.relationshipDepth}/100 depth | ${evolution.memoryCount} memories | ${evolution.userMessageCount} turns`
+                  : "0/100 depth | no saved memories yet"}
+              </small>
+            </section>
+          ) : null}
 
           <section className="tuning-card room-control-card">
             <div className="panel-heading">
@@ -1480,13 +2095,15 @@ function ChatExperience() {
               <h3>Room controls</h3>
             </div>
             <div className="room-control-actions">
-              <button
-                className="secondary-action compact"
-                type="button"
-                onClick={() => void startFreshRoom()}
-              >
-                <Plus size={16} /> Start fresh room
-              </button>
+              {!activeIsGroup ? (
+                <button
+                  className="secondary-action compact"
+                  type="button"
+                  onClick={() => void startFreshRoom()}
+                >
+                  <Plus size={16} /> Start fresh room
+                </button>
+              ) : null}
             </div>
             <small>
               {activeConversation
@@ -1530,107 +2147,111 @@ function ChatExperience() {
             </section>
           ) : null}
 
-          <section className="tuning-card">
-            <div className="panel-heading">
-              <Pencil size={18} />
-              <h3>Private tuning prompt</h3>
-            </div>
-            <textarea
-              value={tuningDraft}
-              onChange={(event) => setTuningDraft(event.target.value)}
-              placeholder={`Example: Keep ${selectedCharacter.name} more playful, slower paced, and protective in this chat.`}
-              rows={4}
-            />
-            <button
-              className="primary-action compact"
-              type="button"
-              onClick={() => {
-                void addMemory("style", tuningDraft);
-                setTuningDraft("");
-              }}
-            >
-              <Save size={16} /> Save tuning
-            </button>
-          </section>
-
-          <section className="tuning-card">
-            <div className="panel-heading">
-              <Archive size={18} />
-              <h3>Add memory</h3>
-            </div>
-            <div className="segmented-control dense">
-              {memoryKinds.map((kind) => (
-                <button
-                  className={kind.id === memoryKind ? "active" : ""}
-                  type="button"
-                  key={kind.id}
-                  onClick={() => setMemoryKind(kind.id)}
-                >
-                  {kind.label}
-                </button>
-              ))}
-            </div>
-            <textarea
-              value={memoryDraft}
-              onChange={(event) => setMemoryDraft(event.target.value)}
-              placeholder="Save a private note this character should remember in this chat."
-              rows={3}
-            />
-            <button
-              className="primary-action compact"
-              type="button"
-              onClick={() => {
-                void addMemory(memoryKind, memoryDraft);
-                setMemoryDraft("");
-              }}
-            >
-              <Plus size={16} /> Add memory
-            </button>
-          </section>
-
-          <section className="memory-editor-list premium-scroll">
-            <div className="panel-heading">
-              <ShieldCheck size={18} />
-              <h3>Live context</h3>
-            </div>
-            {memories.map((memory) => (
-              <article className="memory-editor-card" key={memory.id}>
-                <span>{memory.kind}</span>
+          {!activeIsGroup ? (
+            <>
+              <section className="tuning-card">
+                <div className="panel-heading">
+                  <Pencil size={18} />
+                  <h3>Private tuning prompt</h3>
+                </div>
                 <textarea
-                  value={memoryEdits[memory.id] ?? memory.text}
-                  onChange={(event) =>
-                    setMemoryEdits((current) => ({
-                      ...current,
-                      [memory.id]: event.target.value,
-                    }))
-                  }
+                  value={tuningDraft}
+                  onChange={(event) => setTuningDraft(event.target.value)}
+                  placeholder={`Example: Keep ${selectedCharacter.name} more playful, slower paced, and protective in this chat.`}
+                  rows={4}
+                />
+                <button
+                  className="primary-action compact"
+                  type="button"
+                  onClick={() => {
+                    void addMemory("style", tuningDraft);
+                    setTuningDraft("");
+                  }}
+                >
+                  <Save size={16} /> Save tuning
+                </button>
+              </section>
+
+              <section className="tuning-card">
+                <div className="panel-heading">
+                  <Archive size={18} />
+                  <h3>Add memory</h3>
+                </div>
+                <div className="segmented-control dense">
+                  {memoryKinds.map((kind) => (
+                    <button
+                      className={kind.id === memoryKind ? "active" : ""}
+                      type="button"
+                      key={kind.id}
+                      onClick={() => setMemoryKind(kind.id)}
+                    >
+                      {kind.label}
+                    </button>
+                  ))}
+                </div>
+                <textarea
+                  value={memoryDraft}
+                  onChange={(event) => setMemoryDraft(event.target.value)}
+                  placeholder="Save a private note this character should remember in this chat."
                   rows={3}
                 />
-                <div>
-                  <button
-                    className="secondary-action compact"
-                    type="button"
-                    onClick={() => void removeMemory(memory)}
-                  >
-                    <Trash2 size={15} /> Remove
-                  </button>
-                  <button
-                    className="primary-action compact"
-                    type="button"
-                    onClick={() => void saveMemory(memory)}
-                  >
-                    <Save size={15} /> Save
-                  </button>
+                <button
+                  className="primary-action compact"
+                  type="button"
+                  onClick={() => {
+                    void addMemory(memoryKind, memoryDraft);
+                    setMemoryDraft("");
+                  }}
+                >
+                  <Plus size={16} /> Add memory
+                </button>
+              </section>
+
+              <section className="memory-editor-list premium-scroll">
+                <div className="panel-heading">
+                  <ShieldCheck size={18} />
+                  <h3>Live context</h3>
                 </div>
-              </article>
-            ))}
-            {memories.length === 0 ? (
-              <div className="mini-empty">
-                <Archive size={18} />
-                <p>Context appears here after you chat or save a private note.</p>
-              </div>
-            ) : null}
-          </section>
+                {memories.map((memory) => (
+                  <article className="memory-editor-card" key={memory.id}>
+                    <span>{memory.kind}</span>
+                    <textarea
+                      value={memoryEdits[memory.id] ?? memory.text}
+                      onChange={(event) =>
+                        setMemoryEdits((current) => ({
+                          ...current,
+                          [memory.id]: event.target.value,
+                        }))
+                      }
+                      rows={3}
+                    />
+                    <div>
+                      <button
+                        className="secondary-action compact"
+                        type="button"
+                        onClick={() => void removeMemory(memory)}
+                      >
+                        <Trash2 size={15} /> Remove
+                      </button>
+                      <button
+                        className="primary-action compact"
+                        type="button"
+                        onClick={() => void saveMemory(memory)}
+                      >
+                        <Save size={15} /> Save
+                      </button>
+                    </div>
+                  </article>
+                ))}
+                {memories.length === 0 ? (
+                  <div className="mini-empty">
+                    <Archive size={18} />
+                    <p>Context appears here after you chat or save a private note.</p>
+                  </div>
+                ) : null}
+              </section>
+            </>
+          ) : null}
         </aside>
       ) : null}
 
@@ -1651,10 +2272,27 @@ function Avatar({ character, small = false }: { character: CharacterSummary; sma
   );
 }
 
+function GroupAvatarStack({ members }: { members: ConversationMember[] }) {
+  const visibleMembers = members.slice(0, 3);
+
+  return (
+    <span className="group-avatar-stack" aria-hidden="true">
+      {visibleMembers.map((member) => (
+        <Avatar character={characterFromMember(member)} small key={member.characterId} />
+      ))}
+      {visibleMembers.length === 0 ? <UsersRound size={22} /> : null}
+    </span>
+  );
+}
+
 interface ChatStreamHandlers {
   ready: () => void;
   meta: (payload: ChatResponse) => void;
-  token: (payload: { content?: string }) => void;
+  token: (payload: {
+    messageId?: string;
+    content?: string;
+    speaker?: ConversationMember | null;
+  }) => void;
   blocked: (payload: ChatResponse) => void;
   done: (payload: ChatResponse) => void;
   error: (payload: { code?: string; message?: string; details?: Record<string, unknown> }) => void;
@@ -1722,7 +2360,13 @@ function dispatchChatStreamBlock(block: string, handlers: ChatStreamHandlers): v
       handlers.meta(payload as ChatResponse);
       break;
     case "token":
-      handlers.token(payload as { content?: string });
+      handlers.token(
+        payload as {
+          messageId?: string;
+          content?: string;
+          speaker?: ConversationMember | null;
+        },
+      );
       break;
     case "blocked":
       handlers.blocked(payload as ChatResponse);

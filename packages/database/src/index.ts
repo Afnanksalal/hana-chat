@@ -216,9 +216,22 @@ export interface ChatConversationsTable {
   id: Generated<string>;
   user_id: string;
   character_id: string;
+  conversation_type: DefaultColumn<"direct" | "group">;
+  title: DefaultColumn<string>;
+  response_mode: DefaultColumn<"mentions">;
   created_at: TimestampColumn;
   updated_at: TimestampColumn;
   status: DefaultColumn<"active" | "archived" | "deleted">;
+}
+
+export interface ChatConversationParticipantsTable {
+  conversation_id: string;
+  character_id: string;
+  position: number;
+  mention_slug: string;
+  status: DefaultColumn<"active" | "removed">;
+  added_at: TimestampColumn;
+  updated_at: TimestampColumn;
 }
 
 export interface ChatConversationEvolutionTable {
@@ -580,6 +593,7 @@ export interface HanaDatabase {
   "creator.character_engagement_events": CreatorCharacterEngagementEventsTable;
   "creator.character_ratings": CreatorCharacterRatingsTable;
   "chat.conversations": ChatConversationsTable;
+  "chat.conversation_participants": ChatConversationParticipantsTable;
   "chat.conversation_evolution": ChatConversationEvolutionTable;
   "chat.messages": ChatMessagesTable;
   "memory.facts": MemoryFactsTable;

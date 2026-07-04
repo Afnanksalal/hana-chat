@@ -14,6 +14,17 @@ Every prompt-injected memory must match:
 
 Manual memory notes create or use a conversation thread for the selected character. They do not become global user memory. A single user can keep multiple rooms with the same character; each room has its own `conversation_id`, memory set, and evolution profile.
 
+Group rooms keep the same memory contract. A single group conversation may contain multiple bot
+members, but retrieval, graph context, automatic extraction, and evolution still run per mentioned
+bot using `user_id + character_id + conversation_id`. The shared group transcript is only recent
+conversation context; it does not widen memory scope across characters.
+
+Group user messages are persisted once for the room. When a mentioned bot responds, memory
+extraction writes facts for that bot and the current `conversation_id`, and
+`chat.conversation_evolution` stores one row per `conversation_id + character_id`. User turn counts
+for a group evolution profile count shared user messages in the room, while assistant-side
+relationship evidence is limited to that bot's own replies.
+
 ## Retrieval Flow
 
 ```mermaid
@@ -113,6 +124,9 @@ Evolution is not fixed prose. The database can keep accumulating exact-scoped fa
 and the profile rewrites a compact prompt-facing view from those facts plus recent turns. The
 prompt-facing arrays stay bounded for token control, while the underlying fact set can keep growing
 and being re-ranked/compacted over many iterations.
+
+In group rooms, this profile is separate for every bot member. The group does not have a shared
+relationship profile, and one bot's memory/evolution cannot be injected into another bot's turn.
 
 ## Client Outbox
 

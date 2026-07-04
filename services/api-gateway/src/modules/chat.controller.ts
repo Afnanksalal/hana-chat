@@ -1,5 +1,11 @@
 import { loadConfig } from "@hana/config";
-import { SendChatMessageRequestSchema, type ChatMessage, type MemoryScope } from "@hana/contracts";
+import {
+  AddGroupConversationMembersRequestSchema,
+  CreateGroupConversationRequestSchema,
+  SendChatMessageRequestSchema,
+  type ChatMessage,
+  type MemoryScope,
+} from "@hana/contracts";
 import { createDatabase } from "@hana/database";
 import { DomainError } from "@hana/errors";
 import { memoryWriteAction, scoreSalience, type SalienceSignals } from "@hana/memory-core";
@@ -19,7 +25,7 @@ import {
 } from "./billable-messages";
 import {
   formatEvolutionForPrompt,
-  getConversationEvolution,
+  getConversationEvolutionForCharacter,
   upsertConversationEvolution,
 } from "./conversation-evolution";
 import { incrementMarketplaceStats } from "./marketplace-stats";
@@ -28,6 +34,7 @@ import {
   projectMemoryDelete,
   projectMemoryUpsert,
 } from "./memory-projection";
+import { resolveMentionedMembers, uniqueMentionSlug } from "./group-chat";
 import { hasPaidCharacterAccess, paidCharacterTrialStatus } from "./monetization.controller";
 import { enqueueOutboxEvent, eventKey, projectionIdempotencyKey } from "./outbox";
 import { auditEvent, requireSession } from "./session";
@@ -104,7 +111,52 @@ interface PromptConversationMessage {
   id: string;
   role: "user" | "assistant" | "system";
   content: string;
+  character_id: string;
   created_at: Date;
+}
+
+interface ConversationMember {
+  characterId: string;
+  name: string;
+  description: string;
+  avatarUrl: string;
+  coverImageUrl: string;
+  mentionSlug: string;
+  position: number;
+  rating: "general" | "teen" | "mature" | "adult";
+}
+
+interface ChatCharacterRow {
+  id: string;
+  creator_user_id: string;
+  visibility: string;
+  moderation_status: string;
+  name: string;
+  description: string;
+  avatar_url: string | null;
+  cover_image_url: string | null;
+  marketplace_preview: string | null;
+  price_cents: number;
+  monetization_enabled: boolean;
+  persona_prompt: string;
+  greeting: string;
+  scenario_prompt: string | null;
+  first_message_style: string | null;
+  creator_notes: string | null;
+  personality_traits: string[];
+  speaking_style: string | null;
+  example_dialogues_json: unknown;
+  rating: "general" | "teen" | "mature" | "adult";
+  tags: string[];
+}
+
+interface ActiveConversationContext {
+  id: string;
+  user_id: string;
+  character_id: string;
+  conversation_type: "direct" | "group";
+  title: string;
+  response_mode: "mentions";
 }
 
 interface UserEntitlements {
@@ -155,6 +207,9 @@ export class ChatController {
       .select([
         "conversations.id",
         "conversations.character_id",
+        "conversations.conversation_type",
+        "conversations.title",
+        "conversations.response_mode",
         "conversations.updated_at",
         "conversations.created_at",
         "characters.name",
@@ -179,7 +234,7 @@ export class ChatController {
         ? await this.db
             .selectFrom("chat.messages")
             .distinctOn("conversation_id")
-            .select(["id", "conversation_id", "role", "content", "created_at"])
+            .select(["id", "conversation_id", "character_id", "role", "content", "created_at"])
             .where("conversation_id", "in", conversationIds)
             .orderBy("conversation_id", "asc")
             .orderBy("created_at", "desc")
@@ -187,7 +242,7 @@ export class ChatController {
         : [];
     const latestByConversation = new Map<
       string,
-      { id: string; role: string; content: string; created_at: Date }
+      { id: string; character_id: string; role: string; content: string; created_at: Date }
     >();
 
     for (const message of latestMessages) {
@@ -195,13 +250,21 @@ export class ChatController {
         latestByConversation.set(message.conversation_id, message);
       }
     }
+    const membersByConversation = await loadConversationMembers(this.db, conversationIds);
 
     return {
       conversations: conversations.map((conversation) => {
         const latestMessage = latestByConversation.get(conversation.id);
+        const members = membersByConversation.get(conversation.id) ?? [];
 
         return {
           id: conversation.id,
+          type: conversation.conversation_type,
+          title:
+            conversation.conversation_type === "group"
+              ? conversation.title || groupConversationTitle(members)
+              : conversation.name,
+          responseMode: conversation.response_mode,
           characterId: conversation.character_id,
           updatedAt: conversation.updated_at.toISOString(),
           createdAt: conversation.created_at.toISOString(),
@@ -218,12 +281,19 @@ export class ChatController {
             rating: conversation.rating ?? "teen",
             tags: conversation.tags ?? [],
           },
+          members,
           lastMessage: latestMessage
             ? {
                 id: latestMessage.id,
                 role: latestMessage.role,
                 content: latestMessage.content,
                 createdAt: latestMessage.created_at.toISOString(),
+                speaker:
+                  latestMessage.role === "assistant"
+                    ? (members.find(
+                        (member) => member.characterId === latestMessage.character_id,
+                      ) ?? null)
+                    : null,
               }
             : null,
         };
@@ -248,6 +318,9 @@ export class ChatController {
       .select([
         "conversations.id",
         "conversations.character_id",
+        "conversations.conversation_type",
+        "conversations.title",
+        "conversations.response_mode",
         "conversations.updated_at",
         "characters.name",
         "characters.description",
@@ -269,7 +342,7 @@ export class ChatController {
     const [messages, settings] = await Promise.all([
       this.db
         .selectFrom("chat.messages")
-        .select(["id", "role", "content", "created_at"])
+        .select(["id", "character_id", "role", "content", "created_at"])
         .where("conversation_id", "=", conversationId)
         .where("user_id", "=", session.userId)
         .orderBy("created_at", "asc")
@@ -287,11 +360,23 @@ export class ChatController {
           characterId: conversation.character_id,
           conversationId,
         })
-      : await getConversationEvolution(this.db, conversationId);
+      : await getConversationEvolutionForCharacter(
+          this.db,
+          conversationId,
+          conversation.character_id,
+        );
+    const membersByConversation = await loadConversationMembers(this.db, [conversationId]);
+    const members = membersByConversation.get(conversationId) ?? [];
 
     return {
       conversation: {
         id: conversation.id,
+        type: conversation.conversation_type,
+        title:
+          conversation.conversation_type === "group"
+            ? conversation.title || groupConversationTitle(members)
+            : conversation.name,
+        responseMode: conversation.response_mode,
         characterId: conversation.character_id,
         updatedAt: conversation.updated_at.toISOString(),
         character: {
@@ -304,12 +389,17 @@ export class ChatController {
           monetizationEnabled: conversation.monetization_enabled,
           rating: conversation.rating ?? "teen",
         },
+        members,
       },
       messages: messages.map((message) => ({
         id: message.id,
         role: message.role,
         content: message.content,
         createdAt: message.created_at.toISOString(),
+        speaker:
+          message.role === "assistant"
+            ? (members.find((member) => member.characterId === message.character_id) ?? null)
+            : null,
       })),
       evolution,
     };
@@ -352,7 +442,6 @@ export class ChatController {
         .updateTable("memory.facts")
         .set({ is_active: false, updated_at: now })
         .where("user_id", "=", session.userId)
-        .where("character_id", "=", conversation.character_id)
         .where("conversation_id", "=", conversationId)
         .where("is_active", "=", true)
         .returning(memoryProjectionColumns)
@@ -385,6 +474,273 @@ export class ChatController {
       ok: true,
       conversationId,
       deactivatedMemoryCount: deactivatedMemories.length,
+    };
+  }
+
+  @Post("/group-conversations")
+  public async createGroupConversation(
+    @Body() body: unknown,
+    @Headers("authorization") authorization?: string,
+  ) {
+    const session = await requireSession(this.db, this.config, authorization);
+    const input = CreateGroupConversationRequestSchema.parse(body);
+    const characters = await loadChatCharacters(this.db, input.characterIds);
+
+    if (characters.length !== input.characterIds.length) {
+      throw new DomainError("RESOURCE_NOT_FOUND", "One or more characters were not found");
+    }
+
+    for (const character of characters) {
+      ensureCharacterCanChat(character, session.userId);
+      await ensureGroupCharacterAccess({
+        db: this.db,
+        config: this.config,
+        userId: session.userId,
+        character,
+      });
+    }
+
+    const orderedCharacters = input.characterIds.map((characterId) => {
+      const character = characters.find((item) => item.id === characterId);
+
+      if (!character) {
+        throw new DomainError("RESOURCE_NOT_FOUND", "One or more characters were not found");
+      }
+
+      return character;
+    });
+    const primaryCharacter = orderedCharacters[0];
+
+    if (!primaryCharacter) {
+      throw new DomainError("VALIDATION_FAILED", "Choose at least two characters");
+    }
+
+    const title = groupTitleFromInput(
+      input.title,
+      orderedCharacters.map((character) => character.name),
+    );
+    const members = buildConversationMembers(orderedCharacters);
+    const conversation = await this.db.transaction().execute(async (tx) => {
+      const created = await tx
+        .insertInto("chat.conversations")
+        .values({
+          user_id: session.userId,
+          character_id: primaryCharacter.id,
+          conversation_type: "group",
+          title,
+          response_mode: "mentions",
+          status: "active",
+        })
+        .returning(["id", "created_at", "updated_at"])
+        .executeTakeFirstOrThrow();
+
+      await tx
+        .insertInto("chat.conversation_participants")
+        .values(
+          members.map((member) => ({
+            conversation_id: created.id,
+            character_id: member.characterId,
+            position: member.position,
+            mention_slug: member.mentionSlug,
+            status: "active",
+          })),
+        )
+        .execute();
+
+      await tx
+        .insertInto("chat.messages")
+        .values({
+          conversation_id: created.id,
+          user_id: session.userId,
+          character_id: primaryCharacter.id,
+          role: "system",
+          content: `Group started with ${members.map((member) => `@${member.mentionSlug}`).join(", ")}.`,
+          client_message_id: null,
+          metadata_json: { kind: "group_intro", memberCharacterIds: input.characterIds },
+        })
+        .execute();
+
+      return created;
+    });
+
+    await Promise.all(
+      orderedCharacters.map((character) =>
+        incrementMarketplaceStats(this.db, character.id, "chat_start", session.userId),
+      ),
+    );
+    await auditEvent(this.db, {
+      actorUserId: session.userId,
+      action: "chat.group.create",
+      resourceType: "chat.conversation",
+      resourceId: conversation.id,
+      metadata: {
+        characterIds: input.characterIds,
+        memberCount: members.length,
+      },
+    });
+
+    return {
+      conversation: {
+        id: conversation.id,
+        type: "group",
+        title,
+        responseMode: "mentions",
+        characterId: primaryCharacter.id,
+        createdAt: conversation.created_at.toISOString(),
+        updatedAt: conversation.updated_at.toISOString(),
+        members,
+      },
+    };
+  }
+
+  @Post("/conversations/:conversationId/members")
+  public async addGroupConversationMembers(
+    @Param("conversationId") conversationId: string,
+    @Body() body: unknown,
+    @Headers("authorization") authorization?: string,
+  ) {
+    const session = await requireSession(this.db, this.config, authorization);
+    const input = AddGroupConversationMembersRequestSchema.parse(body);
+    const conversation = await loadOwnedConversation(this.db, conversationId, session.userId);
+
+    if (conversation.conversation_type !== "group") {
+      throw new DomainError("CONFLICT", "Only group chats can add members");
+    }
+
+    const existingMembers =
+      (await loadConversationMembers(this.db, [conversationId])).get(conversationId) ?? [];
+    const existingCharacterIds = new Set(existingMembers.map((member) => member.characterId));
+    const newCharacterIds = input.characterIds.filter(
+      (characterId) => !existingCharacterIds.has(characterId),
+    );
+
+    if (newCharacterIds.length === 0) {
+      return { ok: true, conversationId, members: existingMembers };
+    }
+
+    if (existingMembers.length + newCharacterIds.length > 10) {
+      throw new DomainError("VALIDATION_FAILED", "Group chats support up to 10 bots");
+    }
+
+    const characters = await loadChatCharacters(this.db, newCharacterIds);
+
+    if (characters.length !== newCharacterIds.length) {
+      throw new DomainError("RESOURCE_NOT_FOUND", "One or more characters were not found");
+    }
+
+    for (const character of characters) {
+      ensureCharacterCanChat(character, session.userId);
+      await ensureGroupCharacterAccess({
+        db: this.db,
+        config: this.config,
+        userId: session.userId,
+        character,
+      });
+    }
+
+    const takenSlugs = new Set(existingMembers.map((member) => member.mentionSlug));
+    const nextPosition = nextMemberPosition(existingMembers);
+    const newMembers = buildConversationMembers(characters, takenSlugs, nextPosition);
+
+    await this.db
+      .insertInto("chat.conversation_participants")
+      .values(
+        newMembers.map((member) => ({
+          conversation_id: conversationId,
+          character_id: member.characterId,
+          position: member.position,
+          mention_slug: member.mentionSlug,
+          status: "active",
+        })),
+      )
+      .onConflict((oc) =>
+        oc.columns(["conversation_id", "character_id"]).doUpdateSet({
+          position: (eb) => eb.ref("excluded.position"),
+          mention_slug: (eb) => eb.ref("excluded.mention_slug"),
+          status: "active",
+          updated_at: new Date(),
+        }),
+      )
+      .execute();
+
+    await this.db
+      .updateTable("chat.conversations")
+      .set({ updated_at: new Date() })
+      .where("id", "=", conversationId)
+      .execute();
+
+    await auditEvent(this.db, {
+      actorUserId: session.userId,
+      action: "chat.group.members.add",
+      resourceType: "chat.conversation",
+      resourceId: conversationId,
+      metadata: { characterIds: newCharacterIds },
+    });
+
+    const members =
+      (await loadConversationMembers(this.db, [conversationId])).get(conversationId) ?? [];
+
+    return { ok: true, conversationId, members };
+  }
+
+  @Delete("/conversations/:conversationId/members/:characterId")
+  public async removeGroupConversationMember(
+    @Param("conversationId") conversationId: string,
+    @Param("characterId") characterId: string,
+    @Headers("authorization") authorization?: string,
+  ) {
+    const session = await requireSession(this.db, this.config, authorization);
+    const conversation = await loadOwnedConversation(this.db, conversationId, session.userId);
+
+    if (conversation.conversation_type !== "group") {
+      throw new DomainError("CONFLICT", "Only group chats can remove members");
+    }
+
+    const members =
+      (await loadConversationMembers(this.db, [conversationId])).get(conversationId) ?? [];
+
+    if (!members.some((member) => member.characterId === characterId)) {
+      throw new DomainError("RESOURCE_NOT_FOUND", "Group member not found");
+    }
+
+    if (members.length <= 2) {
+      throw new DomainError("CONFLICT", "Group chats need at least two bots");
+    }
+
+    const remainingMembers = members.filter((member) => member.characterId !== characterId);
+    const nextPrimary = remainingMembers[0];
+    const now = new Date();
+
+    await this.db.transaction().execute(async (tx) => {
+      await tx
+        .updateTable("chat.conversation_participants")
+        .set({ status: "removed", updated_at: now })
+        .where("conversation_id", "=", conversationId)
+        .where("character_id", "=", characterId)
+        .execute();
+
+      await tx
+        .updateTable("chat.conversations")
+        .set({
+          character_id: nextPrimary?.characterId ?? conversation.character_id,
+          updated_at: now,
+        })
+        .where("id", "=", conversationId)
+        .execute();
+    });
+
+    await auditEvent(this.db, {
+      actorUserId: session.userId,
+      action: "chat.group.members.remove",
+      resourceType: "chat.conversation",
+      resourceId: conversationId,
+      metadata: { characterId },
+    });
+
+    return {
+      ok: true,
+      conversationId,
+      members: (await loadConversationMembers(this.db, [conversationId])).get(conversationId) ?? [],
     };
   }
 
@@ -425,8 +781,19 @@ export class ChatController {
               id: payload.assistantMessage.id,
               role: payload.assistantMessage.role,
               createdAt: payload.assistantMessage.createdAt,
+              speaker: payload.assistantMessage.speaker,
             }
           : undefined,
+        assistantMessages:
+          "assistantMessages" in payload
+            ? payload.assistantMessages.map((message) => ({
+                id: message.id,
+                role: message.role,
+                createdAt: message.createdAt,
+                speaker: message.speaker,
+              }))
+            : [],
+        group: "group" in payload ? payload.group : null,
         modelRoute: payload.modelRoute,
         safety: payload.safety,
         outputSafety: payload.outputSafety,
@@ -436,8 +803,21 @@ export class ChatController {
       });
 
       if (!("duplicate" in payload && payload.duplicate)) {
-        for (const chunk of chunkText(payload.assistantMessage?.content ?? "")) {
-          writeSse(reply, "token", { content: chunk });
+        const assistantMessages =
+          "assistantMessages" in payload && payload.assistantMessages.length
+            ? payload.assistantMessages
+            : payload.assistantMessage
+              ? [payload.assistantMessage]
+              : [];
+
+        for (const message of assistantMessages) {
+          for (const chunk of chunkText(message.content ?? "")) {
+            writeSse(reply, "token", {
+              messageId: message.id,
+              speaker: message.speaker,
+              content: chunk,
+            });
+          }
         }
       }
 
@@ -452,50 +832,38 @@ export class ChatController {
   private async createChatTurn(body: unknown, authorization?: string) {
     const session = await requireSession(this.db, this.config, authorization);
     const input = SendChatMessageRequestSchema.parse(body);
-    const character = await this.db
-      .selectFrom("creator.characters as characters")
-      .innerJoin(
-        "creator.character_versions as versions",
-        "versions.id",
-        "characters.current_version_id",
-      )
-      .select([
-        "characters.id",
-        "characters.creator_user_id",
-        "characters.visibility",
-        "characters.moderation_status",
-        "characters.name",
-        "characters.description",
-        "characters.marketplace_preview",
-        "characters.price_cents",
-        "characters.monetization_enabled",
-        "versions.persona_prompt",
-        "versions.greeting",
-        "versions.scenario_prompt",
-        "versions.first_message_style",
-        "versions.creator_notes",
-        "versions.personality_traits",
-        "versions.speaking_style",
-        "versions.example_dialogues_json",
-        "versions.rating",
-        "versions.tags",
-      ])
-      .where("characters.id", "=", input.characterId)
-      .executeTakeFirst();
+    const conversationContext = input.conversationId
+      ? await loadOwnedConversation(this.db, input.conversationId, session.userId)
+      : null;
+    const groupMembers =
+      conversationContext?.conversation_type === "group"
+        ? ((await loadConversationMembers(this.db, [conversationContext.id])).get(
+            conversationContext.id,
+          ) ?? [])
+        : [];
+    const primaryCharacterId =
+      conversationContext?.conversation_type === "group"
+        ? conversationContext.character_id
+        : input.characterId;
+    const character = await loadChatCharacter(this.db, primaryCharacterId);
 
     if (!character) {
       throw new DomainError("RESOURCE_NOT_FOUND", "Character not found");
     }
 
-    if (character.visibility !== "public" && character.creator_user_id !== session.userId) {
-      throw new DomainError("AUTH_FORBIDDEN", "Character is private");
+    if (
+      conversationContext?.conversation_type === "direct" &&
+      conversationContext.character_id !== input.characterId
+    ) {
+      throw new DomainError("AUTH_FORBIDDEN", "Conversation does not belong to this character");
     }
 
-    if (
-      character.moderation_status !== "approved" &&
-      character.creator_user_id !== session.userId
-    ) {
-      throw new DomainError("AUTH_FORBIDDEN", "Character is not approved");
+    if (conversationContext?.conversation_type === "group" && groupMembers.length < 2) {
+      throw new DomainError("CONFLICT", "Group chat needs at least two active bots");
+    }
+
+    if (conversationContext?.conversation_type !== "group") {
+      ensureCharacterCanChat(character, session.userId);
     }
 
     const entitlements = await resolveEntitlementsWithBillingBoundary(
@@ -506,7 +874,6 @@ export class ChatController {
     const duplicateTurn = await resolveDuplicateTurn({
       db: this.db,
       userId: session.userId,
-      characterId: character.id,
       clientMessageId: input.clientMessageId,
     });
 
@@ -521,6 +888,7 @@ export class ChatController {
     } | null = null;
 
     if (
+      conversationContext?.conversation_type !== "group" &&
       this.config.MONETIZATION_ENABLED &&
       character.monetization_enabled &&
       character.price_cents > 0 &&
@@ -645,6 +1013,26 @@ export class ChatController {
 
     let conversationId = input.conversationId;
     let createdConversation = false;
+    const isGroupConversation = conversationContext?.conversation_type === "group";
+    const mentionedMembers = isGroupConversation
+      ? resolveMentionedMembers(input.content, groupMembers)
+      : [];
+    const responseCharacters = isGroupConversation
+      ? await loadChatCharacters(
+          this.db,
+          mentionedMembers.map((member) => member.characterId),
+        )
+      : [character];
+    const responseCharacterById = new Map(
+      responseCharacters.map((responseCharacter) => [responseCharacter.id, responseCharacter]),
+    );
+    const orderedResponseCharacters = isGroupConversation
+      ? mentionedMembers
+          .map((member) => responseCharacterById.get(member.characterId))
+          .filter((responseCharacter): responseCharacter is ChatCharacterRow =>
+            Boolean(responseCharacter),
+          )
+      : responseCharacters;
 
     if (!conversationId) {
       conversationId = (
@@ -667,7 +1055,9 @@ export class ChatController {
       });
     }
 
-    await ensureConversationOwner(this.db, conversationId, session.userId, character.id);
+    if (!isGroupConversation) {
+      await ensureConversationOwner(this.db, conversationId, session.userId, character.id);
+    }
 
     const userMessage = await this.db
       .insertInto("chat.messages")
@@ -678,7 +1068,16 @@ export class ChatController {
         role: "user",
         content: input.content,
         client_message_id: input.clientMessageId,
-        metadata_json: { clientMessageId: input.clientMessageId, safety },
+        metadata_json: {
+          clientMessageId: input.clientMessageId,
+          safety,
+          ...(isGroupConversation
+            ? {
+                mentionedCharacterIds: mentionedMembers.map((member) => member.characterId),
+                mentionedSlugs: mentionedMembers.map((member) => member.mentionSlug),
+              }
+            : {}),
+        },
       })
       .onConflict((oc) => oc.columns(["user_id", "client_message_id"]).doNothing())
       .returning(["id"])
@@ -688,7 +1087,6 @@ export class ChatController {
       const duplicate = await resolveDuplicateTurn({
         db: this.db,
         userId: session.userId,
-        characterId: character.id,
         clientMessageId: input.clientMessageId,
       });
 
@@ -703,7 +1101,15 @@ export class ChatController {
       await incrementMarketplaceStats(this.db, character.id, "chat_start", session.userId);
     }
 
-    await incrementMarketplaceStats(this.db, character.id, "message", session.userId);
+    if (isGroupConversation) {
+      await Promise.all(
+        orderedResponseCharacters.map((responseCharacter) =>
+          incrementMarketplaceStats(this.db, responseCharacter.id, "message", session.userId),
+        ),
+      );
+    } else {
+      await incrementMarketplaceStats(this.db, character.id, "message", session.userId);
+    }
 
     await persistSafetyDecision(this.db, {
       userId: session.userId,
@@ -712,221 +1118,278 @@ export class ChatController {
       decision: safety,
     });
 
-    const promptMemoryResult = settings?.memory_enabled
-      ? await retrievePromptMemories({
+    const assistantMessages: Array<{
+      id: string;
+      role: "assistant";
+      content: string;
+      createdAt: string;
+      speaker: ConversationMember | null;
+    }> = [];
+    let lastRoute: ChatTurnPlan["route"] | null = null;
+    let lastOutputSafety: PersistableSafetyDecision | null = null;
+    let firstUpdatedEvolution: Awaited<ReturnType<typeof upsertConversationEvolution>> | null =
+      null;
+
+    for (const responseCharacter of orderedResponseCharacters) {
+      const speaker = isGroupConversation
+        ? (groupMembers.find((member) => member.characterId === responseCharacter.id) ?? null)
+        : null;
+      const promptMemoryResult = settings?.memory_enabled
+        ? await retrievePromptMemories({
+            db: this.db,
+            config: this.config,
+            userId: session.userId,
+            characterId: responseCharacter.id,
+            conversationId,
+            query: input.content,
+            limit: 8,
+          })
+        : { memories: [], graphContextPrompt: null };
+      const memories = promptMemoryResult.memories;
+      const conversationTurnCount = await conversationMessageCount(this.db, conversationId);
+      const turnPlan = await planChatTurnWithBoundary(this.config, {
+        userTier: entitlements.planId,
+        adultMode: adultModeEnabled,
+        safetyRisk: safetyRiskForDecision(safety),
+        memoryCount: memories.length,
+        recentMessageCount: conversationTurnCount,
+        characterRating: responseCharacter.rating,
+      });
+      const promptMessages = await loadPromptMessages(
+        this.db,
+        conversationId,
+        turnPlan.promptPlan.includeRecentTurns,
+      );
+      const evolution = await getConversationEvolutionForCharacter(
+        this.db,
+        conversationId,
+        responseCharacter.id,
+      );
+      const route = turnPlan.route;
+      lastRoute = route;
+      const modelMessages = buildModelMessages({
+        characterName: responseCharacter.name,
+        characterDescription: responseCharacter.description,
+        marketplacePreview: responseCharacter.marketplace_preview,
+        personaPrompt: responseCharacter.persona_prompt,
+        greeting: responseCharacter.greeting,
+        scenarioPrompt: responseCharacter.scenario_prompt,
+        firstMessageStyle: responseCharacter.first_message_style,
+        creatorNotes: responseCharacter.creator_notes,
+        personalityTraits: responseCharacter.personality_traits,
+        speakingStyle: responseCharacter.speaking_style,
+        characterRating: responseCharacter.rating,
+        tags: responseCharacter.tags,
+        adultMode: adultModeEnabled,
+        exampleDialogues: normalizeExampleDialogues(responseCharacter.example_dialogues_json),
+        memories: memories.map((memory) => memory.text),
+        evolutionContext: settings?.memory_enabled
+          ? [
+              formatEvolutionForPrompt(evolution),
+              "Current user message is not settled relationship evidence until the character responds.",
+              promptMemoryResult.graphContextPrompt,
+            ]
+              .filter((line): line is string => Boolean(line))
+              .join("\n\n")
+          : "Memory is disabled for this user. Do not use saved memories or evolved continuity.",
+        groupContext: isGroupConversation
+          ? formatGroupPromptContext({
+              members: groupMembers,
+              activeSpeaker: speaker,
+              mentionedMembers,
+            })
+          : null,
+        recentMessages: promptMessages.map((message) => ({
+          role: message.role === "assistant" ? "assistant" : "user",
+          content: isGroupConversation
+            ? formatGroupTranscriptMessage(message, groupMembers)
+            : message.content,
+        })),
+      });
+      const modelStartedAt = Date.now();
+      const rawModelResult = await completeWithXaiOrFallback({
+        apiKey: this.config.XAI_API_KEY,
+        baseUrl: this.config.XAI_BASE_URL,
+        model: route.model,
+        maxOutputTokens: route.maxOutputTokens,
+        messages: modelMessages,
+        fallbackCharacterName: responseCharacter.name,
+        fallbackUserText: input.content,
+        allowLocalFallback: this.config.NODE_ENV !== "production",
+      });
+      const outputSafety = await classifyOutputWithModerationBoundary(
+        this.config,
+        rawModelResult.content,
+      );
+      lastOutputSafety = outputSafety;
+      const modelResult =
+        outputSafety.action === "allow"
+          ? rawModelResult
+          : {
+              ...rawModelResult,
+              content: safeGuardrailReply(responseCharacter.name),
+            };
+      const latencyMs = Date.now() - modelStartedAt;
+
+      if (outputSafety.action !== "allow") {
+        await auditEvent(this.db, {
+          actorUserId: session.userId,
+          action: "chat.output.blocked",
+          resourceType: "creator.character",
+          resourceId: responseCharacter.id,
+          metadata: {
+            reasonCode: outputSafety.reasonCode,
+            categories: outputSafety.categories,
+            modelRoute: route,
+          },
+        });
+      }
+
+      const assistantMessage = await this.db
+        .insertInto("chat.messages")
+        .values({
+          conversation_id: conversationId,
+          user_id: session.userId,
+          character_id: responseCharacter.id,
+          role: "assistant",
+          content: modelResult.content,
+          client_message_id: null,
+          metadata_json: {
+            sourceUserMessageId: userMessage.id,
+            clientMessageId: input.clientMessageId,
+            modelRoute: route,
+            provider: modelResult.provider,
+            fallback: modelResult.fallback,
+            outputSafety,
+            ...(isGroupConversation
+              ? {
+                  groupTurn: true,
+                  speakerMentionSlug: speaker?.mentionSlug ?? null,
+                  mentionedCharacterIds: mentionedMembers.map((member) => member.characterId),
+                }
+              : {}),
+          },
+        })
+        .returning(["id", "created_at"])
+        .executeTakeFirstOrThrow();
+
+      await persistSafetyDecision(this.db, {
+        userId: session.userId,
+        conversationId,
+        messageId: assistantMessage.id,
+        decision: outputSafety,
+      });
+
+      const modelCall = await this.db
+        .insertInto("analytics.model_calls")
+        .values({
+          user_id: session.userId,
+          provider: modelResult.provider,
+          model: route.model,
+          reasoning_effort: route.reasoningEffort,
+          input_tokens: modelResult.inputTokens,
+          cached_input_tokens: modelResult.cachedInputTokens,
+          output_tokens: modelResult.outputTokens,
+          estimated_cost_usd: usdToDatabaseDecimal(modelResult.estimatedCostUsd),
+          cost_in_usd_ticks: modelResult.costTicks,
+          latency_ms: latencyMs,
+        })
+        .returning(["id"])
+        .executeTakeFirstOrThrow();
+
+      await enqueueOutboxEvent(this.db, {
+        topic: "analytics.event.created",
+        key: eventKey(modelCall.id),
+        idempotencyKey: projectionIdempotencyKey({
+          topic: "analytics.event.created",
+          resourceId: modelCall.id,
+          action: "model_call",
+          revision: modelCall.id,
+        }),
+        payload: {
+          kind: "model_call",
+          modelCallId: modelCall.id,
+        },
+      });
+      await enqueueOutboxEvent(this.db, {
+        topic: "chat.turn.completed",
+        key: eventKey(conversationId),
+        idempotencyKey: projectionIdempotencyKey({
+          topic: "chat.turn.completed",
+          resourceId: conversationId,
+          action: "project_graph_turn",
+          revision: `${userMessage.id}:${assistantMessage.id}`,
+        }),
+        payload: {
+          userId: session.userId,
+          characterId: responseCharacter.id,
+          conversationId,
+          userMessageId: userMessage.id,
+          assistantMessageId: assistantMessage.id,
+          occurredAt: new Date().toISOString(),
+        },
+      });
+
+      if (settings?.memory_enabled) {
+        await maybeExtractTurnMemories({
           db: this.db,
           config: this.config,
           userId: session.userId,
-          characterId: character.id,
+          characterId: responseCharacter.id,
           conversationId,
-          query: input.content,
-          limit: 8,
-        })
-      : { memories: [], graphContextPrompt: null };
-    const memories = promptMemoryResult.memories;
-    const conversationTurnCount = await conversationMessageCount(this.db, conversationId);
-    const turnPlan = await planChatTurnWithBoundary(this.config, {
-      userTier: entitlements.planId,
-      adultMode: adultModeEnabled,
-      safetyRisk: safetyRiskForDecision(safety),
-      memoryCount: memories.length,
-      recentMessageCount: conversationTurnCount,
-      characterRating: character.rating,
-    });
-    const promptMessages = await loadPromptMessages(
-      this.db,
-      conversationId,
-      turnPlan.promptPlan.includeRecentTurns,
-    );
-    const evolution = await getConversationEvolution(this.db, conversationId);
-    const route = turnPlan.route;
-    const modelMessages = buildModelMessages({
-      characterName: character.name,
-      characterDescription: character.description,
-      marketplacePreview: character.marketplace_preview,
-      personaPrompt: character.persona_prompt,
-      greeting: character.greeting,
-      scenarioPrompt: character.scenario_prompt,
-      firstMessageStyle: character.first_message_style,
-      creatorNotes: character.creator_notes,
-      personalityTraits: character.personality_traits,
-      speakingStyle: character.speaking_style,
-      characterRating: character.rating,
-      tags: character.tags,
-      adultMode: adultModeEnabled,
-      exampleDialogues: normalizeExampleDialogues(character.example_dialogues_json),
-      memories: memories.map((memory) => memory.text),
-      evolutionContext: settings?.memory_enabled
-        ? [
-            formatEvolutionForPrompt(evolution),
-            "Current user message is not settled relationship evidence until the character responds.",
-            promptMemoryResult.graphContextPrompt,
-          ]
-            .filter((line): line is string => Boolean(line))
-            .join("\n\n")
-        : "Memory is disabled for this user. Do not use saved memories or evolved continuity.",
-      recentMessages: promptMessages.map((message) => ({
-        role: message.role === "assistant" ? "assistant" : "user",
-        content: message.content,
-      })),
-    });
-    const modelStartedAt = Date.now();
-    const rawModelResult = await completeWithXaiOrFallback({
-      apiKey: this.config.XAI_API_KEY,
-      baseUrl: this.config.XAI_BASE_URL,
-      model: route.model,
-      maxOutputTokens: route.maxOutputTokens,
-      messages: modelMessages,
-      fallbackCharacterName: character.name,
-      fallbackUserText: input.content,
-      allowLocalFallback: this.config.NODE_ENV !== "production",
-    });
-    const outputSafety = await classifyOutputWithModerationBoundary(
-      this.config,
-      rawModelResult.content,
-    );
-    const modelResult =
-      outputSafety.action === "allow"
-        ? rawModelResult
-        : {
-            ...rawModelResult,
-            content: safeGuardrailReply(character.name),
-          };
-    const latencyMs = Date.now() - modelStartedAt;
+          sourceUserMessageId: userMessage.id,
+          assistantMessageId: assistantMessage.id,
+          userContent: input.content,
+          assistantContent: modelResult.content,
+        });
+      }
+      const updatedEvolution = settings?.memory_enabled
+        ? await upsertConversationEvolution(this.db, {
+            userId: session.userId,
+            characterId: responseCharacter.id,
+            conversationId,
+          })
+        : evolution;
 
-    if (outputSafety.action !== "allow") {
-      await auditEvent(this.db, {
-        actorUserId: session.userId,
-        action: "chat.output.blocked",
-        resourceType: "creator.character",
-        resourceId: character.id,
-        metadata: {
-          reasonCode: outputSafety.reasonCode,
-          categories: outputSafety.categories,
-          modelRoute: route,
-        },
-      });
-    }
-
-    const assistantMessage = await this.db
-      .insertInto("chat.messages")
-      .values({
-        conversation_id: conversationId,
-        user_id: session.userId,
-        character_id: character.id,
+      firstUpdatedEvolution = firstUpdatedEvolution ?? updatedEvolution;
+      assistantMessages.push({
+        id: assistantMessage.id,
         role: "assistant",
         content: modelResult.content,
-        client_message_id: null,
-        metadata_json: {
-          sourceUserMessageId: userMessage.id,
-          clientMessageId: input.clientMessageId,
-          modelRoute: route,
-          provider: modelResult.provider,
-          fallback: modelResult.fallback,
-          outputSafety,
-        },
-      })
-      .returning(["id"])
-      .executeTakeFirstOrThrow();
-
-    await persistSafetyDecision(this.db, {
-      userId: session.userId,
-      conversationId,
-      messageId: assistantMessage.id,
-      decision: outputSafety,
-    });
+        createdAt: assistantMessage.created_at.toISOString(),
+        speaker,
+      });
+    }
 
     await this.db
       .updateTable("chat.conversations")
       .set({ updated_at: new Date() })
       .where("id", "=", conversationId)
       .execute();
-    const modelCall = await this.db
-      .insertInto("analytics.model_calls")
-      .values({
-        user_id: session.userId,
-        provider: modelResult.provider,
-        model: route.model,
-        reasoning_effort: route.reasoningEffort,
-        input_tokens: modelResult.inputTokens,
-        cached_input_tokens: modelResult.cachedInputTokens,
-        output_tokens: modelResult.outputTokens,
-        estimated_cost_usd: usdToDatabaseDecimal(modelResult.estimatedCostUsd),
-        cost_in_usd_ticks: modelResult.costTicks,
-        latency_ms: latencyMs,
-      })
-      .returning(["id"])
-      .executeTakeFirstOrThrow();
 
-    await enqueueOutboxEvent(this.db, {
-      topic: "analytics.event.created",
-      key: eventKey(modelCall.id),
-      idempotencyKey: projectionIdempotencyKey({
-        topic: "analytics.event.created",
-        resourceId: modelCall.id,
-        action: "model_call",
-        revision: modelCall.id,
-      }),
-      payload: {
-        kind: "model_call",
-        modelCallId: modelCall.id,
-      },
-    });
-    await enqueueOutboxEvent(this.db, {
-      topic: "chat.turn.completed",
-      key: eventKey(conversationId),
-      idempotencyKey: projectionIdempotencyKey({
-        topic: "chat.turn.completed",
-        resourceId: conversationId,
-        action: "project_graph_turn",
-        revision: userMessage.id,
-      }),
-      payload: {
-        userId: session.userId,
-        characterId: character.id,
-        conversationId,
-        userMessageId: userMessage.id,
-        assistantMessageId: assistantMessage.id,
-        occurredAt: new Date().toISOString(),
-      },
-    });
-
-    if (settings?.memory_enabled) {
-      await maybeExtractTurnMemories({
-        db: this.db,
-        config: this.config,
-        userId: session.userId,
-        characterId: character.id,
-        conversationId,
-        sourceUserMessageId: userMessage.id,
-        assistantMessageId: assistantMessage.id,
-        userContent: input.content,
-        assistantContent: modelResult.content,
-      });
-    }
-    const updatedEvolution = settings?.memory_enabled
-      ? await upsertConversationEvolution(this.db, {
-          userId: session.userId,
-          characterId: character.id,
-          conversationId,
-        })
-      : evolution;
     const trialUsedAfter = paidTrial ? paidTrial.used + 1 : null;
+    const firstAssistantMessage = assistantMessages[0];
 
     return {
       accepted: true,
       conversationId,
       userMessageId: userMessage.id,
-      assistantMessage: {
-        id: assistantMessage.id,
-        role: "assistant",
-        content: modelResult.content,
-        createdAt: new Date().toISOString(),
-      },
-      modelRoute: this.config.NODE_ENV === "production" ? undefined : route,
+      assistantMessage: firstAssistantMessage,
+      assistantMessages,
+      group: isGroupConversation
+        ? {
+            responseMode: "mentions",
+            mentioned: mentionedMembers.map((member) => ({
+              characterId: member.characterId,
+              mentionSlug: member.mentionSlug,
+              name: member.name,
+            })),
+          }
+        : null,
+      modelRoute: this.config.NODE_ENV === "production" ? undefined : lastRoute,
       safety,
-      outputSafety,
-      evolution: updatedEvolution,
+      outputSafety: lastOutputSafety,
+      evolution: firstUpdatedEvolution,
       trial: paidTrial
         ? {
             limit: paidTrial.limit,
@@ -996,6 +1459,303 @@ function sseErrorPayload(
   };
 }
 
+async function loadOwnedConversation(
+  db: ReturnType<typeof createDatabase>,
+  conversationId: string,
+  userId: string,
+): Promise<ActiveConversationContext> {
+  const conversation = await db
+    .selectFrom("chat.conversations")
+    .select(["id", "user_id", "character_id", "conversation_type", "title", "response_mode"])
+    .where("id", "=", conversationId)
+    .where("user_id", "=", userId)
+    .where("status", "=", "active")
+    .executeTakeFirst();
+
+  if (!conversation) {
+    throw new DomainError("RESOURCE_NOT_FOUND", "Conversation not found");
+  }
+
+  return conversation;
+}
+
+async function loadChatCharacter(
+  db: ReturnType<typeof createDatabase>,
+  characterId: string,
+): Promise<ChatCharacterRow | null> {
+  const characters = await loadChatCharacters(db, [characterId]);
+
+  return characters[0] ?? null;
+}
+
+async function loadChatCharacters(
+  db: ReturnType<typeof createDatabase>,
+  characterIds: string[],
+): Promise<ChatCharacterRow[]> {
+  if (characterIds.length === 0) {
+    return [];
+  }
+
+  const rows = await db
+    .selectFrom("creator.characters as characters")
+    .innerJoin(
+      "creator.character_versions as versions",
+      "versions.id",
+      "characters.current_version_id",
+    )
+    .select([
+      "characters.id",
+      "characters.creator_user_id",
+      "characters.visibility",
+      "characters.moderation_status",
+      "characters.name",
+      "characters.description",
+      "characters.avatar_url",
+      "characters.cover_image_url",
+      "characters.marketplace_preview",
+      "characters.price_cents",
+      "characters.monetization_enabled",
+      "versions.persona_prompt",
+      "versions.greeting",
+      "versions.scenario_prompt",
+      "versions.first_message_style",
+      "versions.creator_notes",
+      "versions.personality_traits",
+      "versions.speaking_style",
+      "versions.example_dialogues_json",
+      "versions.rating",
+      "versions.tags",
+    ])
+    .where("characters.id", "in", characterIds)
+    .execute();
+  const byId = new Map(rows.map((row) => [row.id, toChatCharacterRow(row)]));
+
+  return characterIds
+    .map((characterId) => byId.get(characterId))
+    .filter((character): character is ChatCharacterRow => Boolean(character));
+}
+
+function toChatCharacterRow(row: {
+  id: string;
+  creator_user_id: string;
+  visibility: string;
+  moderation_status: string;
+  name: string;
+  description: string;
+  avatar_url: string | null;
+  cover_image_url: string | null;
+  marketplace_preview: string | null;
+  price_cents: number;
+  monetization_enabled: boolean;
+  persona_prompt: string;
+  greeting: string;
+  scenario_prompt: string | null;
+  first_message_style: string | null;
+  creator_notes: string | null;
+  personality_traits: string[];
+  speaking_style: string | null;
+  example_dialogues_json: unknown;
+  rating: string;
+  tags: string[];
+}): ChatCharacterRow {
+  return {
+    ...row,
+    rating: isCharacterRating(row.rating) ? row.rating : "teen",
+  };
+}
+
+function ensureCharacterCanChat(character: ChatCharacterRow, userId: string): void {
+  if (character.visibility !== "public" && character.creator_user_id !== userId) {
+    throw new DomainError("AUTH_FORBIDDEN", "Character is private");
+  }
+
+  if (character.moderation_status !== "approved" && character.creator_user_id !== userId) {
+    throw new DomainError("AUTH_FORBIDDEN", "Character is not approved");
+  }
+}
+
+async function ensureGroupCharacterAccess(input: {
+  db: ReturnType<typeof createDatabase>;
+  config: ReturnType<typeof loadConfig>;
+  userId: string;
+  character: ChatCharacterRow;
+}): Promise<void> {
+  if (
+    !input.config.MONETIZATION_ENABLED ||
+    !input.character.monetization_enabled ||
+    input.character.price_cents <= 0 ||
+    input.character.creator_user_id === input.userId
+  ) {
+    return;
+  }
+
+  const hasAccess = await hasPaidCharacterAccessWithBillingBoundary(
+    input.config,
+    input.db,
+    input.userId,
+    input.character.id,
+  );
+
+  if (!hasAccess) {
+    throw new DomainError(
+      "ENTITLEMENT_REQUIRED",
+      `Unlock ${input.character.name} before adding this bot to a group chat.`,
+      {
+        characterId: input.character.id,
+        priceCents: input.character.price_cents,
+      },
+    );
+  }
+}
+
+async function loadConversationMembers(
+  db: ReturnType<typeof createDatabase>,
+  conversationIds: string[],
+): Promise<Map<string, ConversationMember[]>> {
+  const result = new Map<string, ConversationMember[]>();
+
+  if (conversationIds.length === 0) {
+    return result;
+  }
+
+  const rows = await db
+    .selectFrom("chat.conversation_participants as participants")
+    .innerJoin("creator.characters as characters", "characters.id", "participants.character_id")
+    .leftJoin(
+      "creator.character_versions as versions",
+      "versions.id",
+      "characters.current_version_id",
+    )
+    .select([
+      "participants.conversation_id",
+      "participants.character_id",
+      "participants.position",
+      "participants.mention_slug",
+      "characters.name",
+      "characters.description",
+      "characters.avatar_url",
+      "characters.cover_image_url",
+      "versions.rating",
+    ])
+    .where("participants.conversation_id", "in", conversationIds)
+    .where("participants.status", "=", "active")
+    .orderBy("participants.conversation_id", "asc")
+    .orderBy("participants.position", "asc")
+    .execute();
+
+  for (const row of rows) {
+    const members = result.get(row.conversation_id) ?? [];
+    members.push({
+      characterId: row.character_id,
+      name: row.name,
+      description: row.description,
+      avatarUrl: row.avatar_url ?? "/assets/character-avatar-default.svg",
+      coverImageUrl: row.cover_image_url ?? "/assets/character-cover-default.svg",
+      mentionSlug: row.mention_slug,
+      position: row.position,
+      rating: isCharacterRating(row.rating) ? row.rating : "teen",
+    });
+    result.set(row.conversation_id, members);
+  }
+
+  return result;
+}
+
+function buildConversationMembers(
+  characters: ChatCharacterRow[],
+  takenSlugs = new Set<string>(),
+  startPosition = 0,
+): ConversationMember[] {
+  const slugs = new Set(takenSlugs);
+
+  return characters.map((character, index) => {
+    const mentionSlug = uniqueMentionSlug(character.name, slugs);
+    slugs.add(mentionSlug);
+
+    return {
+      characterId: character.id,
+      name: character.name,
+      description: character.description,
+      avatarUrl: character.avatar_url ?? "/assets/character-avatar-default.svg",
+      coverImageUrl: character.cover_image_url ?? "/assets/character-cover-default.svg",
+      mentionSlug,
+      position: startPosition + index,
+      rating: character.rating,
+    };
+  });
+}
+
+function nextMemberPosition(members: ConversationMember[]): number {
+  return members.reduce((max, member) => Math.max(max, member.position + 1), 0);
+}
+
+function groupTitleFromInput(title: string, names: string[]): string {
+  const trimmed = title.trim();
+
+  if (trimmed) {
+    return trimmed.slice(0, 80);
+  }
+
+  return groupConversationTitleFromNames(names);
+}
+
+function groupConversationTitle(members: ConversationMember[]): string {
+  return groupConversationTitleFromNames(members.map((member) => member.name));
+}
+
+function groupConversationTitleFromNames(names: string[]): string {
+  const visible = names.slice(0, 3).join(", ");
+
+  return names.length > 3 ? `${visible} +${names.length - 3}` : visible || "Group chat";
+}
+
+function formatGroupPromptContext(input: {
+  members: ConversationMember[];
+  activeSpeaker: ConversationMember | null;
+  mentionedMembers: ConversationMember[];
+}): string {
+  const active = input.activeSpeaker;
+
+  return [
+    "Group chat routing:",
+    "This is a shared room with multiple AI characters. The user controls the room and bots speak only when mentioned.",
+    active
+      ? `You are replying as ${active.name} (@${active.mentionSlug}).`
+      : "You are the active mentioned character.",
+    "Do not write dialogue, actions, thoughts, or decisions for the user or for other bots.",
+    "Do not prefix your reply with your name or handle; the app labels the speaker.",
+    "If another bot was also mentioned, respond only with your own turn and leave room for the next bot.",
+    `Mentioned this turn: ${
+      input.mentionedMembers.length
+        ? input.mentionedMembers.map((member) => `@${member.mentionSlug}`).join(", ")
+        : "none"
+    }`,
+    "Active room members:",
+    ...input.members.map((member) => `- @${member.mentionSlug}: ${member.name}`),
+  ].join("\n");
+}
+
+function formatGroupTranscriptMessage(
+  message: PromptConversationMessage,
+  members: ConversationMember[],
+): string {
+  if (message.role === "user") {
+    return `User: ${message.content}`;
+  }
+
+  if (message.role === "system") {
+    return `Room note: ${message.content}`;
+  }
+
+  const speaker = members.find((member) => member.characterId === message.character_id);
+
+  return `${speaker?.name ?? "Another bot"}: ${message.content}`;
+}
+
+function isCharacterRating(value: unknown): value is "general" | "teen" | "mature" | "adult" {
+  return value === "general" || value === "teen" || value === "mature" || value === "adult";
+}
+
 async function ensureConversationOwner(
   db: ReturnType<typeof createDatabase>,
   conversationId: string,
@@ -1055,14 +1815,14 @@ async function loadPromptMessages(
   const [openingMessages, recentMessages] = await Promise.all([
     db
       .selectFrom("chat.messages")
-      .select(["id", "role", "content", "created_at"])
+      .select(["id", "role", "character_id", "content", "created_at"])
       .where("conversation_id", "=", conversationId)
       .orderBy("created_at", "asc")
       .limit(8)
       .execute(),
     db
       .selectFrom("chat.messages")
-      .select(["id", "role", "content", "created_at"])
+      .select(["id", "role", "character_id", "content", "created_at"])
       .where("conversation_id", "=", conversationId)
       .orderBy("created_at", "desc")
       .limit(recentLimit)
@@ -1082,14 +1842,12 @@ async function loadPromptMessages(
 async function resolveDuplicateTurn(input: {
   db: ReturnType<typeof createDatabase>;
   userId: string;
-  characterId: string;
   clientMessageId: string;
 }) {
   const userMessage = await input.db
     .selectFrom("chat.messages")
-    .select(["id", "conversation_id", "created_at"])
+    .select(["id", "conversation_id", "character_id", "created_at"])
     .where("user_id", "=", input.userId)
-    .where("character_id", "=", input.characterId)
     .where("client_message_id", "=", input.clientMessageId)
     .where("role", "=", "user")
     .executeTakeFirst();
@@ -1098,32 +1856,41 @@ async function resolveDuplicateTurn(input: {
     return null;
   }
 
-  const assistantMessage = await input.db
+  const assistantMessages = await input.db
     .selectFrom("chat.messages")
-    .select(["id", "content", "created_at"])
+    .select(["id", "character_id", "content", "created_at"])
     .where("conversation_id", "=", userMessage.conversation_id)
     .where("role", "=", "assistant")
     .where("created_at", ">=", userMessage.created_at)
     .orderBy("created_at", "asc")
-    .executeTakeFirst();
+    .execute();
 
-  if (!assistantMessage) {
+  if (assistantMessages.length === 0) {
     throw new DomainError("CONFLICT", "Message is already being processed", {
       clientMessageId: input.clientMessageId,
     });
   }
+  const members =
+    (await loadConversationMembers(input.db, [userMessage.conversation_id])).get(
+      userMessage.conversation_id,
+    ) ?? [];
+  const replayedAssistantMessages = assistantMessages.map((message) => ({
+    id: message.id,
+    role: "assistant" as const,
+    content: message.content,
+    createdAt: message.created_at.toISOString(),
+    speaker: members.find((member) => member.characterId === message.character_id) ?? null,
+  }));
+  const firstAssistantMessage = replayedAssistantMessages[0];
 
   return {
     accepted: true,
     duplicate: true,
     conversationId: userMessage.conversation_id,
     userMessageId: userMessage.id,
-    assistantMessage: {
-      id: assistantMessage.id,
-      role: "assistant",
-      content: assistantMessage.content,
-      createdAt: assistantMessage.created_at.toISOString(),
-    },
+    assistantMessage: firstAssistantMessage,
+    assistantMessages: replayedAssistantMessages,
+    group: members.length > 1 ? { responseMode: "mentions", mentioned: [] } : null,
     modelRoute: null,
     safety: null,
     outputSafety: null,
@@ -2020,6 +2787,7 @@ function buildModelMessages(input: {
   exampleDialogues: string[];
   memories: string[];
   evolutionContext: string;
+  groupContext: string | null;
   recentMessages: Array<Pick<ChatMessage, "role" | "content">>;
 }): ChatMessage[] {
   const contextBlock = input.memories.length
@@ -2058,6 +2826,7 @@ function buildModelMessages(input: {
         "- Relationship continuity must be evidence-based and gradual. Do not jump from enemies, strangers, or tense distrust into girlfriend/boyfriend/lover behavior after a few kind turns unless the user and character have explicitly established that bond.",
         "- Treat care, apologies, protection, and vulnerability as relationship signals that soften or complicate the current state; they do not erase prior conflict by themselves.",
         "- Never control the user's body, choices, consent, or inner thoughts. Invite the user to respond instead.",
+        "- In group chats, answer only as the active mentioned character. Do not produce turns for other bots, simulate the user, or continue a round after your own reply.",
         "- Character rating, tags, description, persona, and creator notes are strong style signals. Follow them for tone, heat level, archetype, vocabulary, and boundaries unless they conflict with the rules above.",
         "- Emojis are allowed only when they fit the character and scene; keep them sparse and intentional.",
       ].join("\n"),
@@ -2125,6 +2894,9 @@ function buildModelMessages(input: {
         "",
         "Evolving relationship profile:",
         clipText(input.evolutionContext, 2_200),
+        "",
+        "Group room context:",
+        clipText(input.groupContext ?? "Direct one-on-one room.", 1_200),
         "",
         `Stay in character as ${clipText(
           input.characterName,
