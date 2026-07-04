@@ -65,6 +65,24 @@ sequenceDiagram
   API-->>Web: Assistant message + usage + safety + trial + evolution state
 ```
 
+## Group Chat Flow
+
+Group chat rooms are ordinary `chat.conversations` rows with `conversation_type = group` and active
+members in `chat.conversation_participants`. A group room supports 2-10 bot members. Each active
+member has a stable server-owned `mention_slug`; the client renders `@slug` chips, but the gateway
+resolves mentions against canonical membership before any model call.
+
+Group turns are mention-gated. The gateway always persists the user's message, then only queues bot
+responses for active members explicitly mentioned in that message. If multiple bots are mentioned,
+responses are generated sequentially in mention order and streamed as separate assistant messages
+with speaker metadata. If no active bot is mentioned, no model call is made.
+
+Prompt construction remains per speaker. For every mentioned bot, the gateway loads that bot's
+persona, exact-scoped memories, graph context, and conversation evolution for the current
+`user_id + character_id + conversation_id` tuple. Recent group transcript lines are labeled by
+speaker and injected as untrusted context; the active bot is instructed not to write turns for other
+bots or for the user.
+
 ## Monetization Flow
 
 ```mermaid

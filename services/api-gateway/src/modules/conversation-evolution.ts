@@ -80,6 +80,25 @@ export async function getConversationEvolution(
   return toEvolutionSummary(row);
 }
 
+export async function getConversationEvolutionForCharacter(
+  db: Db,
+  conversationId: string,
+  characterId: string,
+): Promise<ConversationEvolutionSummary | null> {
+  const row = await db
+    .selectFrom("chat.conversation_evolution")
+    .selectAll()
+    .where("conversation_id", "=", conversationId)
+    .where("character_id", "=", characterId)
+    .executeTakeFirst();
+
+  if (!row) {
+    return null;
+  }
+
+  return toEvolutionSummary(row);
+}
+
 export async function upsertConversationEvolution(
   db: Db,
   input: {
@@ -106,7 +125,6 @@ export async function upsertConversationEvolution(
       .selectFrom("chat.messages")
       .select((eb) => eb.fn.countAll<number>().as("count"))
       .where("user_id", "=", input.userId)
-      .where("character_id", "=", input.characterId)
       .where("conversation_id", "=", input.conversationId)
       .where("role", "=", "user")
       .executeTakeFirst(),
@@ -114,8 +132,13 @@ export async function upsertConversationEvolution(
       .selectFrom("chat.messages")
       .select(["role", "content", "created_at"])
       .where("user_id", "=", input.userId)
-      .where("character_id", "=", input.characterId)
       .where("conversation_id", "=", input.conversationId)
+      .where((eb) =>
+        eb.or([
+          eb("role", "=", "user"),
+          eb.and([eb("role", "=", "assistant"), eb("character_id", "=", input.characterId)]),
+        ]),
+      )
       .orderBy("created_at", "desc")
       .limit(36)
       .execute(),
@@ -140,7 +163,7 @@ export async function upsertConversationEvolution(
       last_evolved_at: now,
     })
     .onConflict((oc) =>
-      oc.column("conversation_id").doUpdateSet({
+      oc.columns(["conversation_id", "character_id"]).doUpdateSet({
         stage: evolution.stage,
         relationship_depth: evolution.relationshipDepth,
         memory_count: memories.length,
