@@ -23,7 +23,11 @@ export const metadata: Metadata = {
   manifest: "/manifest.webmanifest",
   icons: {
     apple: "/assets/hana-icon-192.png",
-    icon: "/assets/hana-favicon.png",
+    icon: [
+      { url: "/favicon.ico", type: "image/x-icon" },
+      { url: "/assets/hana-favicon.png", type: "image/png", sizes: "32x32" },
+    ],
+    shortcut: "/favicon.ico",
   },
   appleWebApp: {
     capable: true,
