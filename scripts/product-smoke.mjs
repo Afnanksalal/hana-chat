@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import process from "node:process";
@@ -14,7 +15,7 @@ const QDRANT_CHARACTER_COLLECTION =
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL ?? "admin@local.hana.test";
 const ADMIN_EMAIL_CODE = process.env.ADMIN_EMAIL_CODE ?? process.env.ADMIN_EMAIL_OTP;
 const SMOKE_EMAIL_DOMAIN = process.env.SMOKE_EMAIL_DOMAIN ?? "smoke.hanachat.test";
-const SMOKE_STATIC_OTP = process.env.SMOKE_STATIC_OTP;
+const SMOKE_EMAIL_CODE_COMMAND = process.env.SMOKE_EMAIL_CODE_COMMAND;
 const SMOKE_RUN_ID = `${Date.now().toString(36)}-${process.pid.toString(36)}`;
 
 const results = [];
@@ -368,8 +369,8 @@ await check("creator payout setup is coming soon", async () => {
     {
       displayName: "Afnan K Salal",
       legalName: "Afnan K Salal",
-      payoutMode: "upi",
-      vpa: "afnan@upi",
+      payoutMode: "crypto",
+      walletAddress: "0x1111111111111111111111111111111111111111",
     },
     context.adminToken,
     { allowError: true },
@@ -469,11 +470,17 @@ async function createFreeSession(label) {
   }
 
   assert(started.verificationId, `${label} auth did not create a verification`);
-  const code = started.devCode ?? SMOKE_STATIC_OTP;
+  const code =
+    started.devCode ??
+    fetchSmokeEmailCode({
+      label,
+      email,
+      verificationId: started.verificationId,
+    });
 
   assert(
     code,
-    `${label} auth code was not available; set SMOKE_STATIC_OTP for production smoke runs`,
+    `${label} auth code was not available; set SMOKE_EMAIL_CODE_COMMAND to a mailbox-backed OTP fetcher for production smoke runs`,
   );
 
   const verified = await postJson("/v1/auth/email/verify", {
@@ -485,6 +492,27 @@ async function createFreeSession(label) {
   assert(verified.sessionToken, `${label} auth did not return session token`);
 
   return verified.sessionToken;
+}
+
+function fetchSmokeEmailCode({ label, email, verificationId }) {
+  if (!SMOKE_EMAIL_CODE_COMMAND) {
+    return undefined;
+  }
+
+  const output = execFileSync(SMOKE_EMAIL_CODE_COMMAND, [], {
+    encoding: "utf8",
+    timeout: 30_000,
+    env: {
+      ...process.env,
+      SMOKE_LABEL: label,
+      SMOKE_EMAIL: email,
+      SMOKE_VERIFICATION_ID: verificationId,
+    },
+  }).trim();
+  const code = output.match(/\b\d{6,8}\b/)?.[0];
+
+  assert(code, "SMOKE_EMAIL_CODE_COMMAND did not print a 6-8 digit OTP");
+  return code;
 }
 
 async function exhaustPaidTrial(token, characterId, targetUsed) {
