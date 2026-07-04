@@ -16,7 +16,7 @@ import {
   WalletCards,
 } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { apiJson } from "./api";
 import { renderRoleplayPreview } from "./roleplay-preview";
 
@@ -136,13 +136,9 @@ export default function AppHomePage() {
         100,
     ),
   );
-  const featuredCharacters = useMemo(
-    () =>
-      characters
-        .filter((character) => !conversations.some((item) => item.characterId === character.id))
-        .slice(0, 3),
-    [characters, conversations],
-  );
+  const featuredCharacters = characters
+    .filter((character) => !conversations.some((item) => item.characterId === character.id))
+    .slice(0, 3);
   const recentConversations = conversations.slice(0, 4);
   const isAdmin = dashboard.user.roles?.includes("admin") ?? false;
   const healthItems = [
