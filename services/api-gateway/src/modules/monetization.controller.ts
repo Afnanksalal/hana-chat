@@ -335,7 +335,6 @@ export class MonetizationController {
       };
     }
 
-    const provider = resolvePaymentProvider(input.provider, this.config);
     const platformFeeCents = platformFee(
       character.price_cents,
       this.config.CREATOR_PLATFORM_FEE_BPS,
@@ -350,7 +349,7 @@ export class MonetizationController {
         currency: "USD",
         platform_fee_cents: platformFeeCents,
         creator_net_cents: character.price_cents - platformFeeCents,
-        provider,
+        provider: input.provider,
         provider_order_id: null,
         provider_payment_id: null,
         status: "created",
@@ -369,19 +368,6 @@ export class MonetizationController {
           .where("idempotency_key", "=", `character_purchase:${session.userId}:${character.id}`)
           .executeTakeFirstOrThrow()
       ).id;
-
-    if (provider === "mock") {
-      await finalizeCharacterPurchase(this.db, this.config, purchaseId, `mock_${purchaseId}`, {
-        activatedBy: "mock_character_purchase",
-      });
-
-      return {
-        provider: "mock",
-        internalPurchaseId: purchaseId,
-        activated: true,
-        characterId: character.id,
-      };
-    }
 
     const payment = await createCryptoPaymentIntent({
       db: this.db,
@@ -1348,18 +1334,6 @@ export async function paidCharacterTrialStatus(
     used,
     remaining: Math.max(0, limit - used),
   };
-}
-
-function resolvePaymentProvider(provider: "crypto" | "mock", config: AppConfig): "crypto" | "mock" {
-  if (provider === "mock" && config.NODE_ENV === "production") {
-    throw new DomainError("AUTH_FORBIDDEN", "Mock checkout is disabled in production");
-  }
-
-  if (provider === "mock") {
-    return "mock";
-  }
-
-  return "crypto";
 }
 
 function assertMonetizationEnabled(config: AppConfig): void {

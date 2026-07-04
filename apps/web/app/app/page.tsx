@@ -66,16 +66,8 @@ interface ConversationSummary {
   } | null;
 }
 
-const fallbackDashboard: DashboardResponse = {
-  user: { displayName: "Hana User" },
-  plan: { id: "free", name: "Free" },
-  usage: { monthlyMessagesUsed: 0, monthlyMessagesLimit: 900, messagesRemaining: 900 },
-  counts: { savedMemories: 0, createdCharacters: 0, activeConversations: 0 },
-  nextAction: "Start with Hana",
-};
-
 export default function AppHomePage() {
-  const [dashboard, setDashboard] = useState<DashboardResponse>(fallbackDashboard);
+  const [dashboard, setDashboard] = useState<DashboardResponse | null>(null);
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [characters, setCharacters] = useState<CharacterSummary[]>([]);
   const [status, setStatus] = useState("");
@@ -112,6 +104,30 @@ export default function AppHomePage() {
       mounted = false;
     };
   }, []);
+
+  if (!dashboard) {
+    return (
+      <div className="app-page dashboard-page">
+        <section className="dashboard-hero">
+          <div className="dashboard-hero-copy">
+            <span className="section-label">
+              <Sparkles size={15} /> Welcome back
+            </span>
+            <h1>{status ? "Dashboard unavailable" : "Loading your rooms"}</h1>
+            <p>{status || "Fetching your live account, rooms, memories, and plan state."}</p>
+            <div className="dashboard-actions">
+              <Link className="primary-action" href="/app/chat">
+                Open chat <ArrowRight size={18} />
+              </Link>
+              <Link className="secondary-action" href="/app/discover">
+                Browse characters <Compass size={18} />
+              </Link>
+            </div>
+          </div>
+        </section>
+      </div>
+    );
+  }
 
   const usagePercent = Math.min(
     100,
@@ -341,41 +357,57 @@ function greetingFor(displayName: string): string {
 function normalizeDashboard(payload: Partial<DashboardResponse>): DashboardResponse {
   return {
     user: {
-      displayName: payload.user?.displayName ?? fallbackDashboard.user.displayName,
+      displayName: requiredString(payload.user?.displayName, "dashboard.user.displayName"),
       roles: Array.isArray(payload.user?.roles) ? payload.user.roles : [],
     },
     plan: {
-      id: payload.plan?.id ?? fallbackDashboard.plan.id,
-      name: payload.plan?.name ?? fallbackDashboard.plan.name,
+      id: requiredString(payload.plan?.id, "dashboard.plan.id"),
+      name: requiredString(payload.plan?.name, "dashboard.plan.name"),
     },
     usage: {
-      monthlyMessagesUsed:
-        typeof payload.usage?.monthlyMessagesUsed === "number"
-          ? payload.usage.monthlyMessagesUsed
-          : fallbackDashboard.usage.monthlyMessagesUsed,
-      monthlyMessagesLimit:
-        typeof payload.usage?.monthlyMessagesLimit === "number"
-          ? payload.usage.monthlyMessagesLimit
-          : fallbackDashboard.usage.monthlyMessagesLimit,
-      messagesRemaining:
-        typeof payload.usage?.messagesRemaining === "number"
-          ? payload.usage.messagesRemaining
-          : fallbackDashboard.usage.messagesRemaining,
+      monthlyMessagesUsed: requiredNumber(
+        payload.usage?.monthlyMessagesUsed,
+        "dashboard.usage.monthlyMessagesUsed",
+      ),
+      monthlyMessagesLimit: requiredNumber(
+        payload.usage?.monthlyMessagesLimit,
+        "dashboard.usage.monthlyMessagesLimit",
+      ),
+      messagesRemaining: requiredNumber(
+        payload.usage?.messagesRemaining,
+        "dashboard.usage.messagesRemaining",
+      ),
     },
     counts: {
-      savedMemories:
-        typeof payload.counts?.savedMemories === "number"
-          ? payload.counts.savedMemories
-          : fallbackDashboard.counts.savedMemories,
-      createdCharacters:
-        typeof payload.counts?.createdCharacters === "number"
-          ? payload.counts.createdCharacters
-          : fallbackDashboard.counts.createdCharacters,
-      activeConversations:
-        typeof payload.counts?.activeConversations === "number"
-          ? payload.counts.activeConversations
-          : fallbackDashboard.counts.activeConversations,
+      savedMemories: requiredNumber(
+        payload.counts?.savedMemories,
+        "dashboard.counts.savedMemories",
+      ),
+      createdCharacters: requiredNumber(
+        payload.counts?.createdCharacters,
+        "dashboard.counts.createdCharacters",
+      ),
+      activeConversations: requiredNumber(
+        payload.counts?.activeConversations,
+        "dashboard.counts.activeConversations",
+      ),
     },
-    nextAction: payload.nextAction ?? fallbackDashboard.nextAction,
+    nextAction: requiredString(payload.nextAction, "dashboard.nextAction"),
   };
+}
+
+function requiredString(value: unknown, field: string): string {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    throw new Error(`Invalid ${field}`);
+  }
+
+  return value;
+}
+
+function requiredNumber(value: unknown, field: string): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new Error(`Invalid ${field}`);
+  }
+
+  return value;
 }

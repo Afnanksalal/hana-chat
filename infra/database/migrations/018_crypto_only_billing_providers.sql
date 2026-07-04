@@ -1,0 +1,45 @@
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'payment_orders_provider_check'
+      AND conrelid = 'billing.payment_orders'::regclass
+  ) THEN
+    ALTER TABLE billing.payment_orders
+      DROP CONSTRAINT payment_orders_provider_check;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'payment_orders_provider_crypto_only'
+      AND conrelid = 'billing.payment_orders'::regclass
+  ) THEN
+    ALTER TABLE billing.payment_orders
+      ADD CONSTRAINT payment_orders_provider_crypto_only
+      CHECK (provider = 'crypto') NOT VALID;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'character_purchases_provider_crypto_only'
+      AND conrelid = 'billing.character_purchases'::regclass
+  ) THEN
+    ALTER TABLE billing.character_purchases
+      ADD CONSTRAINT character_purchases_provider_crypto_only
+      CHECK (provider = 'crypto') NOT VALID;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'creator_payouts_provider_crypto_only'
+      AND conrelid = 'billing.creator_payouts'::regclass
+  ) THEN
+    ALTER TABLE billing.creator_payouts
+      ADD CONSTRAINT creator_payouts_provider_crypto_only
+      CHECK (provider = 'crypto') NOT VALID;
+  END IF;
+END $$;

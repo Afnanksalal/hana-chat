@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
+import { getApiGatewayUrl } from "../../../../server-api";
 
-const apiBaseUrl = process.env["API_GATEWAY_URL"] ?? "http://localhost:4000";
 const authCookieName = process.env["AUTH_COOKIE_NAME"] ?? "hana_session";
 
 type RouteContext = {
@@ -28,7 +28,7 @@ export async function DELETE(request: Request, context: RouteContext) {
 async function forward(request: Request, context: RouteContext, method: string): Promise<Response> {
   const { path } = await context.params;
   const sourceUrl = new URL(request.url);
-  const targetUrl = new URL(`/v1/${path.map(encodeURIComponent).join("/")}`, apiBaseUrl);
+  const targetUrl = new URL(`/v1/${path.map(encodeURIComponent).join("/")}`, getApiGatewayUrl());
 
   targetUrl.search = sourceUrl.search;
 
