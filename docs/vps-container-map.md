@@ -154,7 +154,6 @@ Set and keep secret:
 - `SMTP_HOST`
 - `SMTP_FROM`
 - `ADMIN_EMAIL`
-- `ADMIN_STATIC_OTP`
 - `MAIL_DKIM_KEYS_DIR`
 - `SMTP_RELAY_HOSTNAME`
 - `PAYOUT_ENCRYPTION_KEY_BASE64`
@@ -163,8 +162,8 @@ Set and keep secret:
 The deployed Playground env currently has xAI configured. Monetization uses 0G native payments
 when the monetization and 0G payment flags are enabled.
 
-`ADMIN_EMAIL` and `ADMIN_STATIC_OTP` configure the owner/admin bootstrap. The login still uses the
-normal email/code flow, but the configured owner email can use the static env code instead of SMTP.
+`ADMIN_EMAIL` configures the owner/admin bootstrap. The configured owner signs in through the normal
+email OTP workflow and receives the same OTP delivery path as other users.
 
 The browser cannot expose a trustworthy MAC address, so account uniqueness enforcement uses hashed
 server-observed IP plus hashed app-generated device id claims.

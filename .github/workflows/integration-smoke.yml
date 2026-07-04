@@ -1,0 +1,124 @@
+name: Integration Smoke
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: integration-smoke-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  local-stack:
+    name: Local stack smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6.0.5
+        with:
+          version: 10.33.2
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 20.19.5
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright Chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Prepare local env
+        run: cp .env.example .env
+
+      - name: Build packages and apps
+        run: pnpm build
+
+      - name: Start infrastructure
+        run: docker compose up -d --wait
+
+      - name: Bootstrap infrastructure
+        run: pnpm infra:bootstrap
+
+      - name: Start API gateway
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .logs
+          set -a
+          . ./.env
+          set +a
+          pnpm --filter @hana/api-gateway exec node dist/main.js >.logs/api-gateway.log 2>&1 &
+          echo $! >.logs/api-gateway.pid
+
+          for attempt in {1..90}; do
+            if curl --fail --silent http://localhost:4000/health >/dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+
+          tail -200 .logs/api-gateway.log
+          exit 1
+
+      - name: Seed local test cast
+        run: pnpm seed:local
+
+      - name: Start web
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .logs
+          set -a
+          . ./.env
+          set +a
+          pnpm --filter @hana/web exec next start --hostname 127.0.0.1 --port 3000 >.logs/web.log 2>&1 &
+          echo $! >.logs/web.pid
+
+          for attempt in {1..90}; do
+            if curl --fail --silent http://localhost:3000/ >/dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+
+          tail -200 .logs/web.log
+          exit 1
+
+      - name: Product smoke
+        run: pnpm product:smoke
+
+      - name: AI harness
+        run: pnpm ai:harness
+
+      - name: Web smoke
+        run: pnpm web:smoke
+
+      - name: Upload smoke artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-smoke-artifacts
+          path: |
+            .logs
+            tmp/ai-harness
+            tmp/web-smoke
+            tmp/local-test-cast.json
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Docker compose logs
+        if: failure()
+        run: docker compose logs --no-color --tail=250
+
+      - name: Stop infrastructure
+        if: always()
+        run: docker compose down -v

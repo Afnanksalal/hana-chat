@@ -1,0 +1,91 @@
+name: Playground Smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_product_smoke:
+        description: Run product smoke, which creates a disposable smoke account.
+        required: true
+        default: false
+        type: boolean
+
+concurrency:
+  group: playground-smoke-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    name: Remote product smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    env:
+      API_GATEWAY_URL: ${{ vars.PLAYGROUND_API_GATEWAY_URL || 'https://api.hanachat.site' }}
+      WEB_BASE_URL: ${{ vars.PLAYGROUND_WEB_BASE_URL || 'https://app.hanachat.site' }}
+      SEO_AUDIT_BASE_URL: ${{ vars.PLAYGROUND_SITE_URL || 'https://hanachat.site' }}
+      ADMIN_EMAIL: ${{ secrets.PLAYGROUND_ADMIN_EMAIL }}
+      ADMIN_EMAIL_CODE: ${{ secrets.PLAYGROUND_ADMIN_EMAIL_CODE }}
+      SMOKE_STATIC_OTP: ${{ secrets.PLAYGROUND_SMOKE_STATIC_OTP }}
+      AI_HARNESS_PRODUCTION: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6.0.5
+        with:
+          version: 10.33.2
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 20.19.5
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright Chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Verify required smoke secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${ADMIN_EMAIL}" ] || [ -z "${ADMIN_EMAIL_CODE}" ]; then
+            echo "::error::Set PLAYGROUND_ADMIN_EMAIL and PLAYGROUND_ADMIN_EMAIL_CODE to the current emailed admin OTP before running Playground smoke."
+            exit 1
+          fi
+
+      - name: SEO audit
+        run: pnpm seo:audit
+
+      - name: AI harness
+        run: pnpm ai:harness
+
+      - name: Web smoke
+        run: pnpm web:smoke
+
+      - name: Product smoke
+        if: ${{ inputs.run_product_smoke }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${SMOKE_STATIC_OTP}" ]; then
+            echo "::error::Set PLAYGROUND_SMOKE_STATIC_OTP before enabling product smoke against Playground."
+            exit 1
+          fi
+          pnpm product:smoke
+
+      - name: Upload smoke artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playground-smoke-artifacts
+          path: |
+            tmp/ai-harness
+            tmp/web-smoke
+          if-no-files-found: ignore
+          retention-days: 14

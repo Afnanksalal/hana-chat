@@ -11,7 +11,7 @@ const API_BASE_URL = stripTrailingSlash(
 const WEB_BASE_URL = stripTrailingSlash(process.env.WEB_BASE_URL ?? "http://localhost:3000");
 const AUTH_COOKIE_NAME = process.env.AUTH_COOKIE_NAME ?? "hana_session";
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL ?? "admin@local.hana.test";
-const ADMIN_STATIC_OTP = process.env.ADMIN_STATIC_OTP;
+const ADMIN_EMAIL_CODE = process.env.ADMIN_EMAIL_CODE ?? process.env.ADMIN_EMAIL_OTP;
 const screenshotDir = resolve(process.cwd(), "tmp", "web-smoke");
 const avatarUploadFixture = resolve(
   process.cwd(),
@@ -47,10 +47,13 @@ try {
         deviceId: "hana-web-smoke-admin",
       },
     });
-    const code = start.devCode ?? ADMIN_STATIC_OTP;
+    const code = start.devCode ?? ADMIN_EMAIL_CODE;
 
     assert(start.verificationId, "admin email verification was not created");
-    assert(code, "admin email code was not available for web smoke verification");
+    assert(
+      code,
+      "admin email code was not available; set ADMIN_EMAIL_CODE to the current emailed OTP for production web smoke runs",
+    );
 
     const payload = await apiJson("/v1/auth/email/verify", {
       method: "POST",

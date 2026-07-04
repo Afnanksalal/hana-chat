@@ -12,7 +12,7 @@ const QDRANT_MEMORY_COLLECTION = process.env.QDRANT_MEMORY_COLLECTION ?? "hana_m
 const QDRANT_CHARACTER_COLLECTION =
   process.env.QDRANT_CHARACTER_COLLECTION ?? "hana_character_profiles";
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL ?? "admin@local.hana.test";
-const ADMIN_STATIC_OTP = process.env.ADMIN_STATIC_OTP;
+const ADMIN_EMAIL_CODE = process.env.ADMIN_EMAIL_CODE ?? process.env.ADMIN_EMAIL_OTP;
 const SMOKE_EMAIL_DOMAIN = process.env.SMOKE_EMAIL_DOMAIN ?? "smoke.hanachat.test";
 const SMOKE_STATIC_OTP = process.env.SMOKE_STATIC_OTP;
 const SMOKE_RUN_ID = `${Date.now().toString(36)}-${process.pid.toString(36)}`;
@@ -46,10 +46,13 @@ await check("admin email session", async () => {
     email: ADMIN_EMAIL,
     deviceId: "hana-product-smoke-admin",
   });
-  const code = start.devCode ?? ADMIN_STATIC_OTP;
+  const code = start.devCode ?? ADMIN_EMAIL_CODE;
 
   assert(start.verificationId, "admin email verification was not created");
-  assert(code, "admin email code was not available for smoke verification");
+  assert(
+    code,
+    "admin email code was not available; set ADMIN_EMAIL_CODE to the current emailed OTP for production smoke runs",
+  );
 
   const payload = await postJson("/v1/auth/email/verify", {
     email: ADMIN_EMAIL,

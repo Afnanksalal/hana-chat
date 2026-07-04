@@ -15,7 +15,7 @@ const API_BASE_URL = stripTrailingSlash(
 const XAI_BASE_URL = stripTrailingSlash(process.env.XAI_BASE_URL ?? "https://api.x.ai/v1");
 const XAI_IMAGE_MODEL = process.env.XAI_IMAGE_MODEL ?? "grok-imagine-image-quality";
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL ?? "admin@local.hana.test";
-const ADMIN_STATIC_OTP = process.env.ADMIN_STATIC_OTP;
+const ADMIN_EMAIL_CODE = process.env.ADMIN_EMAIL_CODE ?? process.env.ADMIN_EMAIL_OTP;
 const ADMIN_DISPLAY_NAME = "Afnan K Salal";
 const MEDIA_STORAGE_DIR = resolve(
   process.env.MEDIA_STORAGE_DIR ?? resolve(process.cwd(), "data", "media"),
@@ -437,7 +437,7 @@ async function main() {
     email: ADMIN_EMAIL,
     deviceId: "hana-local-seed-admin",
   });
-  const adminCode = adminStart.devCode ?? ADMIN_STATIC_OTP;
+  const adminCode = adminStart.devCode ?? ADMIN_EMAIL_CODE;
 
   if (!adminStart.verificationId || !adminCode) {
     throw new Error("Admin email verification code was not available.");

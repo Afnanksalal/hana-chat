@@ -1,0 +1,64 @@
+name: Playground Health
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 3 * * *"
+
+concurrency:
+  group: playground-health-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  public-health:
+    name: Public routes and certificates
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check public HTTP routes
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --location --max-time 20 https://hanachat.site/ --output /dev/null
+          curl --fail --silent --show-error --location --max-time 20 https://app.hanachat.site/ --output /dev/null
+          curl --fail --silent --show-error --location --max-time 20 https://api.hanachat.site/health --output /dev/null
+          curl --fail --silent --show-error --location --max-time 20 https://18.61.174.6/ --output /dev/null
+
+      - name: Check certificate expiry windows
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          check_cert() {
+            local host="$1"
+            local min_days="$2"
+            local end_date
+            local end_epoch
+            local now_epoch
+            local remaining_days
+
+            end_date="$(
+              echo |
+                openssl s_client -connect "${host}:443" -servername "${host}" 2>/dev/null |
+                openssl x509 -noout -enddate |
+                cut -d= -f2
+            )"
+            end_epoch="$(date -u -d "${end_date}" +%s)"
+            now_epoch="$(date -u +%s)"
+            remaining_days="$(((end_epoch - now_epoch) / 86400))"
+
+            echo "${host} expires at ${end_date} (${remaining_days} days remaining)"
+
+            if [ "${remaining_days}" -lt "${min_days}" ]; then
+              echo "::error::${host} certificate has fewer than ${min_days} days remaining"
+              exit 1
+            fi
+          }
+
+          check_cert hanachat.site 14
+          check_cert app.hanachat.site 14
+          check_cert api.hanachat.site 14
+          check_cert 18.61.174.6 2

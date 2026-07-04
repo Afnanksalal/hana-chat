@@ -7,9 +7,18 @@ on:
       - master
       - main
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
 jobs:
   quality:
+    name: Format, lint, typecheck, test, build
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -39,3 +48,31 @@ jobs:
 
       - name: Build
         run: pnpm build
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Android TWA validation
+        run: pnpm android:twa:validate
+
+  vps-compose:
+    name: VPS compose config
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Render Playground VPS compose config
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -a
+          . ./.env.vps.example
+          set +a
+          export HANA_ENV_FILE=.env.vps.example
+          docker compose \
+            -f docker-compose.vps.yml \
+            -f infra/deploy/playground/docker-compose.playground.yml \
+            --project-name hana-chat-vps \
+            config >/tmp/hana-chat-vps-compose.yml

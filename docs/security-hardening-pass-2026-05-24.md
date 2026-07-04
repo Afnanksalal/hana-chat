@@ -48,8 +48,8 @@ record, not a marketing or roadmap document.
 - The web CSP still allows inline scripts/styles where Next.js and Razorpay checkout integration need
   them today. A nonce or strict-dynamic CSP migration is a future hardening project, not a hidden
   defect.
-- Mock billing and payout providers remain available outside production for deterministic smoke
-  tests. Backend guards reject mock checkout/payout activation in production.
+- Mock buyer checkout remains available outside production for deterministic smoke tests. Creator
+  payout settlement uses the crypto proof path.
 
 ## Verification Performed
 

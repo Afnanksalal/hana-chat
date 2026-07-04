@@ -8,7 +8,7 @@ const API_BASE_URL = stripTrailingSlash(
   process.env.API_GATEWAY_URL ?? process.env.API_BASE_URL ?? "http://localhost:4000",
 );
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL ?? "admin@local.hana.test";
-const ADMIN_STATIC_OTP = process.env.ADMIN_STATIC_OTP;
+const ADMIN_EMAIL_CODE = process.env.ADMIN_EMAIL_CODE ?? process.env.ADMIN_EMAIL_OTP;
 const API_TARGET_IS_PRODUCTION =
   process.env.AI_HARNESS_PRODUCTION === "1" || isProductionApiTarget(API_BASE_URL);
 const EXPECTED_MODEL = expectedModelForHarness();
@@ -34,10 +34,13 @@ await check("admin AI session", "critical", async () => {
     email: ADMIN_EMAIL,
     deviceId: "hana-ai-harness-admin",
   });
-  const code = start.devCode ?? ADMIN_STATIC_OTP;
+  const code = start.devCode ?? ADMIN_EMAIL_CODE;
 
   assert(start.verificationId, "admin email verification was not created");
-  assert(code, "admin email code was not available for AI harness verification");
+  assert(
+    code,
+    "admin email code was not available; set ADMIN_EMAIL_CODE to the current emailed OTP for production harness runs",
+  );
 
   const payload = await postJson("/v1/auth/email/verify", {
     email: ADMIN_EMAIL,
