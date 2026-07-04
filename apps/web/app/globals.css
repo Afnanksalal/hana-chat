@@ -904,7 +904,7 @@ button:disabled {
 .product-shell {
   position: relative;
   display: grid;
-  grid-template-columns: 264px minmax(0, 1fr);
+  grid-template-columns: clamp(220px, 18vw, 264px) minmax(0, 1fr);
   isolation: isolate;
   height: 100dvh;
   min-height: 100dvh;
@@ -917,7 +917,7 @@ button:disabled {
   position: fixed;
   inset: 0 auto 0 0;
   z-index: 0;
-  width: 264px;
+  width: clamp(220px, 18vw, 264px);
   pointer-events: none;
   background: var(--near-black);
   border-right: 1px solid var(--line);
@@ -2913,6 +2913,34 @@ select:hover,
 .group-candidate.active {
   background: #11040a;
   border-color: var(--primary);
+}
+
+.group-candidate.active {
+  box-shadow:
+    0 0 0 1px rgba(255, 31, 109, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.035);
+}
+
+.group-selection-indicator {
+  display: grid;
+  flex: 0 0 30px;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  color: var(--muted);
+  background: #020203;
+  border: 1px solid #302a34;
+  border-radius: 999px;
+}
+
+.group-candidate.active .group-selection-indicator {
+  color: #ffffff;
+  background: var(--primary);
+  border-color: var(--primary);
+}
+
+.group-candidate:disabled:not(.active) {
+  opacity: 0.46;
 }
 
 .group-candidate > span,
@@ -5159,6 +5187,61 @@ select:hover,
 
   .access-settings-card {
     grid-row: auto;
+  }
+}
+
+@media (min-width: 861px) and (max-width: 1280px) {
+  .product-shell {
+    grid-template-columns: 88px minmax(0, 1fr);
+  }
+
+  .product-shell::before {
+    width: 88px;
+  }
+
+  .app-sidebar {
+    padding: 14px 10px;
+  }
+
+  .app-brand {
+    justify-content: center;
+    width: 100%;
+    margin-bottom: 18px;
+  }
+
+  .app-brand > span:last-child,
+  .app-nav-item span,
+  .app-user-pill span {
+    display: none;
+  }
+
+  .app-nav-item,
+  .app-user-pill {
+    justify-content: center;
+    min-height: 52px;
+    padding: 0;
+    border-color: #24212a;
+    background: #050507;
+  }
+
+  .app-nav-item svg,
+  .app-user-pill svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  .product-main {
+    padding: 14px;
+  }
+
+  .chat-layer {
+    grid-template-columns: minmax(300px, 0.4fr) minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  .chat-inbox,
+  .chat-room {
+    height: calc(100dvh - 28px);
   }
 }
 

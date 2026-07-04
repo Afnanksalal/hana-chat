@@ -5,6 +5,7 @@ import {
   ArrowLeft,
   AtSign,
   Bot,
+  Check,
   Clock3,
   Hash,
   Lock,
@@ -1636,6 +1637,7 @@ function ChatExperience() {
             className={groupBuilderOpen ? "icon-control active" : "icon-control"}
             type="button"
             aria-label="New group chat"
+            title="New group chat"
             onClick={() => setGroupBuilderOpen((current) => !current)}
           >
             <UsersRound size={18} />
@@ -1663,6 +1665,7 @@ function ChatExperience() {
                 className="icon-control compact-icon"
                 type="button"
                 aria-label="Close group builder"
+                title="Close group builder"
                 onClick={resetGroupBuilder}
               >
                 <X size={16} />
@@ -1693,12 +1696,22 @@ function ChatExperience() {
                     className={active ? "group-candidate active" : "group-candidate"}
                     type="button"
                     key={character.id}
+                    aria-label={
+                      active
+                        ? `Remove ${character.name} from group selection`
+                        : `Add ${character.name} to group selection`
+                    }
+                    aria-pressed={active}
+                    disabled={!active && groupSelection.length >= 10}
                     onClick={() => toggleGroupSelection(character.id)}
                   >
                     <Avatar character={character} small />
                     <span>
                       <strong>{character.name}</strong>
                       <small>{character.rating}</small>
+                    </span>
+                    <span className="group-selection-indicator" aria-hidden="true">
+                      {active ? <X size={14} /> : <Plus size={14} />}
                     </span>
                   </button>
                 );
@@ -1763,6 +1776,7 @@ function ChatExperience() {
                 className="icon-control mobile-back"
                 type="button"
                 aria-label="Back to chats"
+                title="Back to chats"
                 onClick={() => {
                   setSelectedCharacterId("");
                   setActiveConversation(undefined);
@@ -1810,6 +1824,7 @@ function ChatExperience() {
                     className="icon-control"
                     type="button"
                     aria-label="Start fresh room"
+                    title="Start fresh room"
                     onClick={() => void startFreshRoom()}
                   >
                     <RotateCcw size={18} />
@@ -1819,6 +1834,7 @@ function ChatExperience() {
                   className={settingsOpen ? "icon-control active" : "icon-control"}
                   type="button"
                   aria-label="Chat settings"
+                  title="Chat settings"
                   onClick={() => setSettingsOpen((current) => !current)}
                 >
                   {settingsOpen ? <X size={18} /> : <SlidersHorizontal size={18} />}
@@ -1979,6 +1995,7 @@ function ChatExperience() {
               className="icon-control"
               type="button"
               aria-label="Close chat settings"
+              title="Close chat settings"
               onClick={() => setSettingsOpen(false)}
             >
               <X size={18} />
@@ -2006,6 +2023,7 @@ function ChatExperience() {
                       className="icon-control compact-icon"
                       type="button"
                       aria-label={`Remove ${member.name}`}
+                      title={`Remove ${member.name}`}
                       disabled={isGroupSaving || activeGroupMembers.length <= 2}
                       onClick={() => void removeGroupMember(member.characterId)}
                     >
@@ -2034,18 +2052,29 @@ function ChatExperience() {
                       )
                       .map((character) => {
                         const active = groupAddSelection.includes(character.id);
+                        const remainingSlots = Math.max(0, 10 - activeGroupMembers.length);
 
                         return (
                           <button
                             className={active ? "group-candidate active" : "group-candidate"}
                             type="button"
                             key={character.id}
+                            aria-label={
+                              active
+                                ? `Remove ${character.name} from add selection`
+                                : `Add ${character.name} to this group`
+                            }
+                            aria-pressed={active}
+                            disabled={!active && groupAddSelection.length >= remainingSlots}
                             onClick={() => toggleGroupAddSelection(character.id)}
                           >
                             <Avatar character={character} small />
                             <span>
                               <strong>{character.name}</strong>
                               <small>{character.rating}</small>
+                            </span>
+                            <span className="group-selection-indicator" aria-hidden="true">
+                              {active ? <X size={14} /> : <Check size={14} />}
                             </span>
                           </button>
                         );

@@ -76,6 +76,8 @@ export function AppNavigation() {
             className={isActive ? "app-nav-item active" : "app-nav-item"}
             href={item.href}
             key={item.href}
+            aria-label={item.label}
+            title={item.label}
           >
             <item.icon size={19} />
             <span>{item.label}</span>
