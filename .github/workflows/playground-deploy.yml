@@ -1,0 +1,104 @@
+name: Deploy Playground
+
+on:
+  workflow_dispatch:
+    inputs:
+      release:
+        description: Optional release name. Defaults to UTC timestamp plus short SHA.
+        required: false
+        type: string
+
+concurrency:
+  group: playground-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy to Playground VPS
+    runs-on: ubuntu-latest
+    environment: playground
+    timeout-minutes: 90
+    env:
+      PLAYGROUND_SSH_TARGET: ${{ vars.PLAYGROUND_SSH_TARGET || 'ubuntu@18.61.174.6' }}
+      PLAYGROUND_REMOTE_BASE: ${{ vars.PLAYGROUND_REMOTE_BASE || '/opt/hana-chat' }}
+      PLAYGROUND_COMPOSE_PROJECT: ${{ vars.PLAYGROUND_COMPOSE_PROJECT || 'hana-chat-vps' }}
+      PLAYGROUND_SSH_PRIVATE_KEY: ${{ secrets.PLAYGROUND_SSH_PRIVATE_KEY }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6.0.5
+        with:
+          version: 10.33.2
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 20.19.5
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Preflight quality checks
+        run: |
+          pnpm format:check
+          pnpm typecheck
+          pnpm test
+          pnpm build
+          pnpm lint
+
+      - name: Preflight VPS compose config
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -a
+          . ./.env.vps.example
+          set +a
+          export HANA_ENV_FILE=.env.vps.example
+          docker compose \
+            -f docker-compose.vps.yml \
+            -f infra/deploy/playground/docker-compose.playground.yml \
+            --project-name hana-chat-vps \
+            config >/tmp/hana-chat-vps-compose.yml
+
+      - name: Prepare SSH key
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${PLAYGROUND_SSH_PRIVATE_KEY}" ]; then
+            echo "::error::Set the PLAYGROUND_SSH_PRIVATE_KEY repository secret before deploying."
+            exit 1
+          fi
+
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "${PLAYGROUND_SSH_PRIVATE_KEY}" >"${RUNNER_TEMP}/playground_key"
+          chmod 600 "${RUNNER_TEMP}/playground_key"
+
+          ssh_host="${PLAYGROUND_SSH_TARGET#*@}"
+          ssh-keyscan -H "${ssh_host}" >>~/.ssh/known_hosts
+          echo "PLAYGROUND_SSH_KEY=${RUNNER_TEMP}/playground_key" >>"${GITHUB_ENV}"
+
+      - name: Deploy release
+        shell: bash
+        run: |
+          set -euo pipefail
+          release="${{ inputs.release }}"
+          if [ -z "${release}" ]; then
+            release="$(date -u +%Y%m%d%H%M%S)-${GITHUB_SHA::7}"
+          fi
+
+          echo "Deploying ${release} to ${PLAYGROUND_SSH_TARGET}:${PLAYGROUND_REMOTE_BASE}"
+          node scripts/deploy-playground-vps.mjs --release="${release}"
+
+      - name: Verify public routes
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --location --max-time 30 https://hanachat.site/ --output /dev/null
+          curl --fail --silent --show-error --location --max-time 30 https://app.hanachat.site/ --output /dev/null
+          curl --fail --silent --show-error --location --max-time 30 https://api.hanachat.site/health --output /dev/null

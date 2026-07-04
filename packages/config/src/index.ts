@@ -180,7 +180,6 @@ export const AppConfigSchema = z
     AUTH_ONE_ACCOUNT_PER_IP: booleanEnvSchema.default(true),
     AUTH_ONE_ACCOUNT_PER_DEVICE: booleanEnvSchema.default(true),
     ADMIN_EMAIL: optionalEmailSchema,
-    ADMIN_STATIC_OTP: optionalStaticOtpSchema,
     SMOKE_EMAIL_DOMAIN: optionalEmailDomainSchema,
     SMOKE_STATIC_OTP: optionalStaticOtpSchema,
     EMAIL_PROVIDER: z.enum(["local", "smtp", "sendgrid"]).default("smtp"),
@@ -231,14 +230,6 @@ export const AppConfigSchema = z
     WORKER_SERVICE_PORT: portSchema.default(4120),
   })
   .superRefine((config, ctx) => {
-    if (config.ADMIN_STATIC_OTP && !config.ADMIN_EMAIL) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["ADMIN_STATIC_OTP"],
-        message: "ADMIN_STATIC_OTP requires ADMIN_EMAIL",
-      });
-    }
-
     if (config.SMOKE_STATIC_OTP && !config.SMOKE_EMAIL_DOMAIN) {
       ctx.addIssue({
         code: "custom",

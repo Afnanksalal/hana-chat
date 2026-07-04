@@ -11,7 +11,8 @@ Hana is online and the main app stack is healthy, but production is not launch-c
 The biggest blocker is passwordless email for normal users. The VPS has an SMTP relay container and
 DKIM material, but a live non-admin auth-start probe failed with HTTP 500. The relay logs show the
 API connected and then dropped during STARTTLS, and outbound port 25 from the VPS timed out. The
-configured admin account works because it uses the static admin OTP path, which bypasses SMTP.
+configured admin account was verified through the legacy admin bypass code available at the time of
+the audit.
 
 In plain terms: admin login works, normal user email delivery is not proven and is currently broken.
 
@@ -80,7 +81,7 @@ In plain terms: admin login works, normal user email delivery is not proven and 
 Production env has:
 
 - `ADMIN_EMAIL=mr.goblin007a@gmail.com`
-- `ADMIN_STATIC_OTP` is set
+- a legacy admin bypass code was present at the time of this audit
 - `SMTP_HOST=smtp-relay`
 - `SMTP_PORT=587`
 - `SMTP_SECURE=false`
@@ -134,13 +135,13 @@ Root causes:
    - Outbound port 25 is not usable from the VPS.
    - `SMTP_RELAY_UPSTREAM_HOST` is missing.
 
-### Static Admin OTP Status
+### Legacy Admin Bypass Status
 
-The static admin OTP works and admin APIs are reachable.
+The legacy admin bypass worked and admin APIs were reachable.
 
 Verified:
 
-- Admin signin with configured admin email and static OTP succeeds.
+- Admin signin with configured admin email and the legacy bypass succeeds.
 - `/v1/dashboard` returns the admin role.
 - `/v1/admin/analytics?rangeDays=30` responds with real admin analytics keys.
 
@@ -175,9 +176,7 @@ Priority order:
 4. Add a production email smoke test that uses a real non-admin test inbox.
    - It must fail if DB row `provider != smtp`.
    - It must fail if Postfix queues or rejects the message.
-5. Keep `ADMIN_STATIC_OTP` only as break-glass.
-   - After SMTP works, consider limiting it by IP/device or replacing with a one-time recovery code
-     workflow.
+5. Remove the legacy admin bypass path and keep admin sign-in on normal email OTP delivery.
 
 ## DNS and Mail Reputation
 
@@ -336,10 +335,8 @@ Low priority:
 
 ### P1: Reduce Break-Glass Risk
 
-1. Rotate the static admin OTP after email works.
-2. Add an env flag like `ADMIN_STATIC_OTP_ENABLED`.
-3. Consider IP/device allowlisting for the static admin path.
-4. Revoke stale sessions or shorten session lifetime until public launch.
+1. Keep admin sign-in on normal email OTP delivery.
+2. Revoke stale sessions or shorten session lifetime until public launch.
 
 ### P1: Clean VPS Capacity
 

@@ -101,6 +101,7 @@ services:
 
   redpanda:
     image: docker.redpanda.com/redpandadata/redpanda:v25.2.7
+    init: true
     restart: unless-stopped
     command:
       - redpanda
@@ -159,6 +160,7 @@ services:
 
   temporal:
     image: temporalio/auto-setup:1.29.0
+    init: true
     restart: unless-stopped
     environment:
       DB: postgres12

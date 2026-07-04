@@ -1,5 +1,5 @@
 import type { AppConfig } from "@hana/config";
-import { createDatabase, type HanaDatabase } from "@hana/database";
+import type { createDatabase, HanaDatabase } from "@hana/database";
 import { DomainError } from "@hana/errors";
 import { formatUnits, getAddress, JsonRpcProvider } from "ethers";
 import type { Kysely } from "kysely";

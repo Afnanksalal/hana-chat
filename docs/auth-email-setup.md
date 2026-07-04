@@ -92,9 +92,8 @@ The owner/admin bootstrap is controlled by env:
 
 ```bash
 ADMIN_EMAIL=owner@example.com
-ADMIN_STATIC_OTP=123456
 ```
 
 When `ADMIN_EMAIL` signs in, the API keeps the normal email/code workflow, grants the admin role,
-enables the owner defaults, and uses `ADMIN_STATIC_OTP` instead of sending an SMTP message when the
-static code is configured. The static code is a live secret and must stay in private env only.
+and enables the owner defaults. Admin sign-in uses the same email OTP delivery and verification path
+as every other user; there is no separate admin bypass code.

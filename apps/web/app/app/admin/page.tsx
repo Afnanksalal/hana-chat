@@ -541,17 +541,13 @@ export default function AdminPage() {
     }
   }
 
-  async function processPayout(
-    payoutId: string,
-    provider: "mock" | "manual" | "crypto",
-    txHash?: string,
-  ) {
-    setStatus("Processing payout...");
+  async function processPayout(payoutId: string, txHash: string) {
+    setStatus("Verifying crypto payout...");
 
     try {
       await apiJson(`/api/v1/admin/monetization/payouts/${encodeURIComponent(payoutId)}/process`, {
         method: "POST",
-        body: JSON.stringify({ provider, txHash }),
+        body: JSON.stringify({ provider: "crypto", txHash }),
       });
       await load();
       setStatus("Payout updated.");
@@ -567,7 +563,7 @@ export default function AdminPage() {
       return;
     }
 
-    await processPayout(payoutId, "crypto", txHash.trim());
+    await processPayout(payoutId, txHash.trim());
   }
 
   async function refreshPayout(payoutId: string) {
@@ -1067,30 +1063,19 @@ export default function AdminPage() {
                         >
                           <RefreshCw size={15} /> Refresh
                         </button>
+                      ) : ["requested", "approved"].includes(payout.status) ? (
+                        <button
+                          className="primary-action compact"
+                          type="button"
+                          onClick={() => void processCryptoPayout(payout.id)}
+                          disabled={!payout.providerReady}
+                        >
+                          Crypto paid
+                        </button>
                       ) : (
-                        <>
-                          <button
-                            className="primary-action compact"
-                            type="button"
-                            onClick={() => void processPayout(payout.id, "mock")}
-                          >
-                            Mock paid
-                          </button>
-                          <button
-                            className="secondary-action compact"
-                            type="button"
-                            onClick={() => void processPayout(payout.id, "manual")}
-                          >
-                            Manual paid
-                          </button>
-                          <button
-                            className="secondary-action compact"
-                            type="button"
-                            onClick={() => void processCryptoPayout(payout.id)}
-                          >
-                            Crypto paid
-                          </button>
-                        </>
+                        <span className="admin-muted-status">
+                          {payout.failureReason ?? "No action"}
+                        </span>
                       )}
                     </div>
                   </article>

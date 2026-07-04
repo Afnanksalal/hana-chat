@@ -37,7 +37,6 @@ export function createLogger(options: CreateLoggerOptions) {
         "SMTP_PASSWORD",
         "SESSION_SECRET",
         "ADMIN_EMAIL",
-        "ADMIN_STATIC_OTP",
       ],
       censor: "[redacted]",
     },

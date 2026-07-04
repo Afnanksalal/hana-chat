@@ -21,7 +21,7 @@ import {
 import { auditEvent, requireAdmin, requireSession } from "./session";
 
 type Db = Kysely<HanaDatabase>;
-type PayoutProvider = "manual" | "mock" | "crypto";
+type PayoutProvider = "crypto";
 
 @Controller("/v1/monetization")
 export class MonetizationController {
@@ -184,7 +184,7 @@ export class MonetizationController {
 
     const walletAddress = normalizeAddress(input.walletAddress, "walletAddress");
     const now = new Date();
-    const status: "pending_review" = "pending_review";
+    const status = "pending_review" as const;
     const metadata: Record<string, unknown> = {
       provider: "crypto",
       chainId: this.config.OG_CHAIN_ID,
@@ -549,9 +549,13 @@ export class MonetizationController {
           amount_cents: input.amountCents,
           currency: input.currency,
           status: "requested",
-          provider: "manual",
+          provider: "crypto",
           idempotency_key: `payout:${session.userId}:${randomUUID()}`,
-          metadata_json: {},
+          metadata_json: {
+            chainId: this.config.OG_CHAIN_ID,
+            provider: "crypto",
+            tokenSymbol: this.config.OG_PAYMENT_TOKEN_SYMBOL,
+          },
         })
         .returning(["id"])
         .executeTakeFirstOrThrow();
@@ -768,11 +772,6 @@ export class AdminMonetizationController {
   ) {
     const admin = await requireAdmin(this.db, this.config, authorization);
     const input = AdminProcessPayoutRequestSchema.parse(body);
-    if (input.provider === "mock" && this.config.NODE_ENV === "production") {
-      throw new DomainError("AUTH_FORBIDDEN", "Mock payouts are disabled in production");
-    }
-
-    const provider = input.provider;
     const payout = await this.db
       .selectFrom("billing.creator_payouts as payouts")
       .innerJoin(
@@ -812,59 +811,42 @@ export class AdminMonetizationController {
       throw new DomainError("CONFLICT", "Creator payout profile is not verified");
     }
 
-    if (provider === "crypto") {
-      if (!input.txHash) {
-        throw new DomainError("VALIDATION_FAILED", "Crypto payouts require a 0G transaction hash");
-      }
-
-      if (payout.crypto_status !== "verified" || !payout.crypto_wallet_address) {
-        throw new DomainError("CONFLICT", "Creator crypto payout wallet is not verified");
-      }
-
-      const providerResult = await verifyCryptoPayoutTransfer({
-        db: this.db,
-        config: this.config,
-        payoutId: payout.id,
-        amountCents: payout.amount_cents,
-        txHash: input.txHash,
-        creatorWalletAddress: payout.crypto_wallet_address,
-        metadata: {
-          note: input.note,
-          creatorUserId: payout.creator_user_id,
-          verifiedBy: admin.userId,
-        },
-      });
-      const paid = providerResult.status === "finalized";
-
-      await this.markPayoutProcessed({
-        payoutId: payout.id,
-        adminUserId: admin.userId,
-        provider: "crypto",
-        providerPayoutId: providerResult.txHash,
-        status: paid ? "paid" : "processing",
-        metadata: { note: input.note, providerResult },
-      });
-
-      return {
-        ok: true,
-        payoutId: payout.id,
-        status: paid ? "paid" : "processing",
-        providerPayoutId: providerResult.txHash,
-        confirmationCount: providerResult.confirmationCount,
-        requiredConfirmations: providerResult.requiredConfirmations,
-      };
+    if (payout.crypto_status !== "verified" || !payout.crypto_wallet_address) {
+      throw new DomainError("CONFLICT", "Creator crypto payout wallet is not verified");
     }
+
+    const providerResult = await verifyCryptoPayoutTransfer({
+      db: this.db,
+      config: this.config,
+      payoutId: payout.id,
+      amountCents: payout.amount_cents,
+      txHash: input.txHash,
+      creatorWalletAddress: payout.crypto_wallet_address,
+      metadata: {
+        note: input.note,
+        creatorUserId: payout.creator_user_id,
+        verifiedBy: admin.userId,
+      },
+    });
+    const paid = providerResult.status === "finalized";
 
     await this.markPayoutProcessed({
       payoutId: payout.id,
       adminUserId: admin.userId,
-      provider,
-      providerPayoutId: provider === "mock" ? `mock_${payout.id}` : `manual_${payout.id}`,
-      status: "paid",
-      metadata: { note: input.note },
+      provider: "crypto",
+      providerPayoutId: providerResult.txHash,
+      status: paid ? "paid" : "processing",
+      metadata: { note: input.note, providerResult },
     });
 
-    return { ok: true, payoutId: payout.id, status: "paid" };
+    return {
+      ok: true,
+      payoutId: payout.id,
+      status: paid ? "paid" : "processing",
+      providerPayoutId: providerResult.txHash,
+      confirmationCount: providerResult.confirmationCount,
+      requiredConfirmations: providerResult.requiredConfirmations,
+    };
   }
 
   @Post("/payouts/:payoutId/refresh")

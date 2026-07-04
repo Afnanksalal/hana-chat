@@ -315,11 +315,8 @@ export const RequestCreatorPayoutRequestSchema = z.object({
 export type RequestCreatorPayoutRequest = z.infer<typeof RequestCreatorPayoutRequestSchema>;
 
 export const AdminProcessPayoutRequestSchema = z.object({
-  provider: z.enum(["mock", "crypto", "manual"]).default("mock"),
-  txHash: z
-    .string()
-    .regex(/^0x[a-fA-F0-9]{64}$/, "Enter a valid transaction hash")
-    .optional(),
+  provider: z.literal("crypto").default("crypto"),
+  txHash: z.string().regex(/^0x[a-fA-F0-9]{64}$/, "Enter a valid transaction hash"),
   note: z.string().max(500).optional().default(""),
 });
 

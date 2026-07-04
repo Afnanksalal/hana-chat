@@ -55,9 +55,9 @@ export class EmailAuthController {
     const ipAddressHash = hashClientIp(forwardedFor, realIp);
     const configuredAdminEmail = this.isConfiguredAdminEmail(email);
     const configuredSmokeEmail = this.isConfiguredSmokeEmail(email);
-    const staticLocalCode = this.staticLocalOtpFor(email);
+    const staticSmokeCode = this.staticSmokeOtpFor(email);
 
-    if (!staticLocalCode) {
+    if (!staticSmokeCode) {
       await enforceEmailVerificationRateLimits(this.db, {
         emailHash,
         deviceIdHash,
@@ -119,7 +119,7 @@ export class EmailAuthController {
     assertStartRiskAllowed(riskAction, riskScore.reasons);
 
     const verificationId = randomUUID();
-    const localCode = staticLocalCode ?? randomNumericCode(this.config.AUTH_EMAIL_CODE_LENGTH);
+    const localCode = staticSmokeCode ?? randomNumericCode(this.config.AUTH_EMAIL_CODE_LENGTH);
     const codeHash = hmacHex(
       `${emailHash}.${verificationId}.${localCode}`,
       this.config.SESSION_SECRET,
@@ -129,7 +129,7 @@ export class EmailAuthController {
       email,
       this.config.EMAIL_ENCRYPTION_KEY_BASE64,
     ).value;
-    const delivery = staticLocalCode
+    const delivery = staticSmokeCode
       ? { provider: "local" as const, messageId: null }
       : await sendEmailCode({
           config: this.config,
@@ -166,8 +166,8 @@ export class EmailAuthController {
         mode: input.mode,
         emailDomain: emailDomain(email),
         provider: delivery.provider,
-        adminStaticOtp: configuredAdminEmail && Boolean(staticLocalCode),
-        smokeStaticOtp: configuredSmokeEmail && Boolean(staticLocalCode),
+        configuredAdminEmail,
+        smokeStaticOtp: Boolean(staticSmokeCode),
         riskAction,
         riskScore: riskScore.score,
         riskReasons: riskScore.reasons,
@@ -267,10 +267,6 @@ export class EmailAuthController {
     return Boolean(this.config.ADMIN_EMAIL) && email === this.config.ADMIN_EMAIL;
   }
 
-  private staticAdminOtpFor(email: ReturnType<typeof normalizeEmailAddress>): string | undefined {
-    return this.isConfiguredAdminEmail(email) ? this.config.ADMIN_STATIC_OTP : undefined;
-  }
-
   private isConfiguredSmokeEmail(email: ReturnType<typeof normalizeEmailAddress>): boolean {
     return (
       Boolean(this.config.SMOKE_EMAIL_DOMAIN && this.config.SMOKE_STATIC_OTP) &&
@@ -280,10 +276,6 @@ export class EmailAuthController {
 
   private staticSmokeOtpFor(email: ReturnType<typeof normalizeEmailAddress>): string | undefined {
     return this.isConfiguredSmokeEmail(email) ? this.config.SMOKE_STATIC_OTP : undefined;
-  }
-
-  private staticLocalOtpFor(email: ReturnType<typeof normalizeEmailAddress>): string | undefined {
-    return this.staticAdminOtpFor(email) ?? this.staticSmokeOtpFor(email);
   }
 
   private async ensureConfiguredAdminAccount(
@@ -351,7 +343,7 @@ export class EmailAuthController {
       resourceId: userId,
       metadata: {
         emailDomain: emailDomain(email),
-        staticOtp: Boolean(this.config.ADMIN_STATIC_OTP),
+        source: "configured_admin_email",
       },
     });
 

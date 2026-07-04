@@ -4285,6 +4285,13 @@ select:hover,
   flex-wrap: wrap;
 }
 
+.admin-muted-status {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+  text-align: right;
+}
+
 .admin-command-hero,
 .admin-panel,
 .admin-kpi-card {

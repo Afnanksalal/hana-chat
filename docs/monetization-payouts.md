@@ -12,7 +12,8 @@ and production monetization requires `OG_PAYMENTS_ENABLED=true` plus a configure
 - Creator payout destinations are 0G wallet addresses stored in `billing.crypto_payout_accounts`.
 - Admin payout settlement is proof-based: the admin sends the 0G payout transaction, then submits
   the tx hash for server verification.
-- Local development can still use mock checkout/payout paths. Production rejects mock payment paths.
+- Local development can still use mock checkout for buyer payment tests. Creator payout settlement
+  always uses the crypto proof path.
 
 ## Data Model
 
