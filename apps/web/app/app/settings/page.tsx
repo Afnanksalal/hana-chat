@@ -51,7 +51,7 @@ interface BillingResponse {
 }
 
 interface CheckoutResponse {
-  provider: "mock" | "crypto";
+  provider: "crypto";
   internalOrderId: string;
   activated?: boolean;
   payment?: CryptoPaymentIntent;
@@ -59,37 +59,6 @@ interface CheckoutResponse {
     name: string;
   };
 }
-
-const fallbackSettings: SettingsResponse = {
-  displayName: "Hana User",
-  avatarUrl: null,
-  adultModeEnabled: false,
-  memoryEnabled: true,
-  marketingOptIn: false,
-};
-
-const fallbackBilling: BillingResponse = {
-  monetizationEnabled: false,
-  comingSoon: true,
-  plans: [
-    {
-      id: "free",
-      name: "Free",
-      monthlyPriceCents: 0,
-      currency: "USD",
-      monthlyMessageLimit: 30,
-      adultModeEnabled: false,
-      deepMemoryEnabled: true,
-      creatorPaidCharactersEnabled: false,
-      comingSoon: false,
-    },
-  ],
-  subscription: {
-    planId: "free",
-    status: "active",
-    currentPeriodEnd: null,
-  },
-};
 
 interface MediaAssetResponse {
   id: string;
@@ -104,10 +73,10 @@ const acceptedImageTypes = ["image/png", "image/jpeg", "image/webp"];
 const maxClientUploadBytes = 5 * 1024 * 1024;
 
 export default function SettingsPage() {
-  const [settings, setSettings] = useState<SettingsResponse>(fallbackSettings);
-  const [billing, setBilling] = useState<BillingResponse | undefined>();
-  const [profileName, setProfileName] = useState(fallbackSettings.displayName ?? "");
-  const [profileAvatarUrl, setProfileAvatarUrl] = useState(fallbackSettings.avatarUrl);
+  const [settings, setSettings] = useState<SettingsResponse | null>(null);
+  const [billing, setBilling] = useState<BillingResponse | null>(null);
+  const [profileName, setProfileName] = useState("");
+  const [profileAvatarUrl, setProfileAvatarUrl] = useState<string | null>(null);
   const [avatarUploadStatus, setAvatarUploadStatus] = useState("PNG, JPG, or WebP up to 5MB.");
   const [status, setStatus] = useState("Loading settings...");
 
@@ -208,7 +177,7 @@ export default function SettingsPage() {
         body: JSON.stringify({ planId, provider: "crypto" }),
       });
 
-      if (checkoutPayload.provider === "mock" || checkoutPayload.activated) {
+      if (checkoutPayload.activated) {
         setStatus("Plan activated.");
         await load();
         return;
@@ -245,11 +214,34 @@ export default function SettingsPage() {
     }
   }
 
-  const billingState = billing ?? fallbackBilling;
-  const plans =
-    Array.isArray(billingState.plans) && billingState.plans.length > 0
-      ? billingState.plans
-      : fallbackBilling.plans;
+  if (!settings || !billing) {
+    return (
+      <div className="app-page settings-page">
+        <section className="settings-hero">
+          <div className="settings-avatar">
+            <UserRound size={34} />
+          </div>
+          <div>
+            <span className="section-label">
+              <UserRound size={15} /> Account
+            </span>
+            <h1>
+              {status && status !== "Loading settings..."
+                ? "Settings unavailable"
+                : "Loading settings"}
+            </h1>
+            <p>{status || "Fetching your live profile, access, memory, and plan controls."}</p>
+          </div>
+          <button className="secondary-action compact" type="button" onClick={() => void logout()}>
+            <LogOut size={16} /> Sign out
+          </button>
+        </section>
+      </div>
+    );
+  }
+
+  const billingState = billing;
+  const plans = billingState.plans;
   const activePlanId = billingState.subscription?.planId ?? "free";
   const activePlan = plans.find((plan) => plan.id === activePlanId);
   const monetizationComingSoon = billingState.comingSoon ?? true;
@@ -484,42 +476,50 @@ export default function SettingsPage() {
 
 function normalizeSettings(payload: Partial<SettingsResponse>): SettingsResponse {
   return {
-    displayName: payload.displayName ?? fallbackSettings.displayName,
-    avatarUrl: payload.avatarUrl ?? fallbackSettings.avatarUrl,
-    adultModeEnabled:
-      typeof payload.adultModeEnabled === "boolean"
-        ? payload.adultModeEnabled
-        : fallbackSettings.adultModeEnabled,
-    memoryEnabled:
-      typeof payload.memoryEnabled === "boolean"
-        ? payload.memoryEnabled
-        : fallbackSettings.memoryEnabled,
-    marketingOptIn:
-      typeof payload.marketingOptIn === "boolean"
-        ? payload.marketingOptIn
-        : fallbackSettings.marketingOptIn,
+    displayName:
+      payload.displayName === null || typeof payload.displayName === "string"
+        ? payload.displayName
+        : null,
+    avatarUrl:
+      payload.avatarUrl === null || typeof payload.avatarUrl === "string"
+        ? payload.avatarUrl
+        : null,
+    adultModeEnabled: requiredBoolean(payload.adultModeEnabled, "settings.adultModeEnabled"),
+    memoryEnabled: requiredBoolean(payload.memoryEnabled, "settings.memoryEnabled"),
+    marketingOptIn: requiredBoolean(payload.marketingOptIn, "settings.marketingOptIn"),
   };
 }
 
 function normalizeBilling(payload: Partial<BillingResponse>): BillingResponse {
+  if (!Array.isArray(payload.plans) || payload.plans.length === 0) {
+    throw new Error("Invalid billing.plans");
+  }
+
+  if (!payload.subscription) {
+    throw new Error("Invalid billing.subscription");
+  }
+
   return {
-    monetizationEnabled:
-      typeof payload.monetizationEnabled === "boolean"
-        ? payload.monetizationEnabled
-        : fallbackBilling.monetizationEnabled,
-    comingSoon:
-      typeof payload.comingSoon === "boolean" ? payload.comingSoon : fallbackBilling.comingSoon,
-    plans:
-      Array.isArray(payload.plans) && payload.plans.length > 0
-        ? payload.plans
-        : fallbackBilling.plans,
+    monetizationEnabled: requiredBoolean(
+      payload.monetizationEnabled,
+      "billing.monetizationEnabled",
+    ),
+    comingSoon: requiredBoolean(payload.comingSoon, "billing.comingSoon"),
+    plans: payload.plans,
     subscription: {
-      planId: payload.subscription?.planId ?? fallbackBilling.subscription.planId,
-      status: payload.subscription?.status ?? fallbackBilling.subscription.status,
-      currentPeriodEnd:
-        payload.subscription?.currentPeriodEnd ?? fallbackBilling.subscription.currentPeriodEnd,
+      planId: payload.subscription.planId,
+      status: payload.subscription.status,
+      currentPeriodEnd: payload.subscription.currentPeriodEnd,
     },
   };
+}
+
+function requiredBoolean(value: unknown, field: string): boolean {
+  if (typeof value !== "boolean") {
+    throw new Error(`Invalid ${field}`);
+  }
+
+  return value;
 }
 
 function fileToDataUrl(file: File): Promise<string> {

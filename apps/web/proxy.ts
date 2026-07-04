@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { getApiGatewayUrl } from "./server-api";
 
 const authCookieName = process.env["AUTH_COOKIE_NAME"] ?? "hana_session";
-const apiBaseUrl = process.env["API_GATEWAY_URL"] ?? "http://localhost:4000";
 
 export async function proxy(request: NextRequest) {
   const sessionToken = request.cookies.get(authCookieName)?.value;
@@ -35,7 +35,7 @@ async function hasValidSession(token: string | undefined): Promise<boolean> {
   }
 
   try {
-    const response = await fetch(new URL("/v1/session", apiBaseUrl), {
+    const response = await fetch(new URL("/v1/session", getApiGatewayUrl()), {
       headers: { Authorization: `Bearer ${token}` },
       cache: "no-store",
     });

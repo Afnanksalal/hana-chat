@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
+import { getApiGatewayUrl } from "../../../../../server-api";
 import { createSessionCookie } from "../../session-cookie";
-
-const apiBaseUrl = process.env["API_GATEWAY_URL"] ?? "http://localhost:4000";
 
 interface StartPayload {
   verified?: boolean;
@@ -12,7 +11,7 @@ export async function POST(request: Request) {
   try {
     const body = (await request.json()) as unknown;
     const headers = forwardAuthHeaders(request);
-    const response = await fetch(new URL("/v1/auth/email/start", apiBaseUrl), {
+    const response = await fetch(new URL("/v1/auth/email/start", getApiGatewayUrl()), {
       method: "POST",
       headers,
       body: JSON.stringify(body),

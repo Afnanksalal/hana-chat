@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
+import { getApiGatewayUrl } from "../server-api";
 
 const authCookieName = process.env["AUTH_COOKIE_NAME"] ?? "hana_session";
-const apiBaseUrl = process.env["API_GATEWAY_URL"] ?? "http://localhost:4000";
 
 export async function getInitialAuthenticated(): Promise<boolean> {
   const cookieStore = await cookies();
@@ -12,7 +12,7 @@ export async function getInitialAuthenticated(): Promise<boolean> {
   }
 
   try {
-    const response = await fetch(new URL("/v1/session", apiBaseUrl), {
+    const response = await fetch(new URL("/v1/session", getApiGatewayUrl()), {
       headers: { Authorization: `Bearer ${sessionToken}` },
       cache: "no-store",
     });

@@ -294,12 +294,12 @@ export type UpdateMemoryRequest = z.infer<typeof UpdateMemoryRequestSchema>;
 
 export const CheckoutPlanRequestSchema = z.object({
   planId: z.enum(["plus", "ultra"]),
-  provider: z.enum(["crypto", "mock"]).default("crypto"),
+  provider: z.literal("crypto").default("crypto"),
 });
 
 export type CheckoutPlanRequest = z.infer<typeof CheckoutPlanRequestSchema>;
 
-export const MonetizationProviderSchema = z.enum(["crypto", "mock"]);
+export const MonetizationProviderSchema = z.literal("crypto");
 export type MonetizationProvider = z.infer<typeof MonetizationProviderSchema>;
 
 export const CreateCharacterPurchaseRequestSchema = z.object({

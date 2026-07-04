@@ -57,7 +57,7 @@ interface MarketplaceResponse {
 }
 
 interface CharacterPurchaseResponse {
-  provider?: "mock" | "crypto";
+  provider?: "crypto";
   internalPurchaseId?: string;
   activated?: boolean;
   alreadyPurchased?: boolean;
@@ -190,7 +190,7 @@ function DiscoverExperience() {
         },
       );
 
-      if (purchase.activated || purchase.provider === "mock") {
+      if (purchase.activated) {
         if (purchase.trial) {
           setStatus(`${purchase.trialRemaining ?? 0} free trial messages left.`);
         }

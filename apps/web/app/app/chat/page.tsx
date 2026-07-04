@@ -188,7 +188,7 @@ interface MemoriesResponse {
 }
 
 interface CharacterPurchaseResponse {
-  provider?: "mock" | "crypto";
+  provider?: "crypto";
   internalPurchaseId?: string;
   activated?: boolean;
   alreadyPurchased?: boolean;
@@ -1587,7 +1587,7 @@ function ChatExperience() {
         return;
       }
 
-      if (purchase.activated || purchase.provider === "mock") {
+      if (purchase.activated) {
         setTrialStatus(null);
         setStatus("Unlocked.");
         return;

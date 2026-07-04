@@ -157,6 +157,26 @@ export HANA_ENV_FILE="\${env_file}"
 mkdir -p "\${MAIL_DKIM_KEYS_DIR:-\${base}/shared/opendkim-keys}"
 
 docker compose "\${compose_files[@]}" --project-name "\${project_name}" config >/tmp/hana-chat-compose-\${release}.yml
+docker compose "\${compose_files[@]}" --project-name "\${project_name}" up -d postgres
+
+for attempt in {1..30}; do
+  if docker compose "\${compose_files[@]}" --project-name "\${project_name}" exec -T postgres pg_isready -U "\${POSTGRES_USER:-hana}" -d "\${POSTGRES_DATABASE:-hana}" >/dev/null 2>&1; then
+    break
+  fi
+
+  if [ "\${attempt}" -eq 30 ]; then
+    echo "Postgres did not become ready for migrations." >&2
+    exit 1
+  fi
+
+  sleep 2
+done
+
+for migration in infra/database/migrations/*.sql; do
+  echo "Applying \${migration}"
+  docker compose "\${compose_files[@]}" --project-name "\${project_name}" exec -T postgres psql -v ON_ERROR_STOP=1 -U "\${POSTGRES_USER:-hana}" -d "\${POSTGRES_DATABASE:-hana}" < "\${migration}"
+done
+
 docker compose "\${compose_files[@]}" --project-name "\${project_name}" up -d --build
 docker compose "\${compose_files[@]}" --project-name "\${project_name}" ps
 

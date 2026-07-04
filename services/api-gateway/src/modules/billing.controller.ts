@@ -66,51 +66,6 @@ export class BillingController {
       });
     }
 
-    if (input.provider === "mock") {
-      if (this.config.NODE_ENV === "production") {
-        throw new DomainError("AUTH_FORBIDDEN", "Mock checkout is disabled in production");
-      }
-
-      const order = await this.db
-        .insertInto("billing.payment_orders")
-        .values({
-          user_id: session.userId,
-          plan_id: input.planId,
-          provider: "mock",
-          provider_order_id: null,
-          amount_cents: plan.monthly_price_cents,
-          currency: plan.currency,
-          status: "paid",
-          checkout_url: null,
-          metadata_json: { activatedBy: "mock_checkout" },
-        })
-        .returning(["id"])
-        .executeTakeFirstOrThrow();
-
-      await activateSubscription({
-        db: this.db,
-        userId: session.userId,
-        planId: input.planId,
-        provider: "mock",
-        providerSubscriptionId: `mock_${order.id}`,
-      });
-
-      await auditEvent(this.db, {
-        actorUserId: session.userId,
-        action: "billing.checkout.mock",
-        resourceType: "billing.payment_order",
-        resourceId: order.id,
-        metadata: { planId: input.planId },
-      });
-
-      return {
-        provider: "mock",
-        internalOrderId: order.id,
-        activated: true,
-        planId: input.planId,
-      };
-    }
-
     const internalOrder = await this.db
       .insertInto("billing.payment_orders")
       .values({

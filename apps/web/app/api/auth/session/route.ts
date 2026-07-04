@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
+import { getApiGatewayUrl } from "../../../../server-api";
 
-const apiBaseUrl = process.env["API_GATEWAY_URL"] ?? "http://localhost:4000";
 const authCookieName = process.env["AUTH_COOKIE_NAME"] ?? "hana_session";
 
 export async function GET() {
@@ -12,7 +12,7 @@ export async function GET() {
     return NextResponse.json({ authenticated: false });
   }
 
-  const response = await fetch(new URL("/v1/session", apiBaseUrl), {
+  const response = await fetch(new URL("/v1/session", getApiGatewayUrl()), {
     headers: { Authorization: `Bearer ${sessionToken}` },
     cache: "no-store",
   });

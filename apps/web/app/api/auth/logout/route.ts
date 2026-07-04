@@ -1,15 +1,14 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
+import { getApiGatewayUrl } from "../../../../server-api";
 import { authCookieName, clearSessionCookie } from "../session-cookie";
-
-const apiBaseUrl = process.env["API_GATEWAY_URL"] ?? "http://localhost:4000";
 
 export async function POST(request: Request) {
   const cookieStore = await cookies();
   const sessionToken = cookieStore.get(authCookieName)?.value;
 
   if (sessionToken) {
-    await fetch(new URL("/v1/auth/logout", apiBaseUrl), {
+    await fetch(new URL("/v1/auth/logout", getApiGatewayUrl()), {
       method: "POST",
       headers: { Authorization: `Bearer ${sessionToken}` },
       cache: "no-store",
