@@ -56,7 +56,7 @@ pnpm web:smoke
 - Marketplace with category filters, search, image-led cards, stats, tags, monetization-ready character records, and fresh-room starts into chat.
 - Chat orchestration through xAI with private identity, risk, chat-planning, billing, moderation, memory-policy, retrieval, graph, and batch boundaries, strict input/output guardrails, entitlement checks, usage limits, SSE streaming, durable memory injection, and an evolving per-chat relationship profile.
 - Memory scoped by `user_id + character_id + conversation_id`; no global user memories are injected into chat context.
-- Billing plans, Razorpay/mock checkout flow, creator wallet ledger, 7-day creator earning hold, payout profiles, and admin payout operations are preserved behind `MONETIZATION_ENABLED`; current public billing and creator monetization copy shows "coming soon."
+- Billing plans, crypto checkout flow, creator wallet ledger, 7-day creator earning hold, crypto payout profiles, and admin payout operations are preserved behind `MONETIZATION_ENABLED`; current public billing and creator monetization copy shows "coming soon."
 - Batch-orchestrator outbox leasing, Qdrant replay, and Neo4j chat-turn plus memory projection.
 - Admin command center with real analytics for growth, marketplace momentum, model latency, safety pressure, memory depth, queue health, service-boundary backlogs, payout ops, and audit events.
 - PWA, Android TWA packaging, SEO metadata routes, crawler files, secure headers, raw-IP VPS access, shared `.hanachat.site` auth cookies, and fully self-hosted VPS deployment docs.

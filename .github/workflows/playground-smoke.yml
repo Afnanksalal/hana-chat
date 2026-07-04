@@ -27,7 +27,7 @@ jobs:
       SEO_AUDIT_BASE_URL: ${{ vars.PLAYGROUND_SITE_URL || 'https://hanachat.site' }}
       ADMIN_EMAIL: ${{ secrets.PLAYGROUND_ADMIN_EMAIL }}
       ADMIN_EMAIL_CODE: ${{ secrets.PLAYGROUND_ADMIN_EMAIL_CODE }}
-      SMOKE_STATIC_OTP: ${{ secrets.PLAYGROUND_SMOKE_STATIC_OTP }}
+      SMOKE_EMAIL_CODE_COMMAND: ${{ secrets.PLAYGROUND_SMOKE_EMAIL_CODE_COMMAND }}
       AI_HARNESS_PRODUCTION: "1"
     steps:
       - name: Checkout
@@ -73,8 +73,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [ -z "${SMOKE_STATIC_OTP}" ]; then
-            echo "::error::Set PLAYGROUND_SMOKE_STATIC_OTP before enabling product smoke against Playground."
+          if [ -z "${SMOKE_EMAIL_CODE_COMMAND}" ]; then
+            echo "::error::Set PLAYGROUND_SMOKE_EMAIL_CODE_COMMAND to a mailbox-backed OTP fetcher before enabling product smoke against Playground."
             exit 1
           fi
           pnpm product:smoke

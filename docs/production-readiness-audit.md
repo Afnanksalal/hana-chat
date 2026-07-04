@@ -100,7 +100,7 @@ load testing. Those are tracked as explicit hardening work rather than hidden de
 - Character create, publish, marketplace, and mine flows persist in Postgres and project to Qdrant/Neo4j.
 - Chat validates session, character visibility, moderation status, per-character paid unlocks, usage limits, safety, memory scope, model route, output safety, analytics, and memory extraction.
 - Memory is scoped by `user_id + character_id + conversation_id` and retrieved only for that bot/chat thread.
-- Billing supports plans, Razorpay orders, signature verification, signed webhook activation, mock checkout only outside production, and duplicate-plan prevention.
+- Billing supports plans, crypto payment intents, transaction verification, creator-wallet ledgering, crypto payout settlement, and duplicate-plan prevention.
 - Worker service drains projection outbox events through the batch-orchestrator boundary with direct
   Postgres fallback, retries, stale lock recovery, and dead letters.
 - Web app has authenticated app routes, landing/legal pages, PWA metadata, crawler controls, and mobile sign-out.

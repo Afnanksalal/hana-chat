@@ -26,23 +26,6 @@ const optionalEmailSchema = z.preprocess(
   (value) => (value === "" ? undefined : value),
   z.string().trim().toLowerCase().email().optional(),
 );
-const optionalStaticOtpSchema = z.preprocess(
-  (value) => (value === "" ? undefined : value),
-  z
-    .string()
-    .trim()
-    .regex(/^\d{6,8}$/)
-    .optional(),
-);
-const optionalEmailDomainSchema = z.preprocess(
-  (value) => (value === "" ? undefined : value),
-  z
-    .string()
-    .trim()
-    .toLowerCase()
-    .regex(/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/)
-    .optional(),
-);
 const localDevAesKeyBase64 = "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA=";
 let dotenvLoaded = false;
 
@@ -180,8 +163,6 @@ export const AppConfigSchema = z
     AUTH_ONE_ACCOUNT_PER_IP: booleanEnvSchema.default(true),
     AUTH_ONE_ACCOUNT_PER_DEVICE: booleanEnvSchema.default(true),
     ADMIN_EMAIL: optionalEmailSchema,
-    SMOKE_EMAIL_DOMAIN: optionalEmailDomainSchema,
-    SMOKE_STATIC_OTP: optionalStaticOtpSchema,
     EMAIL_PROVIDER: z.enum(["local", "smtp", "sendgrid"]).default("smtp"),
     SENDGRID_API_KEY: z.string().optional(),
     SENDGRID_API_BASE_URL: z.string().url().default("https://api.sendgrid.com"),
@@ -230,22 +211,6 @@ export const AppConfigSchema = z
     WORKER_SERVICE_PORT: portSchema.default(4120),
   })
   .superRefine((config, ctx) => {
-    if (config.SMOKE_STATIC_OTP && !config.SMOKE_EMAIL_DOMAIN) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["SMOKE_STATIC_OTP"],
-        message: "SMOKE_STATIC_OTP requires SMOKE_EMAIL_DOMAIN",
-      });
-    }
-
-    if (config.SMOKE_EMAIL_DOMAIN && !config.SMOKE_STATIC_OTP) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["SMOKE_EMAIL_DOMAIN"],
-        message: "SMOKE_EMAIL_DOMAIN requires SMOKE_STATIC_OTP",
-      });
-    }
-
     if (config.OG_STORAGE_ENABLED && !config.OG_ENABLED) {
       ctx.addIssue({
         code: "custom",
