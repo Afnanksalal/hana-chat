@@ -278,13 +278,13 @@ interface AdminAnalyticsResponse {
   }>;
 }
 
-interface AdminOgMemoryResponse {
+interface AdminStellarMemoryResponse {
   settings: {
-    ogEnabled: boolean;
+    stellarEnabled: boolean;
     storageEnabled: boolean;
-    uploadEnabled: boolean;
+    nftEnabled: boolean;
     network: string;
-    indexerUrl: string | null;
+    horizonUrl: string;
   };
   totals: {
     snapshots: number;
@@ -331,13 +331,13 @@ const emptyReviews: AdminCharacterReviewsResponse = {
   characters: [],
 };
 
-const emptyOgMemory: AdminOgMemoryResponse = {
+const emptyStellarMemory: AdminStellarMemoryResponse = {
   settings: {
-    ogEnabled: false,
+    stellarEnabled: false,
     storageEnabled: false,
-    uploadEnabled: false,
+    nftEnabled: false,
     network: "testnet",
-    indexerUrl: null,
+    horizonUrl: "https://horizon-testnet.stellar.org",
   },
   totals: {
     snapshots: 0,
@@ -461,7 +461,7 @@ const emptyAnalytics: AdminAnalyticsResponse = {
   auditTrail: [],
 };
 
-type AdminTab = "analytics" | "reviews" | "ops" | "safety" | "og";
+type AdminTab = "analytics" | "reviews" | "ops" | "safety" | "stellar";
 type PulseDay = AdminAnalyticsResponse["growth"]["timeSeries"][number];
 type MarketplaceCharacter = AdminAnalyticsResponse["marketplace"]["topCharacters"][number];
 
@@ -511,7 +511,8 @@ export default function AdminPage() {
   const [payload, setPayload] = useState<AdminMonetizationResponse>(emptyAdmin);
   const [analytics, setAnalytics] = useState<AdminAnalyticsResponse>(emptyAnalytics);
   const [reviews, setReviews] = useState<AdminCharacterReviewsResponse>(emptyReviews);
-  const [ogMemory, setOgMemory] = useState<AdminOgMemoryResponse>(emptyOgMemory);
+  const [stellarMemory, setStellarMemory] =
+    useState<AdminStellarMemoryResponse>(emptyStellarMemory);
   const [activeTab, setActiveTab] = useState<AdminTab>("analytics");
   const [showAllBoundaries, setShowAllBoundaries] = useState(false);
   const [hasLiveData, setHasLiveData] = useState(false);
@@ -523,17 +524,17 @@ export default function AdminPage() {
 
   async function load() {
     try {
-      const [analyticsData, monetizationData, reviewData, ogMemoryData] = await Promise.all([
+      const [analyticsData, monetizationData, reviewData, stellarMemoryData] = await Promise.all([
         apiJson<AdminAnalyticsResponse>("/api/v1/admin/analytics?rangeDays=30"),
         apiJson<AdminMonetizationResponse>("/api/v1/admin/monetization"),
         apiJson<AdminCharacterReviewsResponse>("/api/v1/admin/characters/reviews"),
-        apiJson<AdminOgMemoryResponse>("/api/v1/admin/og/memory"),
+        apiJson<AdminStellarMemoryResponse>("/api/v1/admin/stellar/memory"),
       ]);
 
       setAnalytics(analyticsData);
       setPayload(monetizationData);
       setReviews(reviewData);
-      setOgMemory(ogMemoryData);
+      setStellarMemory(stellarMemoryData);
       setHasLiveData(true);
       setStatus("");
     } catch (error) {
@@ -542,12 +543,12 @@ export default function AdminPage() {
   }
 
   async function processPayout(payoutId: string, txHash: string) {
-    setStatus("Verifying crypto payout...");
+    setStatus("Verifying Stellar payout...");
 
     try {
       await apiJson(`/api/v1/admin/monetization/payouts/${encodeURIComponent(payoutId)}/process`, {
         method: "POST",
-        body: JSON.stringify({ provider: "crypto", txHash }),
+        body: JSON.stringify({ provider: "stellar", txHash }),
       });
       await load();
       setStatus("Payout updated.");
@@ -556,8 +557,8 @@ export default function AdminPage() {
     }
   }
 
-  async function processCryptoPayout(payoutId: string) {
-    const txHash = window.prompt("Paste the 0G payout transaction hash.");
+  async function processStellarPayout(payoutId: string) {
+    const txHash = window.prompt("Paste the Stellar payout transaction hash.");
 
     if (!txHash) {
       return;
@@ -660,7 +661,7 @@ export default function AdminPage() {
     { id: "reviews", label: "Reviews", icon: UserCheck },
     { id: "ops", label: "Payout ops", icon: WalletCards },
     { id: "safety", label: "Safety", icon: AlertTriangle },
-    { id: "og", label: "0G Memory", icon: Database },
+    { id: "stellar", label: "Stellar Memory", icon: Database },
   ];
   const boundaryStats = useMemo(() => {
     const statusCounts = analytics.boundaries.reduce(
@@ -1067,10 +1068,10 @@ export default function AdminPage() {
                         <button
                           className="primary-action compact"
                           type="button"
-                          onClick={() => void processCryptoPayout(payout.id)}
+                          onClick={() => void processStellarPayout(payout.id)}
                           disabled={!payout.providerReady}
                         >
-                          Crypto paid
+                          Stellar paid
                         </button>
                       ) : (
                         <span className="admin-muted-status">
@@ -1374,32 +1375,32 @@ export default function AdminPage() {
         </section>
       ) : null}
 
-      {hasLiveData && activeTab === "og" ? (
+      {hasLiveData && activeTab === "stellar" ? (
         <>
           <section className="wallet-metric-grid">
             <SummaryCard
-              detail={`${ogMemory.totals.confirmed.toLocaleString()} confirmed`}
+              detail={`${stellarMemory.totals.confirmed.toLocaleString()} confirmed`}
               icon={Database}
               label="Snapshots"
-              value={ogMemory.totals.snapshots.toLocaleString()}
+              value={stellarMemory.totals.snapshots.toLocaleString()}
             />
             <SummaryCard
-              detail="stored on 0G"
+              detail="Stellar commitments"
               icon={CheckCircle2}
-              label="Uploaded"
-              value={ogMemory.totals.uploaded.toLocaleString()}
+              label="Recorded"
+              value={stellarMemory.totals.uploaded.toLocaleString()}
             />
             <SummaryCard
               detail="waiting for worker"
               icon={Clock}
               label="Pending"
-              value={ogMemory.totals.pending.toLocaleString()}
+              value={stellarMemory.totals.pending.toLocaleString()}
             />
             <SummaryCard
               detail="needs attention"
               icon={AlertTriangle}
               label="Failed"
-              value={ogMemory.totals.failed.toLocaleString()}
+              value={stellarMemory.totals.failed.toLocaleString()}
             />
           </section>
 
@@ -1407,23 +1408,24 @@ export default function AdminPage() {
             <article className="admin-panel">
               <div className="panel-heading">
                 <span className="section-label">
-                  <ShieldCheck size={15} /> 0G config
+                  <ShieldCheck size={15} /> Stellar config
                 </span>
-                <h2>Storage flags</h2>
+                <h2>Memory flags</h2>
               </div>
-              <MetricLine label="0G enabled" value={ogMemory.settings.ogEnabled ? "yes" : "no"} />
+              <MetricLine
+                label="Stellar enabled"
+                value={stellarMemory.settings.stellarEnabled ? "yes" : "no"}
+              />
               <MetricLine
                 label="Storage enabled"
-                value={ogMemory.settings.storageEnabled ? "yes" : "no"}
+                value={stellarMemory.settings.storageEnabled ? "yes" : "no"}
               />
               <MetricLine
-                label="Upload enabled"
-                value={ogMemory.settings.uploadEnabled ? "yes" : "no"}
+                label="NFT enabled"
+                value={stellarMemory.settings.nftEnabled ? "yes" : "no"}
               />
-              <MetricLine label="Network" value={ogMemory.settings.network} />
-              {ogMemory.settings.indexerUrl ? (
-                <small className="memory-hash">{ogMemory.settings.indexerUrl}</small>
-              ) : null}
+              <MetricLine label="Network" value={stellarMemory.settings.network} />
+              <small className="memory-hash">{stellarMemory.settings.horizonUrl}</small>
             </article>
 
             <article className="admin-panel">
@@ -1433,9 +1435,15 @@ export default function AdminPage() {
                 </span>
                 <h2>Decentralized scope</h2>
               </div>
-              <MetricLine label="Conversation memory" value={ogMemory.totals.conversationMemory} />
-              <MetricLine label="User exports" value={ogMemory.totals.userExports} />
-              <MetricLine label="Creator soul-packs" value={ogMemory.totals.creatorSoulPacks} />
+              <MetricLine
+                label="Conversation memory"
+                value={stellarMemory.totals.conversationMemory}
+              />
+              <MetricLine label="User exports" value={stellarMemory.totals.userExports} />
+              <MetricLine
+                label="Creator soul-packs"
+                value={stellarMemory.totals.creatorSoulPacks}
+              />
             </article>
 
             <article className="admin-panel wide">
@@ -1446,12 +1454,12 @@ export default function AdminPage() {
                 <h2>Memory snapshot outbox</h2>
               </div>
               <div className="admin-pressure-summary">
-                {ogMemory.outbox.map((item) => (
+                {stellarMemory.outbox.map((item) => (
                   <span key={item.status}>
                     {formatSafetyLabel(item.status)} <b>{item.count.toLocaleString()}</b>
                   </span>
                 ))}
-                {ogMemory.outbox.length === 0 ? (
+                {stellarMemory.outbox.length === 0 ? (
                   <span>
                     Empty <b>0</b>
                   </span>
@@ -1466,12 +1474,12 @@ export default function AdminPage() {
                 <span className="section-label">
                   <Database size={15} /> Snapshot ledger
                 </span>
-                <h2>Recent 0G memory records</h2>
+                <h2>Recent Stellar memory records</h2>
               </div>
-              <small>{ogMemory.recentSnapshots.length.toLocaleString()} recent</small>
+              <small>{stellarMemory.recentSnapshots.length.toLocaleString()} recent</small>
             </div>
             <div className="admin-table compact-table">
-              {ogMemory.recentSnapshots.map((snapshot) => (
+              {stellarMemory.recentSnapshots.map((snapshot) => (
                 <div className="admin-table-row" key={snapshot.id}>
                   <span>
                     <strong>{formatSafetyLabel(snapshot.kind)}</strong>
@@ -1488,10 +1496,10 @@ export default function AdminPage() {
                   <b>{formatSafetyLabel(snapshot.status)}</b>
                 </div>
               ))}
-              {ogMemory.recentSnapshots.length === 0 ? (
+              {stellarMemory.recentSnapshots.length === 0 ? (
                 <EmptyState
                   icon={Database}
-                  title="No 0G memory records"
+                  title="No Stellar memory records"
                   text="Snapshots will appear after memory events are processed."
                 />
               ) : null}

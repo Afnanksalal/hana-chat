@@ -20,7 +20,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import { apiJson, money } from "../api";
-import { requestWalletAddress } from "../crypto-payments";
+import { readStellarAddressFromUser } from "../stellar-payments";
 
 interface WalletResponse {
   monetizationEnabled: boolean;
@@ -38,7 +38,7 @@ interface WalletResponse {
     status: "draft" | "pending_review" | "verified" | "disabled";
     displayName: string;
     legalName: string | null;
-    payoutMode: "crypto";
+    payoutMode: "stellar";
     vpaLast4: string | null;
     walletAddress?: string | null;
     walletLast4?: string | null;
@@ -139,7 +139,7 @@ export default function CreatorWalletPage() {
     }
 
     if (!walletAddress.trim()) {
-      setStatus("Enter a 0G wallet address for payouts.");
+      setStatus("Enter a Stellar wallet address for payouts.");
       return;
     }
 
@@ -151,7 +151,7 @@ export default function CreatorWalletPage() {
         body: JSON.stringify({
           displayName: displayName.trim(),
           legalName: legalName.trim(),
-          payoutMode: "crypto",
+          payoutMode: "stellar",
           walletAddress: walletAddress.trim(),
         }),
       });
@@ -162,11 +162,11 @@ export default function CreatorWalletPage() {
     }
   }
 
-  async function fillConnectedWallet() {
-    setStatus("Connecting wallet...");
+  function fillConnectedWallet() {
+    setStatus("Reading Stellar address...");
 
     try {
-      setWalletAddress(await requestWalletAddress());
+      setWalletAddress(readStellarAddressFromUser());
       setStatus("");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Could not read wallet address.");
@@ -235,7 +235,7 @@ export default function CreatorWalletPage() {
       icon: Clock3,
     },
     {
-      label: "0G payout",
+      label: "Stellar payout",
       detail: profileReady ? `Ready for ${walletDisplay}` : "Save and verify a wallet first.",
       active: profileReady,
       icon: ShieldCheck,
@@ -279,7 +279,7 @@ export default function CreatorWalletPage() {
             </i>
           </div>
           <div className="payment-hero-chips" aria-label="Wallet status">
-            {monetizationComingSoon ? <span>Coming soon</span> : <span>Crypto live</span>}
+            {monetizationComingSoon ? <span>Coming soon</span> : <span>Stellar live</span>}
             <span>{formatStatus(profileStatus)}</span>
             <span>{walletDisplay}</span>
           </div>
@@ -287,7 +287,7 @@ export default function CreatorWalletPage() {
         <div className="payment-command-card payment-wallet-card">
           <div className="payment-wallet-card-header">
             <span>
-              <Activity size={15} /> 0G settlement
+              <Activity size={15} /> Stellar settlement
             </span>
             <b className={profileReady ? "ready" : ""}>{profileReady ? "Ready" : "Setup needed"}</b>
           </div>
@@ -340,7 +340,7 @@ export default function CreatorWalletPage() {
         </article>
       </section>
 
-      <section className="payment-flow-strip" aria-label="0G payment flow">
+      <section className="payment-flow-strip" aria-label="Stellar payment flow">
         {paymentSteps.map((step) => (
           <article className={step.active ? "active" : ""} key={step.label}>
             <step.icon size={18} />
@@ -371,7 +371,7 @@ export default function CreatorWalletPage() {
               {profileReady ? "Wallet ready" : "Needs setup"}
             </span>
             <strong>{walletDisplay}</strong>
-            <small>Used for manual 0G payouts after admin approval.</small>
+            <small>Used for reviewed Stellar payouts after admin approval.</small>
           </div>
           <label>
             Creator display name
@@ -390,7 +390,7 @@ export default function CreatorWalletPage() {
             />
           </label>
           <label>
-            0G wallet address
+            Stellar wallet address
             <input
               value={walletAddress}
               onChange={(event) => setWalletAddress(event.target.value)}
@@ -398,7 +398,7 @@ export default function CreatorWalletPage() {
               placeholder={
                 wallet.payoutProfile?.walletLast4
                   ? `Saved ending ${wallet.payoutProfile.walletLast4}`
-                  : "0x..."
+                  : "G..."
               }
             />
           </label>
@@ -409,7 +409,7 @@ export default function CreatorWalletPage() {
               disabled={monetizationComingSoon}
               onClick={() => void fillConnectedWallet()}
             >
-              <WalletCards size={16} /> Use wallet
+              <WalletCards size={16} /> Paste address
             </button>
             <button
               className="primary-action compact"
@@ -465,7 +465,7 @@ export default function CreatorWalletPage() {
             {monetizationComingSoon ? "Coming soon" : "Request payout"}
           </button>
           <small>
-            Admin approval is required before money leaves Hana. Failed crypto payouts are returned
+            Admin approval is required before money leaves Hana. Failed Stellar payouts are returned
             to your available balance.
           </small>
         </form>
@@ -568,7 +568,7 @@ export default function CreatorWalletPage() {
             <div className="dashboard-empty-card compact-empty">
               <Sparkles size={20} />
               <h3>No buyer payments</h3>
-              <p>Paid character unlocks will appear here after successful 0G confirmation.</p>
+              <p>Paid character unlocks will appear here after successful Stellar confirmation.</p>
               <Link className="secondary-action compact" href="/app/create">
                 Create paid character
               </Link>

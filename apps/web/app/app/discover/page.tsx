@@ -16,7 +16,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { apiJson, money } from "../api";
-import { completeCryptoPayment, type CryptoPaymentIntent } from "../crypto-payments";
+import { completeStellarPayment, type StellarPaymentIntent } from "../stellar-payments";
 import { renderRoleplayPreview } from "../roleplay-preview";
 
 interface CharacterSummary {
@@ -57,7 +57,7 @@ interface MarketplaceResponse {
 }
 
 interface CharacterPurchaseResponse {
-  provider?: "crypto";
+  provider?: "stellar";
   internalPurchaseId?: string;
   activated?: boolean;
   alreadyPurchased?: boolean;
@@ -67,7 +67,7 @@ interface CharacterPurchaseResponse {
   trialLimit?: number;
   trialUsed?: number;
   trialRemaining?: number;
-  payment?: CryptoPaymentIntent;
+  payment?: StellarPaymentIntent;
   character?: {
     id: string;
     name: string;
@@ -186,7 +186,7 @@ function DiscoverExperience() {
         "/api/v1/monetization/character-purchases",
         {
           method: "POST",
-          body: JSON.stringify({ characterId: character.id, provider: "crypto" }),
+          body: JSON.stringify({ characterId: character.id, provider: "stellar" }),
         },
       );
 
@@ -198,15 +198,15 @@ function DiscoverExperience() {
         return;
       }
 
-      if (purchase.provider !== "crypto" || !purchase.payment || !purchase.internalPurchaseId) {
+      if (purchase.provider !== "stellar" || !purchase.payment || !purchase.internalPurchaseId) {
         setStatus("Checkout could not start for this character.");
         return;
       }
 
       setStatus(
-        `Confirm ${purchase.payment.amountDisplay} ${purchase.payment.tokenSymbol} in your wallet...`,
+        `Confirm ${purchase.payment.amountDisplay} ${purchase.payment.assetCode} in your Stellar wallet.`,
       );
-      await completeCryptoPayment({
+      await completeStellarPayment({
         payment: purchase.payment,
         verifyPath: "/api/v1/monetization/character-purchases/verify",
         verifyBody: {

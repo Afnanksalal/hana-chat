@@ -3,11 +3,10 @@ import { createDatabase, type HanaDatabase } from "@hana/database";
 import { DomainError } from "@hana/errors";
 import {
   buildMemorySnapshotCommitment,
-  uploadEncryptedMemorySnapshotTo0g,
-  type OgMemorySnapshotFact,
-  type OgMemorySnapshotManifestInput,
-  type OgSnapshotKind,
-} from "@hana/og-bridge";
+  type StellarMemorySnapshotFact,
+  type StellarMemorySnapshotManifestInput,
+  type StellarSnapshotKind,
+} from "@hana/stellar-bridge";
 import { Injectable, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
 import { sql, type Kysely } from "kysely";
 import neo4j, { type Driver } from "neo4j-driver";
@@ -285,26 +284,27 @@ FOREACH (_ IN CASE WHEN $conversationId IS NULL THEN [] ELSE [1] END |
   }
 
   private async recordMemorySnapshotCommitment(payload: unknown): Promise<void> {
-    if (!this.config.OG_ENABLED || !this.config.OG_STORAGE_ENABLED) {
+    if (!this.config.STELLAR_ENABLED || !this.config.STELLAR_STORAGE_ENABLED) {
       return;
     }
 
     const snapshotKind = parseSnapshotKind(payloadOptionalString(payload, "snapshotKind"));
+    const mintNft = Boolean((payload as Record<string, unknown>)?.["mintNft"]);
 
     if (snapshotKind === "user_export") {
-      await this.recordUserExportSnapshot(payloadString(payload, "userId"));
+      await this.recordUserExportSnapshot(payloadString(payload, "userId"), mintNft);
       return;
     }
 
     if (snapshotKind === "creator_soul_pack") {
-      await this.recordCreatorSoulPackSnapshot(payloadString(payload, "characterId"));
+      await this.recordCreatorSoulPackSnapshot(payloadString(payload, "characterId"), mintNft);
       return;
     }
 
     const userId = payloadString(payload, "userId");
     const characterId = payloadString(payload, "characterId");
     const conversationId = payloadString(payload, "conversationId");
-    const minImportance = this.config.OG_STORAGE_SNAPSHOT_MIN_IMPORTANCE;
+    const minImportance = this.config.STELLAR_STORAGE_SNAPSHOT_MIN_IMPORTANCE;
     const facts = await this.db
       .selectFrom("memory.facts")
       .select([
@@ -331,7 +331,7 @@ FOREACH (_ IN CASE WHEN $conversationId IS NULL THEN [] ELSE [1] END |
       return;
     }
 
-    const snapshotFacts: OgMemorySnapshotFact[] = facts.map((fact) => ({
+    const snapshotFacts: StellarMemorySnapshotFact[] = facts.map((fact) => ({
       id: fact.id,
       kind: fact.kind,
       importance: fact.importance,
@@ -342,17 +342,21 @@ FOREACH (_ IN CASE WHEN $conversationId IS NULL THEN [] ELSE [1] END |
     }));
     const snapshotInput = {
       snapshotKind: "conversation_memory",
-      network: this.config.OG_NETWORK,
+      network: this.config.STELLAR_NETWORK,
       userId,
       characterId,
       conversationId,
       facts: snapshotFacts,
     } as const;
 
-    await this.persistDecentralizedSnapshot(snapshotInput, `memory.snapshot:${conversationId}`);
+    await this.persistDecentralizedSnapshot(
+      snapshotInput,
+      `memory.snapshot:${conversationId}`,
+      mintNft,
+    );
   }
 
-  private async recordUserExportSnapshot(userId: string): Promise<void> {
+  private async recordUserExportSnapshot(userId: string, mintNft: boolean): Promise<void> {
     const facts = await this.db
       .selectFrom("memory.facts")
       .select([
@@ -377,7 +381,7 @@ FOREACH (_ IN CASE WHEN $conversationId IS NULL THEN [] ELSE [1] END |
     await this.persistDecentralizedSnapshot(
       {
         snapshotKind: "user_export",
-        network: this.config.OG_NETWORK,
+        network: this.config.STELLAR_NETWORK,
         userId,
         characterId: null,
         conversationId: null,
@@ -392,10 +396,14 @@ FOREACH (_ IN CASE WHEN $conversationId IS NULL THEN [] ELSE [1] END |
         })),
       },
       `memory.export:${userId}`,
+      mintNft,
     );
   }
 
-  private async recordCreatorSoulPackSnapshot(characterId: string): Promise<void> {
+  private async recordCreatorSoulPackSnapshot(
+    characterId: string,
+    mintNft: boolean,
+  ): Promise<void> {
     const character = await this.db
       .selectFrom("creator.characters as characters")
       .innerJoin(
@@ -461,7 +469,7 @@ FOREACH (_ IN CASE WHEN $conversationId IS NULL THEN [] ELSE [1] END |
     await this.persistDecentralizedSnapshot(
       {
         snapshotKind: "creator_soul_pack",
-        network: this.config.OG_NETWORK,
+        network: this.config.STELLAR_NETWORK,
         userId: character.creator_user_id,
         characterId: character.id,
         conversationId: null,
@@ -478,31 +486,21 @@ FOREACH (_ IN CASE WHEN $conversationId IS NULL THEN [] ELSE [1] END |
         ],
       },
       `creator.soul_pack:${character.id}`,
+      mintNft,
     );
   }
 
   private async persistDecentralizedSnapshot(
-    snapshotInput: OgMemorySnapshotManifestInput,
+    snapshotInput: StellarMemorySnapshotManifestInput,
     idempotencyPrefix: string,
+    mintNft: boolean,
   ): Promise<void> {
     const commitment = buildMemorySnapshotCommitment(snapshotInput);
-    let uploadResult: Awaited<ReturnType<typeof uploadEncryptedMemorySnapshotTo0g>> | null = null;
     let failureReason: string | null = null;
 
-    if (this.config.OG_STORAGE_UPLOAD_ENABLED) {
-      try {
-        const keyRef = resolveOgKeyRef(this.config.OG_SERVER_WALLET_KEY_REF);
-
-        uploadResult = await uploadEncryptedMemorySnapshotTo0g(snapshotInput, {
-          rpcUrl: this.config.OG_RPC_URL,
-          indexerUrl: this.config.OG_STORAGE_INDEXER_URL,
-          signerPrivateKey: resolveOgPrivateKey(keyRef),
-          encryptionKeyRef: keyRef,
-        });
-      } catch (error) {
-        failureReason =
-          error instanceof Error ? error.message.slice(0, 500) : "0G storage upload failed";
-      }
+    if (mintNft && this.config.STELLAR_NFT_ENABLED) {
+      failureReason =
+        "Stellar NFT minting requires generated Soroban contract bindings; no placeholder mint was recorded";
     }
 
     const now = new Date();
@@ -514,25 +512,15 @@ FOREACH (_ IN CASE WHEN $conversationId IS NULL THEN [] ELSE [1] END |
         character_id: snapshotInput.characterId,
         conversation_id: snapshotInput.conversationId,
         snapshot_kind: snapshotInput.snapshotKind,
-        storage_network: this.config.OG_NETWORK,
-        root_hash: uploadResult?.rootHash ?? commitment.rootHash,
-        tx_hash: uploadResult?.txHash ?? null,
+        storage_network: `stellar-${this.config.STELLAR_NETWORK}`,
+        root_hash: commitment.rootHash,
+        tx_hash: null,
         manifest_hash: commitment.manifestHash,
-        encryption_mode: uploadResult?.encryptionMode ?? "manifest_hash_only",
-        encryption_key_ref: uploadResult?.encryptionKeyRef ?? "0g-upload-disabled",
-        status: failureReason ? "failed" : uploadResult ? "uploaded" : "pending_upload",
+        encryption_mode: "manifest_hash_only",
+        encryption_key_ref: "stellar-manifest-only",
+        status: failureReason ? "failed" : "pending_upload",
         source_memory_ids: commitment.sourceMemoryIds,
-        manifest_json: uploadResult
-          ? {
-              ...commitment.manifest,
-              storage: {
-                payloadHash: uploadResult.payloadHash,
-                signerAddress: uploadResult.signerAddress,
-                localMerkleRoot: uploadResult.localMerkleRoot,
-                uploadedAt: uploadResult.uploadedAt,
-              },
-            }
-          : commitment.manifest,
+        manifest_json: commitment.manifest,
         idempotency_key: `${idempotencyPrefix}:${commitment.manifestHash}`,
         failure_reason: failureReason,
         updated_at: now,
@@ -540,22 +528,12 @@ FOREACH (_ IN CASE WHEN $conversationId IS NULL THEN [] ELSE [1] END |
       })
       .onConflict((oc) =>
         oc.column("idempotency_key").doUpdateSet({
-          status: failureReason ? "failed" : uploadResult ? "uploaded" : "pending_upload",
-          root_hash: uploadResult?.rootHash ?? commitment.rootHash,
-          tx_hash: uploadResult?.txHash ?? null,
-          encryption_mode: uploadResult?.encryptionMode ?? "manifest_hash_only",
-          encryption_key_ref: uploadResult?.encryptionKeyRef ?? "0g-upload-disabled",
-          manifest_json: uploadResult
-            ? {
-                ...commitment.manifest,
-                storage: {
-                  payloadHash: uploadResult.payloadHash,
-                  signerAddress: uploadResult.signerAddress,
-                  localMerkleRoot: uploadResult.localMerkleRoot,
-                  uploadedAt: uploadResult.uploadedAt,
-                },
-              }
-            : commitment.manifest,
+          status: failureReason ? "failed" : "pending_upload",
+          root_hash: commitment.rootHash,
+          tx_hash: null,
+          encryption_mode: "manifest_hash_only",
+          encryption_key_ref: "stellar-manifest-only",
+          manifest_json: commitment.manifest,
           failure_reason: failureReason,
           updated_at: now,
         }),
@@ -1051,44 +1029,6 @@ function qdrantBaseUrl(config: AppConfig): string {
   return config.QDRANT_URL.replace(/\/+$/, "");
 }
 
-function resolveOgKeyRef(keyRef: string | undefined): string {
-  if (!keyRef) {
-    throw new DomainError("INTERNAL", "0G storage upload key reference is not configured");
-  }
-
-  return keyRef;
-}
-
-function resolveOgPrivateKey(keyRef: string | undefined): string {
-  if (!keyRef) {
-    throw new DomainError("INTERNAL", "0G storage upload key reference is not configured");
-  }
-
-  if (!keyRef.startsWith("env:")) {
-    throw new DomainError("INTERNAL", "Unsupported 0G storage upload key reference", {
-      keyRef,
-    });
-  }
-
-  const envName = keyRef.slice("env:".length);
-
-  if (!/^[A-Z0-9_]+$/.test(envName)) {
-    throw new DomainError("INTERNAL", "Invalid 0G storage upload env key reference", {
-      keyRef,
-    });
-  }
-
-  const privateKey = process.env[envName]?.trim();
-
-  if (!privateKey) {
-    throw new DomainError("INTERNAL", "0G storage upload private key is missing", {
-      envName,
-    });
-  }
-
-  return privateKey;
-}
-
 async function fetchWithTimeout(
   url: string,
   init: RequestInit,
@@ -1128,7 +1068,7 @@ function payloadOptionalString(payload: unknown, key: string): string | null {
   return typeof value === "string" && value ? value : null;
 }
 
-function parseSnapshotKind(value: string | null): OgSnapshotKind {
+function parseSnapshotKind(value: string | null): StellarSnapshotKind {
   if (value === "conversation_memory" || value === "creator_soul_pack" || value === "user_export") {
     return value;
   }

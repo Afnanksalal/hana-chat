@@ -157,10 +157,10 @@ Set and keep secret:
 - `MAIL_DKIM_KEYS_DIR`
 - `SMTP_RELAY_HOSTNAME`
 - `PAYOUT_ENCRYPTION_KEY_BASE64`
-- `OG_ENABLED`, `OG_PAYMENTS_ENABLED`, `OG_CHAIN_ID`, `OG_RPC_URL`, and `OG_TREASURY_WALLET_ADDRESS` when `MONETIZATION_ENABLED=true`
+- `STELLAR_ENABLED`, `STELLAR_PAYMENTS_ENABLED`, `STELLAR_HORIZON_URL`, `STELLAR_RPC_URL`, and `STELLAR_TREASURY_ADDRESS` when `MONETIZATION_ENABLED=true`
 
-The deployed Playground env currently has xAI configured. Monetization uses 0G native payments
-when the monetization and 0G payment flags are enabled.
+The deployed Playground env currently has xAI configured. Monetization uses Stellar payments
+when the monetization and Stellar payment flags are enabled.
 
 `ADMIN_EMAIL` configures the owner/admin bootstrap. The configured owner signs in through the normal
 email OTP workflow and receives the same OTP delivery path as other users.

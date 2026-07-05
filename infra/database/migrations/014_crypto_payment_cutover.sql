@@ -1,5 +1,9 @@
 DO $$
 BEGIN
+  UPDATE billing.character_purchases
+  SET provider = 'stellar', updated_at = now()
+  WHERE provider <> 'stellar';
+
   IF EXISTS (
     SELECT 1
     FROM pg_constraint
@@ -12,11 +16,15 @@ BEGIN
 
   ALTER TABLE billing.character_purchases
     ADD CONSTRAINT character_purchases_provider_check
-    CHECK (provider IN ('mock', 'razorpay', 'crypto'));
+    CHECK (provider = 'stellar');
 END $$;
 
 DO $$
 BEGIN
+  UPDATE billing.creator_payouts
+  SET provider = 'stellar', updated_at = now()
+  WHERE provider <> 'stellar';
+
   IF EXISTS (
     SELECT 1
     FROM pg_constraint
@@ -29,11 +37,15 @@ BEGIN
 
   ALTER TABLE billing.creator_payouts
     ADD CONSTRAINT creator_payouts_provider_check
-    CHECK (provider IN ('manual', 'mock', 'razorpayx', 'crypto'));
+    CHECK (provider = 'stellar');
 END $$;
 
 DO $$
 BEGIN
+  UPDATE billing.creator_payout_profiles
+  SET payout_mode = 'stellar', updated_at = now()
+  WHERE payout_mode <> 'stellar';
+
   IF EXISTS (
     SELECT 1
     FROM pg_constraint
@@ -46,7 +58,7 @@ BEGIN
 
   ALTER TABLE billing.creator_payout_profiles
     ADD CONSTRAINT creator_payout_profiles_payout_mode_check
-    CHECK (payout_mode IN ('upi', 'crypto'));
+    CHECK (payout_mode = 'stellar');
 END $$;
 
 CREATE INDEX IF NOT EXISTS idx_crypto_payments_status_expires

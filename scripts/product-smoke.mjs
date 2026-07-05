@@ -293,7 +293,7 @@ await check("billing plans are coming soon", async () => {
 
   const checkout = await postJson(
     "/v1/billing/checkout",
-    { planId: "plus", provider: "crypto" },
+    { planId: "plus", provider: "stellar" },
     context.freeToken,
     { allowError: true },
   );
@@ -346,7 +346,7 @@ await check("prompt-injection hard block", async () => {
 await check("character monetization is gated", async () => {
   const purchase = await postJson(
     "/v1/monetization/character-purchases",
-    { characterId: context.characterId, provider: "crypto" },
+    { characterId: context.characterId, provider: "stellar" },
     context.freeToken,
     { allowError: true },
   );
@@ -369,8 +369,8 @@ await check("creator payout setup is coming soon", async () => {
     {
       displayName: "Afnan K Salal",
       legalName: "Afnan K Salal",
-      payoutMode: "crypto",
-      walletAddress: "0x1111111111111111111111111111111111111111",
+      payoutMode: "stellar",
+      walletAddress: "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
     },
     context.adminToken,
     { allowError: true },

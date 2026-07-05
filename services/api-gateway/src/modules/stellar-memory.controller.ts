@@ -11,8 +11,8 @@ const QueueConversationSnapshotRequestSchema = z.object({
   conversationId: z.string().uuid(),
 });
 
-@Controller("/v1/og/memory")
-export class OgMemoryController {
+@Controller("/v1/stellar/memory")
+export class StellarMemoryController {
   private readonly config = loadConfig();
   private readonly db = createDatabase(this.config);
 
@@ -73,6 +73,7 @@ export class OgMemoryController {
           "snapshots.confirmed_at",
           "snapshots.character_id",
           "snapshots.conversation_id",
+          "snapshots.nft_token_id",
           "characters.name as character_name",
         ])
         .where("snapshots.user_id", "=", session.userId)
@@ -88,10 +89,10 @@ export class OgMemoryController {
 
     return {
       settings: {
-        ogEnabled: this.config.OG_ENABLED,
-        storageEnabled: this.config.OG_STORAGE_ENABLED,
-        uploadEnabled: this.config.OG_STORAGE_UPLOAD_ENABLED,
-        network: this.config.OG_NETWORK,
+        stellarEnabled: this.config.STELLAR_ENABLED,
+        storageEnabled: this.config.STELLAR_STORAGE_ENABLED,
+        nftEnabled: this.config.STELLAR_NFT_ENABLED,
+        network: this.config.STELLAR_NETWORK,
       },
       summary: {
         snapshots: Object.values(statusCounts).reduce((sum, count) => sum + count, 0),
@@ -123,6 +124,7 @@ export class OgMemoryController {
         characterId: snapshot.character_id,
         conversationId: snapshot.conversation_id,
         characterName: snapshot.character_name,
+        nftTokenId: snapshot.nft_token_id ?? null,
         createdAt: snapshot.created_at.toISOString(),
         updatedAt: snapshot.updated_at.toISOString(),
         confirmedAt: snapshot.confirmed_at?.toISOString() ?? null,
@@ -144,7 +146,7 @@ export class OgMemoryController {
       .executeTakeFirst();
 
     if (!snapshot) {
-      throw new DomainError("RESOURCE_NOT_FOUND", "0G memory snapshot not found");
+      throw new DomainError("RESOURCE_NOT_FOUND", "Stellar memory snapshot not found");
     }
 
     return {
@@ -160,6 +162,7 @@ export class OgMemoryController {
         sourceMemoryIds: snapshot.source_memory_ids,
         manifest: snapshot.manifest_json,
         failureReason: snapshot.failure_reason,
+        nftTokenId: snapshot.nft_token_id ?? null,
         createdAt: snapshot.created_at.toISOString(),
         updatedAt: snapshot.updated_at.toISOString(),
       },
@@ -204,12 +207,13 @@ export class OgMemoryController {
         characterId: conversation.character_id,
         conversationId: conversation.id,
         reason: "user_memory_vault",
+        mintNft: this.config.STELLAR_NFT_ENABLED,
       },
     });
 
     await auditEvent(this.db, {
       actorUserId: session.userId,
-      action: "og.memory.snapshot.queue",
+      action: "stellar.memory.snapshot.queue",
       resourceType: "chat.conversation",
       resourceId: conversation.id,
       metadata: { activeMemoryCount },
@@ -241,12 +245,13 @@ export class OgMemoryController {
         snapshotKind: "user_export",
         userId: session.userId,
         reason: "user_memory_export",
+        mintNft: this.config.STELLAR_NFT_ENABLED,
       },
     });
 
     await auditEvent(this.db, {
       actorUserId: session.userId,
-      action: "og.memory.export.queue",
+      action: "stellar.memory.export.queue",
       resourceType: "identity.user",
       resourceId: session.userId,
       metadata: { activeMemoryCount: count },
@@ -284,12 +289,13 @@ export class OgMemoryController {
         userId: session.userId,
         characterId: character.id,
         reason: "creator_soul_pack",
+        mintNft: this.config.STELLAR_NFT_ENABLED,
       },
     });
 
     await auditEvent(this.db, {
       actorUserId: session.userId,
-      action: "og.creator_soul_pack.queue",
+      action: "stellar.creator_soul_pack.queue",
       resourceType: "creator.character",
       resourceId: character.id,
     });
@@ -316,8 +322,8 @@ export class OgMemoryController {
   }
 }
 
-@Controller("/v1/admin/og/memory")
-export class AdminOgMemoryController {
+@Controller("/v1/admin/stellar/memory")
+export class AdminStellarMemoryController {
   private readonly config = loadConfig();
   private readonly db = createDatabase(this.config);
 
@@ -341,6 +347,7 @@ export class AdminOgMemoryController {
           "snapshots.storage_network",
           "snapshots.root_hash",
           "snapshots.tx_hash",
+          "snapshots.nft_token_id",
           "snapshots.failure_reason",
           "snapshots.created_at",
           "snapshots.updated_at",
@@ -357,6 +364,7 @@ export class AdminOgMemoryController {
         .groupBy("status")
         .execute(),
     ]);
+
     const totals = {
       snapshots: 0,
       uploaded: 0,
@@ -371,33 +379,22 @@ export class AdminOgMemoryController {
     for (const row of statusRows) {
       const count = Number(row.count);
       totals.snapshots += count;
-
-      if (row.status === "uploaded") {
-        totals.uploaded += count;
-      } else if (row.status === "confirmed") {
-        totals.confirmed += count;
-      } else if (row.status === "failed") {
-        totals.failed += count;
-      } else if (row.status === "pending_upload") {
-        totals.pending += count;
-      }
-
-      if (row.snapshot_kind === "conversation_memory") {
-        totals.conversationMemory += count;
-      } else if (row.snapshot_kind === "user_export") {
-        totals.userExports += count;
-      } else if (row.snapshot_kind === "creator_soul_pack") {
-        totals.creatorSoulPacks += count;
-      }
+      if (row.status === "uploaded") totals.uploaded += count;
+      else if (row.status === "confirmed") totals.confirmed += count;
+      else if (row.status === "failed") totals.failed += count;
+      else if (row.status === "pending_upload") totals.pending += count;
+      if (row.snapshot_kind === "conversation_memory") totals.conversationMemory += count;
+      else if (row.snapshot_kind === "user_export") totals.userExports += count;
+      else if (row.snapshot_kind === "creator_soul_pack") totals.creatorSoulPacks += count;
     }
 
     return {
       settings: {
-        ogEnabled: this.config.OG_ENABLED,
-        storageEnabled: this.config.OG_STORAGE_ENABLED,
-        uploadEnabled: this.config.OG_STORAGE_UPLOAD_ENABLED,
-        network: this.config.OG_NETWORK,
-        indexerUrl: this.config.OG_STORAGE_INDEXER_URL,
+        stellarEnabled: this.config.STELLAR_ENABLED,
+        storageEnabled: this.config.STELLAR_STORAGE_ENABLED,
+        nftEnabled: this.config.STELLAR_NFT_ENABLED,
+        network: this.config.STELLAR_NETWORK,
+        horizonUrl: this.config.STELLAR_HORIZON_URL,
       },
       totals,
       outbox: outboxRows.map((row) => ({
@@ -411,6 +408,7 @@ export class AdminOgMemoryController {
         network: snapshot.storage_network,
         rootHash: snapshot.root_hash,
         txHash: snapshot.tx_hash,
+        nftTokenId: snapshot.nft_token_id ?? null,
         failureReason: snapshot.failure_reason,
         userDisplayName: snapshot.user_display_name ?? "Unknown user",
         characterName: snapshot.character_name,
@@ -423,18 +421,11 @@ export class AdminOgMemoryController {
 
 function clampLimit(value: string | undefined, fallback: number): number {
   const parsed = Number(value);
-
-  if (!Number.isInteger(parsed)) {
-    return fallback;
-  }
-
+  if (!Number.isInteger(parsed)) return fallback;
   return Math.min(100, Math.max(1, parsed));
 }
 
 function toIso(value: Date | string | null): string | null {
-  if (!value) {
-    return null;
-  }
-
+  if (!value) return null;
   return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
 }

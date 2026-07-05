@@ -1,23 +1,28 @@
 DELETE FROM billing.payment_orders
-WHERE provider <> 'crypto'
+WHERE provider <> 'stellar'
   AND status IN ('created', 'failed', 'expired');
 
 DO $$
 BEGIN
-  IF EXISTS (SELECT 1 FROM billing.payment_orders WHERE provider <> 'crypto') THEN
-    RAISE EXCEPTION 'Cannot validate crypto-only payment orders while non-crypto paid orders remain';
+  UPDATE billing.creator_payout_profiles
+  SET payout_mode = 'stellar', updated_at = now()
+  WHERE payout_mode <> 'stellar'
+    AND status IN ('pending_review', 'rejected');
+
+  IF EXISTS (SELECT 1 FROM billing.payment_orders WHERE provider <> 'stellar') THEN
+    RAISE EXCEPTION 'Cannot validate payment orders while unsupported providers remain';
   END IF;
 
-  IF EXISTS (SELECT 1 FROM billing.character_purchases WHERE provider <> 'crypto') THEN
-    RAISE EXCEPTION 'Cannot validate crypto-only character purchases while non-crypto rows remain';
+  IF EXISTS (SELECT 1 FROM billing.character_purchases WHERE provider <> 'stellar') THEN
+    RAISE EXCEPTION 'Cannot validate character purchases while unsupported providers remain';
   END IF;
 
-  IF EXISTS (SELECT 1 FROM billing.creator_payouts WHERE provider <> 'crypto') THEN
-    RAISE EXCEPTION 'Cannot validate crypto-only creator payouts while non-crypto rows remain';
+  IF EXISTS (SELECT 1 FROM billing.creator_payouts WHERE provider <> 'stellar') THEN
+    RAISE EXCEPTION 'Cannot validate creator payouts while unsupported providers remain';
   END IF;
 
-  IF EXISTS (SELECT 1 FROM billing.creator_payout_profiles WHERE payout_mode <> 'crypto') THEN
-    RAISE EXCEPTION 'Cannot validate crypto-only payout profiles while non-crypto rows remain';
+  IF EXISTS (SELECT 1 FROM billing.creator_payout_profiles WHERE payout_mode <> 'stellar') THEN
+    RAISE EXCEPTION 'Cannot validate payout profiles while unsupported modes remain';
   END IF;
 END $$;
 
@@ -33,19 +38,30 @@ BEGIN
       DROP CONSTRAINT creator_payout_profiles_payout_mode_check;
   END IF;
 
-  IF NOT EXISTS (
+  IF EXISTS (
     SELECT 1
     FROM pg_constraint
     WHERE conname = 'creator_payout_profiles_payout_mode_crypto_only'
       AND conrelid = 'billing.creator_payout_profiles'::regclass
   ) THEN
     ALTER TABLE billing.creator_payout_profiles
-      ADD CONSTRAINT creator_payout_profiles_payout_mode_crypto_only
-      CHECK (payout_mode = 'crypto') NOT VALID;
+      DROP CONSTRAINT creator_payout_profiles_payout_mode_crypto_only;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'creator_payout_profiles_payout_mode_stellar_only'
+      AND conrelid = 'billing.creator_payout_profiles'::regclass
+  ) THEN
+    ALTER TABLE billing.creator_payout_profiles
+      ADD CONSTRAINT creator_payout_profiles_payout_mode_stellar_only
+      CHECK (payout_mode = 'stellar') NOT VALID;
   END IF;
 END $$;
 
-ALTER TABLE billing.payment_orders VALIDATE CONSTRAINT payment_orders_provider_crypto_only;
-ALTER TABLE billing.character_purchases VALIDATE CONSTRAINT character_purchases_provider_crypto_only;
-ALTER TABLE billing.creator_payouts VALIDATE CONSTRAINT creator_payouts_provider_crypto_only;
-ALTER TABLE billing.creator_payout_profiles VALIDATE CONSTRAINT creator_payout_profiles_payout_mode_crypto_only;
+ALTER TABLE billing.payment_orders VALIDATE CONSTRAINT payment_orders_provider_stellar_only;
+ALTER TABLE billing.character_purchases VALIDATE CONSTRAINT character_purchases_provider_stellar_only;
+ALTER TABLE billing.creator_payouts VALIDATE CONSTRAINT creator_payouts_provider_stellar_only;
+ALTER TABLE billing.creator_payout_profiles
+  VALIDATE CONSTRAINT creator_payout_profiles_payout_mode_stellar_only;

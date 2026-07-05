@@ -1,9 +1,9 @@
 import { loadConfig } from "@hana/config";
-import { CheckoutPlanRequestSchema, VerifyCryptoPaymentRequestSchema } from "@hana/contracts";
+import { CheckoutPlanRequestSchema, VerifyStellarPaymentRequestSchema } from "@hana/contracts";
 import { createDatabase } from "@hana/database";
 import { DomainError } from "@hana/errors";
 import { Body, Controller, Get, Headers, Post } from "@nestjs/common";
-import { createCryptoPaymentIntent, verifyCryptoPaymentIntent } from "./crypto-payments";
+import { createStellarPaymentIntent, verifyStellarPaymentIntent } from "./stellar-payments";
 import { auditEvent, requireSession } from "./session";
 
 @Controller("/v1/billing")
@@ -27,7 +27,7 @@ export class BillingController {
     return {
       monetizationEnabled: this.config.MONETIZATION_ENABLED,
       comingSoon: !this.config.MONETIZATION_ENABLED,
-      paymentsProvider: this.config.OG_PAYMENTS_ENABLED ? "crypto" : "disabled",
+      paymentsProvider: this.config.STELLAR_PAYMENTS_ENABLED ? "stellar" : "disabled",
       plans: plans.map((plan) => ({
         id: plan.id,
         name: plan.name,
@@ -61,9 +61,7 @@ export class BillingController {
     const subscription = await currentSubscription(this.db, session.userId);
 
     if (subscription.planId === input.planId && subscription.currentPeriodEnd) {
-      throw new DomainError("CONFLICT", "This plan is already active", {
-        planId: input.planId,
-      });
+      throw new DomainError("CONFLICT", "This plan is already active", { planId: input.planId });
     }
 
     const internalOrder = await this.db
@@ -71,7 +69,7 @@ export class BillingController {
       .values({
         user_id: session.userId,
         plan_id: input.planId,
-        provider: "crypto",
+        provider: "stellar",
         provider_order_id: null,
         amount_cents: plan.monthly_price_cents,
         currency: plan.currency,
@@ -81,7 +79,8 @@ export class BillingController {
       })
       .returning(["id"])
       .executeTakeFirstOrThrow();
-    const payment = await createCryptoPaymentIntent({
+
+    const payment = await createStellarPaymentIntent({
       db: this.db,
       config: this.config,
       buyerUserId: session.userId,
@@ -100,8 +99,9 @@ export class BillingController {
       .set({
         provider_order_id: payment.id,
         metadata_json: {
-          cryptoPaymentId: payment.id,
+          stellarPaymentId: payment.id,
           providerReference: payment.providerReference,
+          memo: payment.memo,
         },
         updated_at: new Date(),
       })
@@ -110,14 +110,14 @@ export class BillingController {
 
     await auditEvent(this.db, {
       actorUserId: session.userId,
-      action: "billing.checkout.crypto",
+      action: "billing.checkout.stellar",
       resourceType: "billing.payment_order",
       resourceId: internalOrder.id,
-      metadata: { planId: input.planId, cryptoPaymentId: payment.id },
+      metadata: { planId: input.planId, stellarPaymentId: payment.id },
     });
 
     return {
-      provider: "crypto",
+      provider: "stellar",
       internalOrderId: internalOrder.id,
       payment,
       plan: {
@@ -129,14 +129,14 @@ export class BillingController {
     };
   }
 
-  @Post("/crypto/verify")
-  public async verifyCryptoPayment(
+  @Post("/stellar/verify")
+  public async verifyStellarPayment(
     @Body() body: unknown,
     @Headers("authorization") authorization?: string,
   ) {
     const session = await requireSession(this.db, this.config, authorization);
-    const input = VerifyCryptoPaymentRequestSchema.parse(body);
-    const verification = await verifyCryptoPaymentIntent({
+    const input = VerifyStellarPaymentRequestSchema.parse(body);
+    const verification = await verifyStellarPaymentIntent({
       db: this.db,
       config: this.config,
       buyerUserId: session.userId,
@@ -145,6 +145,7 @@ export class BillingController {
       walletAddress: input.walletAddress,
       expectedPurposePrefix: "subscription:",
     });
+
     const payment = await this.db
       .selectFrom("billing.crypto_payments")
       .select(["id", "metadata_json"])
@@ -156,7 +157,7 @@ export class BillingController {
       typeof metadata["internalOrderId"] === "string" ? metadata["internalOrderId"] : null;
 
     if (!internalOrderId) {
-      throw new DomainError("INTERNAL", "Crypto payment is missing subscription metadata");
+      throw new DomainError("INTERNAL", "Stellar payment is missing subscription metadata");
     }
 
     const order = await this.db
@@ -166,25 +167,12 @@ export class BillingController {
       .where("user_id", "=", session.userId)
       .executeTakeFirst();
 
-    if (!order || order.provider !== "crypto" || order.provider_order_id !== input.paymentId) {
+    if (!order || order.provider !== "stellar" || order.provider_order_id !== input.paymentId) {
       throw new DomainError("RESOURCE_NOT_FOUND", "Payment order not found");
     }
 
     if (verification.status === "pending") {
-      await this.db
-        .updateTable("billing.payment_orders")
-        .set({ status: "created", updated_at: new Date() })
-        .where("id", "=", order.id)
-        .where("status", "!=", "paid")
-        .execute();
-
-      return {
-        ok: false,
-        status: "pending",
-        confirmationCount: verification.confirmationCount,
-        requiredConfirmations: verification.requiredConfirmations,
-        paymentId: input.paymentId,
-      };
+      return { ok: false, status: "pending", paymentId: input.paymentId };
     }
 
     if (order.status !== "paid") {
@@ -194,7 +182,7 @@ export class BillingController {
           status: "paid",
           metadata_json: {
             ...asRecord(order.metadata_json),
-            cryptoPaymentId: input.paymentId,
+            stellarPaymentId: input.paymentId,
             txHash: verification.txHash,
             walletAddress: verification.walletAddress,
           },
@@ -207,17 +195,17 @@ export class BillingController {
         db: this.db,
         userId: session.userId,
         planId: order.plan_id,
-        provider: "crypto",
+        provider: "stellar",
         providerSubscriptionId: verification.txHash,
       });
 
       await auditEvent(this.db, {
         actorUserId: session.userId,
-        action: "billing.payment.crypto.verified",
+        action: "billing.payment.stellar.verified",
         resourceType: "billing.payment_order",
         resourceId: order.id,
         metadata: {
-          provider: "crypto",
+          provider: "stellar",
           planId: order.plan_id,
           txHash: verification.txHash,
           walletAddress: verification.walletAddress,

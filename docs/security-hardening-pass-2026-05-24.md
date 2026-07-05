@@ -29,7 +29,7 @@ record, not a marketing or roadmap document.
   and harness runs.
 - Removed raw payment-provider and email-delivery response bodies from thrown app errors; only HTTP status is
   carried forward.
-- Redacted more sensitive log fields including session tokens, cookies, Razorpay credentials,
+- Redacted more sensitive log fields including session tokens, cookies, payment credentials,
   payout account numbers, email encryption/hash secrets, and session secrets.
 - Added production validation for every comma-separated `WEB_ORIGINS` entry, not only the primary
   `WEB_ORIGIN`.
@@ -45,7 +45,7 @@ record, not a marketing or roadmap document.
 
 - `apps/web/app/app/memory/page.tsx` remains as a compatibility redirect to `/app/chat`. Removing it
   would turn old app links into 404s, so keeping the redirect prevents a dead end.
-- The web CSP still allows inline scripts/styles where Next.js and Razorpay checkout integration need
+- The web CSP still allows inline scripts/styles where Next.js and payment checkout integration need
   them today. A nonce or strict-dynamic CSP migration is a future hardening project, not a hidden
   defect.
 - Mock buyer checkout remains available outside production for deterministic smoke tests. Creator
@@ -86,7 +86,7 @@ Results:
 - Continue finishing every release with `pnpm test`, `pnpm product:smoke`, `pnpm ai:harness`, and
   `pnpm web:smoke`.
 - Run `docker compose -f docker-compose.vps.yml config` before VPS deploys.
-- Add a CSP nonce/strict-dynamic migration when the Razorpay and Next.js script paths are ready for
+- Add a CSP nonce/strict-dynamic migration when payment checkout and Next.js script paths are ready for
   it.
 - Replace deterministic embeddings with a production embedding provider and batch replay once cost and
   latency targets are settled.

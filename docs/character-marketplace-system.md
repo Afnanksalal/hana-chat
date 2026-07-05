@@ -47,14 +47,14 @@ flowchart TD
   receives an assistant reply; greetings, assistant rows, blocked inputs, and failed pending sends do
   not consume trial messages.
 - After the trial is exhausted, paid character chat access requires a `billing.character_purchases` row with `status = paid`, or creator ownership. Subscription plans do not bypass a creator's paid unlock.
-- Character purchase creation is idempotent per user and character. If trial messages remain, the purchase endpoint opens chat instead of starting checkout. Checkout creates a 0G payment intent and is finalized only after the API verifies the submitted transaction hash on-chain.
+- Character purchase creation is idempotent per user and character. If trial messages remain, the purchase endpoint opens chat instead of starting checkout. Checkout creates a Stellar payment intent and is finalized only after the API verifies the submitted transaction hash on-chain.
 - Group chat does not bypass paid character access. A paid bot can only be added to a group after
   the user has an active unlock or owns the character; group turns do not consume or create the
   direct-chat trial.
 - Creator revenue is posted to a signed wallet ledger: gross sale, platform fee, pending hold, available balance, payout reserve, payout release, settlement, and failure recovery.
 - Net paid-character earnings remain pending for a 7-day hold window before they can be requested for payout.
-- Creator payout profiles store 0G wallet destinations in `billing.crypto_payout_accounts` with admin review status.
-- Admin monetization operations live at `/app/admin` and API prefix `/v1/admin/monetization`: profile verification, crypto payout proof verification, provider refresh, and manual/mock settlement for local testing.
+- Creator payout profiles store Stellar wallet destinations in `billing.crypto_payout_accounts` with admin review status.
+- Admin monetization operations live at `/app/admin` and API prefix `/v1/admin/monetization`: profile verification, Stellar payout proof verification, and provider refresh.
 - Creator wallet operations live at `/app/wallet` and API prefix `/v1/monetization`: payout profile, ledger, purchases, and payout requests.
 
 ## Marketplace Quality Rules

@@ -1,14 +1,9 @@
 UPDATE billing.creator_payouts
 SET
-  provider = 'crypto',
-  provider_payout_id = CASE
-    WHEN provider_payout_id ~ '^0x[a-fA-F0-9]{64}$' THEN provider_payout_id
-    ELSE NULL
-  END,
+  provider = 'stellar',
+  provider_payout_id = NULL,
   status = CASE
-    WHEN status = 'processing'
-      AND (provider_payout_id IS NULL OR provider_payout_id !~ '^0x[a-fA-F0-9]{64}$')
-    THEN 'approved'
+    WHEN status = 'processing' THEN 'approved'
     ELSE status
   END,
   metadata_json = coalesce(metadata_json, '{}'::jsonb)
@@ -18,8 +13,8 @@ SET
       'providerMigratedAt', now()
     ),
   updated_at = now()
-WHERE provider IN ('manual', 'mock', 'razorpayx')
+WHERE provider <> 'stellar'
   AND status IN ('requested', 'approved', 'processing');
 
 ALTER TABLE billing.creator_payouts
-  ALTER COLUMN provider SET DEFAULT 'crypto';
+  ALTER COLUMN provider SET DEFAULT 'stellar';
