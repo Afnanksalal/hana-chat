@@ -13,7 +13,6 @@ import { Kysely, sql } from "kysely";
 import { randomUUID } from "node:crypto";
 import { completedUserTurnCount } from "./billable-messages";
 import {
-  assertStellarPaymentsEnabled,
   createStellarPaymentIntent,
   verifyStellarPaymentIntent,
   verifyStellarPayoutTransfer,
@@ -185,7 +184,7 @@ export class MonetizationController {
 
     const walletAddress = normalizeAddress(input.walletAddress, "walletAddress");
     const now = new Date();
-    const status: "pending_review" = "pending_review";
+    const status = "pending_review" as const;
     const stellarChainId = this.config.STELLAR_NETWORK === "mainnet" ? 1 : 2;
     const metadata: Record<string, unknown> = {
       provider: "stellar",

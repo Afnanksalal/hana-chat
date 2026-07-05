@@ -259,15 +259,11 @@ export async function verifyStellarPayment(input: {
   // Load payment operations for this transaction
   const ops = await server.operations().forTransaction(txHash).call();
   const paymentOp = ops.records.find(
-    (op) =>
-      op.type === "payment" &&
-      (op as Horizon.ServerApi.PaymentOperationRecord).to === expectedTo &&
-      isMatchingAsset(
-        op as Horizon.ServerApi.PaymentOperationRecord,
-        input.assetCode,
-        input.assetIssuer,
-      ),
-  ) as Horizon.ServerApi.PaymentOperationRecord | undefined;
+    (op): op is Horizon.ServerApi.PaymentOperationRecord =>
+      isPaymentOperationRecord(op) &&
+      op.to === expectedTo &&
+      isMatchingAsset(op, input.assetCode, input.assetIssuer),
+  );
 
   if (!paymentOp) {
     throw new Error(
@@ -309,22 +305,28 @@ export function deriveMemoryNftTokenId(input: {
   return `hana-nft:${input.snapshotKind}:${sha256Hex(input.manifestRootHash).slice(0, 16)}`;
 }
 
-export async function mintMemoryNft(input: StellarNftMintInput): Promise<StellarNftMintResult> {
-  const tokenId = deriveMemoryNftTokenId(input);
+export function mintMemoryNft(input: StellarNftMintInput): Promise<StellarNftMintResult> {
+  try {
+    const tokenId = deriveMemoryNftTokenId(input);
 
-  if (!input.contractId.trim()) {
-    throw new Error("Stellar NFT contract id is required");
+    if (!input.contractId.trim()) {
+      throw new Error("Stellar NFT contract id is required");
+    }
+
+    normalizeStellarAddress(input.ownerAddress, "NFT owner");
+
+    if (!input.serverKeypair.publicKey()) {
+      throw new Error("Stellar NFT signer keypair is required");
+    }
+
+    return Promise.reject(
+      new Error(
+        `Stellar NFT minting for token ${tokenId} requires generated Soroban contract bindings; no placeholder mint was recorded`,
+      ),
+    );
+  } catch (error) {
+    return Promise.reject(error instanceof Error ? error : new Error(String(error)));
   }
-
-  normalizeStellarAddress(input.ownerAddress, "NFT owner");
-
-  if (!input.serverKeypair.publicKey()) {
-    throw new Error("Stellar NFT signer keypair is required");
-  }
-
-  throw new Error(
-    `Stellar NFT minting for token ${tokenId} requires generated Soroban contract bindings; no placeholder mint was recorded`,
-  );
 }
 
 // ---------------------------------------------------------------------------
@@ -391,12 +393,28 @@ function stableStringify(value: unknown): string {
     return `[${value.map((item) => stableStringify(item)).join(",")}]`;
   }
 
-  return `{${Object.keys(value as object)
+  return `{${Object.keys(value)
     .sort()
     .map(
       (key) => `${JSON.stringify(key)}:${stableStringify((value as Record<string, unknown>)[key])}`,
     )
     .join(",")}}`;
+}
+
+function isPaymentOperationRecord(op: unknown): op is Horizon.ServerApi.PaymentOperationRecord {
+  if (!op || typeof op !== "object") {
+    return false;
+  }
+
+  const record = op as Record<string, unknown>;
+
+  return (
+    typeof record.to === "string" &&
+    typeof record.from === "string" &&
+    typeof record.amount === "string" &&
+    (record.asset_type === "native" ||
+      (typeof record.asset_code === "string" && typeof record.asset_issuer === "string"))
+  );
 }
 
 function isMatchingAsset(

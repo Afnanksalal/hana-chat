@@ -1,5 +1,5 @@
 import type { AppConfig } from "@hana/config";
-import { createDatabase } from "@hana/database";
+import type { createDatabase, HanaDatabase } from "@hana/database";
 import { DomainError } from "@hana/errors";
 import {
   amountCentsToStellarDisplay,
@@ -13,7 +13,6 @@ import {
 } from "@hana/stellar-bridge";
 import type { Kysely } from "kysely";
 import { randomUUID } from "node:crypto";
-import type { HanaDatabase } from "@hana/database";
 
 type Db = Kysely<HanaDatabase>;
 

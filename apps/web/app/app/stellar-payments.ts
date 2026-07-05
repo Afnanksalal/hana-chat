@@ -68,7 +68,7 @@ export async function completeStellarPayment<TResponse extends StellarVerificati
   throw new Error("Stellar payment was not finalized yet. Try verification again after it lands.");
 }
 
-export async function readStellarAddressFromUser(): Promise<string> {
+export function readStellarAddressFromUser(): string {
   const address = window.prompt("Paste your Stellar public address (starts with G).")?.trim();
 
   if (!address) {
