@@ -409,11 +409,11 @@ function isPaymentOperationRecord(op: unknown): op is Horizon.ServerApi.PaymentO
   const record = op as Record<string, unknown>;
 
   return (
-    typeof record.to === "string" &&
-    typeof record.from === "string" &&
-    typeof record.amount === "string" &&
-    (record.asset_type === "native" ||
-      (typeof record.asset_code === "string" && typeof record.asset_issuer === "string"))
+    typeof record["to"] === "string" &&
+    typeof record["from"] === "string" &&
+    typeof record["amount"] === "string" &&
+    (record["asset_type"] === "native" ||
+      (typeof record["asset_code"] === "string" && typeof record["asset_issuer"] === "string"))
   );
 }
 
