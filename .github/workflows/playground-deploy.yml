@@ -1,6 +1,9 @@
 name: Deploy Playground
 
 on:
+  push:
+    branches:
+      - master
   workflow_dispatch:
     inputs:
       release:
@@ -26,6 +29,7 @@ jobs:
       PLAYGROUND_REMOTE_BASE: ${{ vars.PLAYGROUND_REMOTE_BASE || '/opt/hana-chat' }}
       PLAYGROUND_COMPOSE_PROJECT: ${{ vars.PLAYGROUND_COMPOSE_PROJECT || 'hana-chat-vps' }}
       PLAYGROUND_SSH_PRIVATE_KEY: ${{ secrets.PLAYGROUND_SSH_PRIVATE_KEY }}
+      REQUESTED_RELEASE: ${{ github.event_name == 'workflow_dispatch' && inputs.release || '' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -87,9 +91,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          release="${{ inputs.release }}"
+          release="${REQUESTED_RELEASE}"
           if [ -z "${release}" ]; then
-            release="$(date -u +%Y%m%d%H%M%S)-${GITHUB_SHA::7}"
+            release="$(date -u +%Y%m%d%H%M%S)-master-${GITHUB_SHA::7}"
           fi
 
           echo "Deploying ${release} to ${PLAYGROUND_SSH_TARGET}:${PLAYGROUND_REMOTE_BASE}"
