@@ -25,6 +25,18 @@ extraction writes facts for that bot and the current `conversation_id`, and
 for a group evolution profile count shared user messages in the room, while assistant-side
 relationship evidence is limited to that bot's own replies.
 
+Group orchestration now uses `response_mode = mentions_and_handoffs` for group rooms. The user still
+starts a round by mentioning one or more bots, but an active bot may invite another active room member
+by writing that member's canonical `@mention_slug`. The gateway, not the model, decides whether that
+mention routes: it ignores self-mentions, unknown slugs, already queued speakers, and already answered
+speakers, then caps bot-originated handoffs per user turn and handoff depth. This keeps group chat
+turn-based while allowing bot-to-bot coordination.
+
+Bot-to-bot handoffs do not widen memory scope. When `@bot_a` invites `@bot_b`, the gateway stores a
+compact `relationship` event only for the two involved character scopes in the same conversation. Those
+facts can project to Qdrant and Neo4j like other memories, but they are retrieved only when the current
+speaker matches that memory's `character_id`.
+
 ## Retrieval Flow
 
 ```mermaid
@@ -127,6 +139,25 @@ and being re-ranked/compacted over many iterations.
 
 In group rooms, this profile is separate for every bot member. The group does not have a shared
 relationship profile, and one bot's memory/evolution cannot be injected into another bot's turn.
+
+## Research Grounding
+
+The group memory model follows current multi-agent and companion-app patterns:
+
+- [OpenAI Agents SDK](https://openai.github.io/openai-agents-python/multi_agent/) separates
+  LLM-chosen handoffs from code-owned orchestration; Hana uses model-authored `@mentions` as intent,
+  then deterministic server code applies caps, membership checks, and turn order.
+- [LangChain's multi-agent guide](https://docs.langchain.com/oss/python/langchain/multi-agent) frames
+  context engineering as the center of multi-agent quality; Hana keeps each bot's persona, memory, and
+  graph context isolated per speaker.
+- [Character.AI](https://blog.character.ai/new-feature-announcement-character-group-chat/),
+  [Kindroid](https://kindroid.ai/docs/article/groupchats/), and
+  [Nomi](https://wiki.nomi.ai/Can_you_roleplay_multiple_characters_with_your_Nomi_at_the_same_time%3F)
+  all position group chat as multi-character rooms, while Kindroid's public docs explicitly distinguish
+  each character's own memory/backstory from shared group context.
+- [Generative Agents](https://arxiv.org/abs/2304.03442) and
+  [MemGPT](https://arxiv.org/abs/2310.08560) support storing experiences, reflection/evolution, and
+  dynamic retrieval rather than hardcoded personality state.
 
 ## Client Outbox
 

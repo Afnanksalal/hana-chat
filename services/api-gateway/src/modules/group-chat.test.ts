@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { mentionSlugForName, resolveMentionedMembers, uniqueMentionSlug } from "./group-chat";
+import {
+  groupResponseModeAllowsBotHandoffs,
+  mentionSlugForName,
+  resolveMentionedMembers,
+  uniqueMentionSlug,
+} from "./group-chat";
 
 const members = [
   { characterId: "a", mentionSlug: "aria" },
@@ -31,5 +36,19 @@ describe("group chat mention routing", () => {
     const resolved = resolveMentionedMembers("@aria @arianight @casey_2 @aria @missing", members);
 
     expect(resolved.map((member) => member.characterId)).toEqual(["a", "c"]);
+  });
+
+  it("supports server-owned exclusions and caps for bot handoffs", () => {
+    const resolved = resolveMentionedMembers("@aria @blake @casey_2", members, {
+      excludeCharacterIds: new Set(["b"]),
+      limit: 1,
+    });
+
+    expect(resolved.map((member) => member.characterId)).toEqual(["a"]);
+  });
+
+  it("enables bot handoffs only for the handoff response mode", () => {
+    expect(groupResponseModeAllowsBotHandoffs("mentions")).toBe(false);
+    expect(groupResponseModeAllowsBotHandoffs("mentions_and_handoffs")).toBe(true);
   });
 });

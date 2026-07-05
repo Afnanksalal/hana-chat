@@ -72,16 +72,23 @@ members in `chat.conversation_participants`. A group room supports 2-10 bot memb
 member has a stable server-owned `mention_slug`; the client renders `@slug` chips, but the gateway
 resolves mentions against canonical membership before any model call.
 
-Group turns are mention-gated. The gateway always persists the user's message, then only queues bot
-responses for active members explicitly mentioned in that message. If multiple bots are mentioned,
-responses are generated sequentially in mention order and streamed as separate assistant messages
-with speaker metadata. If no active bot is mentioned, no model call is made.
+Group turns are mention-gated with bounded bot handoffs. The gateway always persists the user's
+message, then queues bot responses for active members explicitly mentioned in that message. If multiple
+bots are mentioned, responses are generated sequentially in mention order and streamed as separate
+assistant messages with speaker metadata. If no active bot is mentioned, no model call is made.
+
+For rooms using `response_mode = mentions_and_handoffs`, a responding bot may invite another active bot
+by writing that bot's canonical `@mention_slug`. The gateway treats this as handoff intent only after
+output moderation passes, then applies membership checks, deduplication, max handoffs per user turn, and
+max handoff depth before queueing the follow-up bot. Bot handoffs append to the current turn queue after
+the user's explicitly mentioned bots, so user-directed order stays authoritative.
 
 Prompt construction remains per speaker. For every mentioned bot, the gateway loads that bot's
 persona, exact-scoped memories, graph context, and conversation evolution for the current
 `user_id + character_id + conversation_id` tuple. Recent group transcript lines are labeled by
 speaker and injected as untrusted context; the active bot is instructed not to write turns for other
-bots or for the user.
+bots or for the user. Handoff relationship events are stored as scoped memory facts for the involved
+characters only, then projected through the existing Qdrant/Neo4j memory outbox path.
 
 ## Monetization Flow
 
