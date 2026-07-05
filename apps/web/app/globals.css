@@ -8049,7 +8049,218 @@ textarea {
   }
 }
 
+/* Final chat containment rules: keep group chat rows, avatar stacks, and mention chips inside mobile bounds. */
+.message-row {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.message-row.assistant {
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.message-row.assistant .message-bubble {
+  align-self: flex-start;
+}
+
+.message-row.user .message-bubble {
+  margin-left: auto;
+}
+
+.message-speaker {
+  min-width: 0;
+  width: fit-content;
+  max-width: min(420px, 100%);
+}
+
+.message-speaker span,
+.message-speaker small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.group-avatar-stack {
+  flex: 0 0 74px;
+  width: 74px;
+  max-width: 74px;
+  overflow: hidden;
+  justify-content: flex-start;
+}
+
+.group-avatar-stack .companion-avatar,
+.chat-thread .group-avatar-stack .companion-avatar,
+.chat-room-header .group-avatar-stack .companion-avatar {
+  flex: 0 0 34px;
+  width: 34px;
+  height: 34px;
+  margin-left: -14px;
+  border-radius: 999px;
+}
+
+.group-avatar-stack .companion-avatar:first-child,
+.chat-thread .group-avatar-stack .companion-avatar:first-child,
+.chat-room-header .group-avatar-stack .companion-avatar:first-child {
+  margin-left: 0;
+}
+
+.mention-strip {
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+}
+
+.mention-strip button {
+  max-width: min(180px, 48vw);
+  min-width: 0;
+}
+
+.mention-strip button span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 760px) {
+  .chat-room.active {
+    width: 100dvw;
+    max-width: 100dvw;
+  }
+
+  .chat-room-header {
+    grid-template-columns: auto minmax(58px, auto) minmax(0, 1fr) auto;
+    gap: 8px;
+    padding-right: max(10px, env(safe-area-inset-right));
+    padding-left: max(10px, env(safe-area-inset-left));
+  }
+
+  .chat-room-header .group-avatar-stack,
+  .chat-thread .group-avatar-stack {
+    flex-basis: 66px;
+    width: 66px;
+    max-width: 66px;
+  }
+
+  .chat-room-header .group-avatar-stack .companion-avatar,
+  .chat-thread .group-avatar-stack .companion-avatar {
+    flex-basis: 30px;
+    width: 30px;
+    height: 30px;
+    margin-left: -12px;
+  }
+
+  .chat-room-header .group-avatar-stack .companion-avatar:first-child,
+  .chat-thread .group-avatar-stack .companion-avatar:first-child {
+    margin-left: 0;
+  }
+
+  .chat-room-header .chat-actions {
+    min-width: 0;
+    gap: 4px;
+  }
+
+  .chat-room-header .chat-actions .icon-control {
+    flex: 0 0 36px;
+    width: 36px;
+    height: 36px;
+  }
+
+  .chat-room .message-stream {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
+    padding: 12px;
+  }
+
+  .message-row {
+    width: 100%;
+  }
+
+  .message-bubble {
+    max-width: min(92%, calc(100dvw - 32px));
+    padding: 11px 12px;
+    font-size: 15px;
+    line-height: 1.55;
+  }
+
+  .message-row.user .message-bubble {
+    max-width: min(86%, calc(100dvw - 48px));
+  }
+
+  .message-speaker {
+    max-width: min(92%, calc(100dvw - 30px));
+  }
+
+  .chat-room .chat-composer {
+    grid-template-columns: minmax(0, 1fr) 42px;
+    width: 100%;
+    max-width: 100%;
+    overflow: hidden;
+    padding: 8px max(10px, env(safe-area-inset-right)) max(10px, env(safe-area-inset-bottom))
+      max(10px, env(safe-area-inset-left));
+  }
+
+  .mention-strip {
+    padding: 0 0 2px;
+  }
+
+  .mention-strip button {
+    max-width: min(42vw, 150px);
+  }
+
+  .chat-composer-field {
+    min-width: 0;
+  }
+
+  .send-control {
+    width: 42px;
+    height: 42px;
+  }
+}
+
 @media (max-width: 430px) {
+  .chat-room-header {
+    grid-template-columns: 36px 60px minmax(0, 1fr) auto;
+    gap: 6px;
+  }
+
+  .mobile-back,
+  .chat-room-header .chat-actions .icon-control {
+    width: 36px;
+    height: 36px;
+  }
+
+  .chat-room-header .group-avatar-stack,
+  .chat-thread .group-avatar-stack {
+    flex-basis: 60px;
+    width: 60px;
+    max-width: 60px;
+  }
+
+  .chat-room-header .group-avatar-stack .companion-avatar,
+  .chat-thread .group-avatar-stack .companion-avatar {
+    flex-basis: 28px;
+    width: 28px;
+    height: 28px;
+    margin-left: -12px;
+  }
+
+  .message-bubble {
+    max-width: calc(100dvw - 28px);
+  }
+
+  .message-row.user .message-bubble {
+    max-width: calc(100dvw - 52px);
+  }
+
+  .mention-strip button {
+    max-width: 124px;
+  }
+
   .chat-composer-count {
     gap: 6px;
     font-size: 10.5px;

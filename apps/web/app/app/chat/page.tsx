@@ -1902,7 +1902,7 @@ function ChatExperience() {
                         onClick={() => insertMention(member)}
                       >
                         <AtSign size={14} />
-                        {member.mentionSlug}
+                        <span>{member.mentionSlug}</span>
                       </button>
                     ))}
                   </div>
