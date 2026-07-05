@@ -1,4 +1,4 @@
-import { Horizon, Keypair, StrKey } from "@stellar/stellar-sdk";
+import { Horizon, StrKey } from "@stellar/stellar-sdk";
 import { createHash } from "node:crypto";
 
 // ---------------------------------------------------------------------------
@@ -99,9 +99,13 @@ export interface StellarNftMintInput {
   snapshotKind: StellarSnapshotKind;
   network: string;
   /** Server keypair for signing the Soroban transaction */
-  serverKeypair: Keypair;
+  serverKeypair: StellarSignerKeypair;
   horizonUrl: string;
   rpcUrl: string;
+}
+
+export interface StellarSignerKeypair {
+  publicKey(): string;
 }
 
 export interface StellarNftMintResult {
