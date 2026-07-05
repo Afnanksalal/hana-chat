@@ -157,17 +157,21 @@ export async function verifyStellarPaymentIntent(input: {
       );
     }
 
-    const transfer = await verifyStellarPayment({
+    const verificationInput: Parameters<typeof verifyStellarPayment>[0] = {
       horizonUrl: input.config.STELLAR_HORIZON_URL,
       network: input.config.STELLAR_NETWORK,
       txHash,
       expectedTo: treasuryAddress(input.config),
-      expectedFrom: walletAddress,
       expectedMemo: stellarMemo(payment),
       assetCode: input.config.STELLAR_PAYMENT_ASSET_CODE,
       assetIssuer: input.config.STELLAR_PAYMENT_ASSET_ISSUER ?? null,
       minimumAmountDisplay: String(payment.amount_atomic),
-    });
+    };
+    if (walletAddress) {
+      verificationInput.expectedFrom = walletAddress;
+    }
+
+    const transfer = await verifyStellarPayment(verificationInput);
 
     return {
       status: "finalized",
@@ -204,17 +208,21 @@ export async function verifyStellarPaymentIntent(input: {
     throw new DomainError("CONFLICT", "This transaction hash is already attached to a payment");
   }
 
-  const transfer = await verifyStellarPayment({
+  const verificationInput: Parameters<typeof verifyStellarPayment>[0] = {
     horizonUrl: input.config.STELLAR_HORIZON_URL,
     network: input.config.STELLAR_NETWORK,
     txHash,
     expectedTo: treasuryAddress(input.config),
-    expectedFrom: walletAddress,
     expectedMemo: stellarMemo(payment),
     assetCode: input.config.STELLAR_PAYMENT_ASSET_CODE,
     assetIssuer: input.config.STELLAR_PAYMENT_ASSET_ISSUER ?? null,
     minimumAmountDisplay: String(payment.amount_atomic),
-  });
+  };
+  if (walletAddress) {
+    verificationInput.expectedFrom = walletAddress;
+  }
+
+  const transfer = await verifyStellarPayment(verificationInput);
 
   const payerAddress = walletAddress ?? transfer.fromAddress;
   const metadata = {
