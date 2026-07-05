@@ -98,7 +98,8 @@ SET
   payout_mode = 'stellar',
   metadata_json = coalesce(metadata_json, '{}'::jsonb) || jsonb_build_object('provider', 'stellar'),
   updated_at = now()
-WHERE payout_mode <> 'stellar';
+WHERE payout_mode <> 'stellar'
+   OR metadata_json->>'provider' IS DISTINCT FROM 'stellar';
 
 UPDATE billing.subscriptions
 SET provider = 'stellar', updated_at = now()
