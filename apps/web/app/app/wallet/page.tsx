@@ -162,7 +162,7 @@ export default function CreatorWalletPage() {
     }
   }
 
-  async function fillConnectedWallet() {
+  function fillConnectedWallet() {
     setStatus("Reading Stellar address...");
 
     try {
