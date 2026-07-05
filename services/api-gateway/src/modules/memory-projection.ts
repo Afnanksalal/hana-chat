@@ -126,7 +126,7 @@ async function enqueueMemoryProjectionEvents(input: {
     payload,
   });
 
-  if (shouldRequestOgSnapshot(input)) {
+  if (shouldRequestStellarSnapshot(input)) {
     await safeEnqueue(input.db, input.actorUserId, {
       topic: "memory.snapshot.requested",
       key: eventKey(input.memory.conversation_id ?? input.memory.id),
@@ -139,26 +139,27 @@ async function enqueueMemoryProjectionEvents(input: {
       payload: {
         ...payload,
         reason: "memory_projection",
-        minImportance: input.config.OG_STORAGE_SNAPSHOT_MIN_IMPORTANCE,
+        minImportance: input.config.STELLAR_STORAGE_SNAPSHOT_MIN_IMPORTANCE,
+        mintNft: input.config.STELLAR_NFT_ENABLED,
       },
     });
   }
 }
 
-function shouldRequestOgSnapshot(input: {
+function shouldRequestStellarSnapshot(input: {
   config: AppConfig;
   memory: MemoryProjectionRow;
   action: "create" | "update" | "extract" | "delete";
 }): boolean {
   return (
-    input.config.OG_ENABLED &&
-    input.config.OG_STORAGE_ENABLED &&
+    input.config.STELLAR_ENABLED &&
+    input.config.STELLAR_STORAGE_ENABLED &&
     input.action !== "delete" &&
     input.memory.is_active &&
     input.memory.scope === "conversation" &&
     Boolean(input.memory.character_id) &&
     Boolean(input.memory.conversation_id) &&
-    input.memory.importance >= input.config.OG_STORAGE_SNAPSHOT_MIN_IMPORTANCE
+    input.memory.importance >= input.config.STELLAR_STORAGE_SNAPSHOT_MIN_IMPORTANCE
   );
 }
 

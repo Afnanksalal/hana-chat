@@ -68,6 +68,7 @@ temp/
 # Local agent and tool state
 .agents/
 .codex/
+.codex-remote-attachments/
 .claude/
 .cursor/
 

@@ -1,6 +1,6 @@
 {
   "name": "@hana/worker-service",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "main": "dist/main.js",
   "scripts": {
@@ -15,7 +15,7 @@
     "@hana/database": "workspace:*",
     "@hana/errors": "workspace:*",
     "@hana/nest-core": "workspace:*",
-    "@hana/og-bridge": "workspace:*",
+    "@hana/stellar-bridge": "workspace:*",
     "@nestjs/common": "^11.1.9",
     "@nestjs/core": "^11.1.9",
     "@nestjs/platform-fastify": "^11.1.9",

@@ -17,7 +17,7 @@ load testing. Those are tracked as explicit hardening work rather than hidden de
 - Blocked auth open redirects by allowing only safe relative `next` paths.
 - Added production email verification wiring for auth start/check, plus email/device/IP code rate limits.
 - Hardened production config so placeholder xAI, payment-provider, SMTP, Postgres, Neo4j, ClickHouse, identity, and session secrets fail fast.
-- Made Razorpay webhooks fail closed without a secret, idempotent by event id, amount/currency/status checked, and no longer activates on `payment.authorized`.
+- Made payment webhooks fail closed without a secret, idempotent by event id, amount/currency/status checked, and no longer activates on authorization-only events.
 - Added one-active-subscription data protection and transactional subscription activation.
 - Prevented mature/adult pending-review characters from being public or directly chat-accessible without creator ownership.
 - Hid mature/adult characters from unauthenticated public marketplace results.
@@ -51,11 +51,11 @@ load testing. Those are tracked as explicit hardening work rather than hidden de
 - Cleared the dependency audit by overriding `postcss` to `8.5.15`.
 - Reworked shared UI polish across landing, dashboard, marketplace, creator, chat, settings, auth, legal, and mobile while preserving pure black plus hotpink and avoiding gradients.
 - Adjusted the landing hero so the next section remains visible on desktop and mobile instead of behaving like a sealed pitch slide.
-- Added per-character paid unlocks, creator wallets, ledgered earnings, payout profiles, payout requests, admin profile verification, admin payout processing, and RazorpayX refresh/failure recovery.
+- Added per-character paid unlocks, creator wallets, ledgered earnings, payout profiles, payout requests, admin profile verification, admin payout processing, and provider refresh/failure recovery.
 
 ## Remaining Product Projects
 
-- Creator monetization operations: paid unlocks, wallet ledger, payout profiles, payout requests, and admin payout processing exist. Refund handling, tax/KYC document collection, creator analytics dashboards, and Razorpay Route eligibility remain roadmap work.
+- Creator monetization operations: paid unlocks, wallet ledger, payout profiles, payout requests, and admin payout processing exist. Refund handling, tax/KYC document collection, creator analytics dashboards, and provider eligibility remain roadmap work.
 - Reports and moderation ops: rating gates and safety checks exist, but report/block endpoints, reviewer queues, appeal flow, and creator enforcement UI still need to be built.
 - Embedding quality: Qdrant projection is live and durable, but the current deterministic embedding is a pipeline-safe fallback. A production embedding provider and batch embedding workflow should replace it.
 - Streaming depth: SSE product path exists, but provider-token streaming and user cancellation remain hardening work.

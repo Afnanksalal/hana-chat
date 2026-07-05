@@ -294,17 +294,17 @@ export type UpdateMemoryRequest = z.infer<typeof UpdateMemoryRequestSchema>;
 
 export const CheckoutPlanRequestSchema = z.object({
   planId: z.enum(["plus", "ultra"]),
-  provider: z.literal("crypto").default("crypto"),
+  provider: z.literal("stellar").default("stellar"),
 });
 
 export type CheckoutPlanRequest = z.infer<typeof CheckoutPlanRequestSchema>;
 
-export const MonetizationProviderSchema = z.literal("crypto");
+export const MonetizationProviderSchema = z.literal("stellar");
 export type MonetizationProvider = z.infer<typeof MonetizationProviderSchema>;
 
 export const CreateCharacterPurchaseRequestSchema = z.object({
   characterId: z.string().min(1),
-  provider: MonetizationProviderSchema.default("crypto"),
+  provider: MonetizationProviderSchema.default("stellar"),
 });
 
 export type CreateCharacterPurchaseRequest = z.infer<typeof CreateCharacterPurchaseRequestSchema>;
@@ -312,10 +312,15 @@ export type CreateCharacterPurchaseRequest = z.infer<typeof CreateCharacterPurch
 export const VerifyCharacterPurchaseRequestSchema = z.object({
   internalPurchaseId: z.string().min(1),
   paymentId: z.string().min(1),
-  txHash: z.string().regex(/^0x[a-fA-F0-9]{64}$/, "Enter a valid transaction hash"),
+  txHash: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .regex(/^[a-f0-9]{64}$/, "Enter a valid Stellar transaction hash"),
   walletAddress: z
     .string()
-    .regex(/^0x[a-fA-F0-9]{40}$/, "Enter a valid wallet address")
+    .trim()
+    .regex(/^G[A-Z2-7]{55}$/, "Enter a valid Stellar address")
     .optional(),
 });
 
@@ -324,8 +329,11 @@ export type VerifyCharacterPurchaseRequest = z.infer<typeof VerifyCharacterPurch
 export const UpsertPayoutProfileRequestSchema = z.object({
   displayName: z.string().min(2).max(120),
   legalName: z.string().min(2).max(160).optional().default(""),
-  payoutMode: z.literal("crypto").default("crypto"),
-  walletAddress: z.string().regex(/^0x[a-fA-F0-9]{40}$/, "Enter a valid wallet address"),
+  payoutMode: z.literal("stellar").default("stellar"),
+  walletAddress: z
+    .string()
+    .trim()
+    .regex(/^G[A-Z2-7]{55}$/, "Enter a valid Stellar address"),
 });
 
 export type UpsertPayoutProfileRequest = z.infer<typeof UpsertPayoutProfileRequestSchema>;
@@ -338,8 +346,12 @@ export const RequestCreatorPayoutRequestSchema = z.object({
 export type RequestCreatorPayoutRequest = z.infer<typeof RequestCreatorPayoutRequestSchema>;
 
 export const AdminProcessPayoutRequestSchema = z.object({
-  provider: z.literal("crypto").default("crypto"),
-  txHash: z.string().regex(/^0x[a-fA-F0-9]{64}$/, "Enter a valid transaction hash"),
+  provider: z.literal("stellar").default("stellar"),
+  txHash: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .regex(/^[a-f0-9]{64}$/, "Enter a valid Stellar transaction hash"),
   note: z.string().max(500).optional().default(""),
 });
 
@@ -358,16 +370,21 @@ export const AdminAnalyticsQuerySchema = z.object({
 
 export type AdminAnalyticsQuery = z.infer<typeof AdminAnalyticsQuerySchema>;
 
-export const VerifyCryptoPaymentRequestSchema = z.object({
+export const VerifyStellarPaymentRequestSchema = z.object({
   paymentId: z.string().min(1),
-  txHash: z.string().regex(/^0x[a-fA-F0-9]{64}$/, "Enter a valid transaction hash"),
+  txHash: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .regex(/^[a-f0-9]{64}$/, "Enter a valid Stellar transaction hash"),
   walletAddress: z
     .string()
-    .regex(/^0x[a-fA-F0-9]{40}$/, "Enter a valid wallet address")
+    .trim()
+    .regex(/^G[A-Z2-7]{55}$/, "Enter a valid Stellar address")
     .optional(),
 });
 
-export type VerifyCryptoPaymentRequest = z.infer<typeof VerifyCryptoPaymentRequestSchema>;
+export type VerifyStellarPaymentRequest = z.infer<typeof VerifyStellarPaymentRequestSchema>;
 
 export const ApiHealthResponseSchema = z.object({
   service: z.string(),

@@ -22,9 +22,9 @@ import { apiJson } from "../api";
 
 interface MemoryVaultResponse {
   settings: {
-    ogEnabled: boolean;
+    stellarEnabled: boolean;
     storageEnabled: boolean;
-    uploadEnabled: boolean;
+    nftEnabled: boolean;
     network: string;
   };
   summary: {
@@ -74,9 +74,9 @@ interface CreatorCharacterSummary {
 
 const emptyVault: MemoryVaultResponse = {
   settings: {
-    ogEnabled: false,
+    stellarEnabled: false,
     storageEnabled: false,
-    uploadEnabled: false,
+    nftEnabled: false,
     network: "testnet",
   },
   summary: {
@@ -104,7 +104,7 @@ export default function MemoryVaultPage() {
   async function loadVault() {
     try {
       const [vaultPayload, characterPayload] = await Promise.all([
-        apiJson<MemoryVaultResponse>("/api/v1/og/memory/vault"),
+        apiJson<MemoryVaultResponse>("/api/v1/stellar/memory/vault"),
         apiJson<{ characters: CreatorCharacterSummary[] }>("/api/v1/characters/mine"),
       ]);
 
@@ -121,7 +121,7 @@ export default function MemoryVaultPage() {
     setStatus("Queueing room snapshot...");
 
     try {
-      await apiJson("/api/v1/og/memory/snapshots", {
+      await apiJson("/api/v1/stellar/memory/snapshots", {
         method: "POST",
         body: JSON.stringify({ conversationId }),
       });
@@ -139,7 +139,7 @@ export default function MemoryVaultPage() {
     setStatus("Queueing memory export...");
 
     try {
-      await apiJson("/api/v1/og/memory/exports", { method: "POST" });
+      await apiJson("/api/v1/stellar/memory/exports", { method: "POST" });
       await loadVault();
       setStatus("Memory export queued.");
     } catch (error) {
@@ -154,9 +154,12 @@ export default function MemoryVaultPage() {
     setStatus("Queueing soul-pack archive...");
 
     try {
-      await apiJson(`/api/v1/og/memory/creator-soul-packs/${encodeURIComponent(characterId)}`, {
-        method: "POST",
-      });
+      await apiJson(
+        `/api/v1/stellar/memory/creator-soul-packs/${encodeURIComponent(characterId)}`,
+        {
+          method: "POST",
+        },
+      );
       await loadVault();
       setStatus("Soul-pack archive queued.");
     } catch (error) {
@@ -166,11 +169,13 @@ export default function MemoryVaultPage() {
     }
   }
 
-  const storageLabel = vault.settings.uploadEnabled
-    ? "Decentralized"
+  const storageLabel = vault.settings.nftEnabled
+    ? "NFT proofs"
     : vault.settings.storageEnabled
       ? "Proofs queued"
-      : "Local only";
+      : vault.settings.stellarEnabled
+        ? "Stellar ready"
+        : "Local only";
   const newestSnapshot = vault.snapshots[0] ?? null;
   const creatorArchiveReady = characters.length > 0;
   const uploadedTotal = vault.summary.uploadedSnapshots + vault.summary.confirmedSnapshots;
@@ -236,7 +241,7 @@ export default function MemoryVaultPage() {
               <RefreshCw size={15} /> Refresh
             </button>
           </div>
-          <h1>0G memory control room</h1>
+          <h1>Stellar memory control room</h1>
           <p>
             Review what is remembered, package private exports, and publish encrypted proofs without
             hunting through chat history.
@@ -253,7 +258,7 @@ export default function MemoryVaultPage() {
         </div>
         <div
           className="memory-proof-card memory-proof-terminal"
-          aria-label="Latest 0G memory proof"
+          aria-label="Latest Stellar memory proof"
         >
           <div className="memory-terminal-header">
             <span>
@@ -325,7 +330,7 @@ export default function MemoryVaultPage() {
               <Layers3 size={15} /> Write manifest hash
             </span>
             <span>
-              <ShieldCheck size={15} /> Queue 0G proof
+              <ShieldCheck size={15} /> Queue Stellar proof
             </span>
           </div>
         </article>
@@ -344,7 +349,7 @@ export default function MemoryVaultPage() {
             <span>
               <b>{characters.length.toLocaleString()}</b>
               <strong>creator characters</strong>
-              <small>Archive character context into portable 0G packages.</small>
+              <small>Archive character context into portable Stellar packages.</small>
             </span>
           </div>
           <div className="wallet-table memory-creator-list">
@@ -409,7 +414,7 @@ export default function MemoryVaultPage() {
                   <div className="memory-room-mini-list">
                     {group.recentRooms.map((room) => (
                       <span key={room.conversationId}>
-                        {formatDate(room.latestMemoryAt)} · {room.memoryCount.toLocaleString()}{" "}
+                        {formatDate(room.latestMemoryAt)} - {room.memoryCount.toLocaleString()}{" "}
                         facts
                       </span>
                     ))}
@@ -455,7 +460,7 @@ export default function MemoryVaultPage() {
           <div className="panel-heading split">
             <div>
               <span className="section-label">
-                <FileJson size={15} /> 0G records
+                <FileJson size={15} /> Stellar records
               </span>
               <h2>Snapshot ledger</h2>
             </div>
@@ -484,7 +489,7 @@ export default function MemoryVaultPage() {
               <div className="dashboard-empty-card compact-empty">
                 <FileJson size={20} />
                 <h3>No decentralized records</h3>
-                <p>Queued snapshots will create encrypted 0G records.</p>
+                <p>Queued snapshots will create encrypted Stellar records.</p>
               </div>
             ) : null}
           </div>
@@ -503,9 +508,9 @@ export default function MemoryVaultPage() {
 function normalizeVault(payload: Partial<MemoryVaultResponse>): MemoryVaultResponse {
   return {
     settings: {
-      ogEnabled: Boolean(payload.settings?.ogEnabled),
+      stellarEnabled: Boolean(payload.settings?.stellarEnabled),
       storageEnabled: Boolean(payload.settings?.storageEnabled),
-      uploadEnabled: Boolean(payload.settings?.uploadEnabled),
+      nftEnabled: Boolean(payload.settings?.nftEnabled),
       network: payload.settings?.network || "testnet",
     },
     summary: {

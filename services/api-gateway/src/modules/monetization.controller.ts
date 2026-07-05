@@ -13,15 +13,16 @@ import { Kysely, sql } from "kysely";
 import { randomUUID } from "node:crypto";
 import { completedUserTurnCount } from "./billable-messages";
 import {
-  createCryptoPaymentIntent,
-  normalizeAddress,
-  verifyCryptoPaymentIntent,
-  verifyCryptoPayoutTransfer,
-} from "./crypto-payments";
+  assertStellarPaymentsEnabled,
+  createStellarPaymentIntent,
+  verifyStellarPaymentIntent,
+  verifyStellarPayoutTransfer,
+} from "./stellar-payments";
+import { normalizeStellarAddress as normalizeAddress } from "@hana/stellar-bridge";
 import { auditEvent, requireAdmin, requireSession } from "./session";
 
 type Db = Kysely<HanaDatabase>;
-type PayoutProvider = "crypto";
+type PayoutProvider = "stellar";
 
 @Controller("/v1/monetization")
 export class MonetizationController {
@@ -46,7 +47,7 @@ export class MonetizationController {
         .leftJoin("billing.crypto_payout_accounts as crypto", (join) =>
           join
             .onRef("crypto.creator_user_id", "=", "profiles.creator_user_id")
-            .on("crypto.chain_id", "=", this.config.OG_CHAIN_ID),
+            .on("crypto.chain_id", "=", this.config.STELLAR_NETWORK === "mainnet" ? 1 : 2),
         )
         .select([
           "profiles.status",
@@ -184,12 +185,13 @@ export class MonetizationController {
 
     const walletAddress = normalizeAddress(input.walletAddress, "walletAddress");
     const now = new Date();
-    const status = "pending_review" as const;
+    const status: "pending_review" = "pending_review";
+    const stellarChainId = this.config.STELLAR_NETWORK === "mainnet" ? 1 : 2;
     const metadata: Record<string, unknown> = {
-      provider: "crypto",
-      chainId: this.config.OG_CHAIN_ID,
+      provider: "stellar",
+      network: this.config.STELLAR_NETWORK,
       walletAddress,
-      tokenPreference: this.config.OG_PAYMENT_TOKEN_SYMBOL,
+      assetCode: this.config.STELLAR_PAYMENT_ASSET_CODE,
     };
 
     await ensureCreatorWallet(this.db, session.userId, "USD");
@@ -201,11 +203,9 @@ export class MonetizationController {
           status,
           display_name: input.displayName,
           legal_name: input.legalName || null,
-          payout_mode: "crypto",
+          payout_mode: "stellar",
           encrypted_vpa: null,
           vpa_last4: walletAddress.slice(-4),
-          razorpay_contact_id: null,
-          razorpay_fund_account_id: null,
           metadata_json: metadata,
           updated_at: now,
         })
@@ -214,11 +214,9 @@ export class MonetizationController {
             status,
             display_name: input.displayName,
             legal_name: input.legalName || null,
-            payout_mode: "crypto",
+            payout_mode: "stellar",
             encrypted_vpa: null,
             vpa_last4: walletAddress.slice(-4),
-            razorpay_contact_id: null,
-            razorpay_fund_account_id: null,
             metadata_json: metadata,
             updated_at: now,
           }),
@@ -229,9 +227,10 @@ export class MonetizationController {
         .insertInto("billing.crypto_payout_accounts")
         .values({
           creator_user_id: session.userId,
-          chain_id: this.config.OG_CHAIN_ID,
+          chain_id: stellarChainId,
           wallet_address: walletAddress,
-          token_preference: this.config.OG_PAYMENT_TOKEN_SYMBOL,
+          stellar_address: walletAddress,
+          token_preference: this.config.STELLAR_PAYMENT_ASSET_CODE,
           status,
           metadata_json: metadata,
           updated_at: now,
@@ -240,7 +239,8 @@ export class MonetizationController {
         .onConflict((oc) =>
           oc.columns(["creator_user_id", "chain_id"]).doUpdateSet({
             wallet_address: walletAddress,
-            token_preference: this.config.OG_PAYMENT_TOKEN_SYMBOL,
+            stellar_address: walletAddress,
+            token_preference: this.config.STELLAR_PAYMENT_ASSET_CODE,
             status,
             metadata_json: metadata,
             updated_at: now,
@@ -263,7 +263,7 @@ export class MonetizationController {
       payoutProfile: {
         status,
         displayName: input.displayName,
-        payoutMode: "crypto",
+        payoutMode: "stellar",
         walletAddress,
         walletLast4: walletAddress.slice(-4),
         providerReady: false,
@@ -335,6 +335,7 @@ export class MonetizationController {
       };
     }
 
+    const provider = resolvePaymentProvider(input.provider);
     const platformFeeCents = platformFee(
       character.price_cents,
       this.config.CREATOR_PLATFORM_FEE_BPS,
@@ -349,7 +350,7 @@ export class MonetizationController {
         currency: "USD",
         platform_fee_cents: platformFeeCents,
         creator_net_cents: character.price_cents - platformFeeCents,
-        provider: input.provider,
+        provider,
         provider_order_id: null,
         provider_payment_id: null,
         status: "created",
@@ -369,7 +370,7 @@ export class MonetizationController {
           .executeTakeFirstOrThrow()
       ).id;
 
-    const payment = await createCryptoPaymentIntent({
+    const payment = await createStellarPaymentIntent({
       db: this.db,
       config: this.config,
       buyerUserId: session.userId,
@@ -392,7 +393,7 @@ export class MonetizationController {
         provider_order_id: payment.id,
         metadata_json: {
           characterName: character.name,
-          cryptoPaymentId: payment.id,
+          stellarPaymentId: payment.id,
           providerReference: payment.providerReference,
         },
         updated_at: new Date(),
@@ -401,7 +402,7 @@ export class MonetizationController {
       .execute();
 
     return {
-      provider: "crypto",
+      provider: "stellar",
       internalPurchaseId: purchaseId,
       payment,
       character: {
@@ -431,13 +432,13 @@ export class MonetizationController {
 
     if (
       !purchase ||
-      purchase.provider !== "crypto" ||
+      purchase.provider !== "stellar" ||
       purchase.provider_order_id !== input.paymentId
     ) {
       throw new DomainError("RESOURCE_NOT_FOUND", "Purchase order not found");
     }
 
-    const verification = await verifyCryptoPaymentIntent({
+    const verification = await verifyStellarPaymentIntent({
       db: this.db,
       config: this.config,
       buyerUserId: session.userId,
@@ -451,17 +452,14 @@ export class MonetizationController {
       return {
         ok: false,
         status: "pending",
-        confirmationCount: verification.confirmationCount,
-        requiredConfirmations: verification.requiredConfirmations,
         characterId: purchase.character_id,
       };
     }
 
     await finalizeCharacterPurchase(this.db, this.config, purchase.id, verification.txHash, {
-      provider: "crypto",
-      cryptoPaymentId: input.paymentId,
+      provider: "stellar",
+      stellarPaymentId: input.paymentId,
       walletAddress: verification.walletAddress,
-      confirmationCount: verification.confirmationCount,
     });
 
     return {
@@ -490,7 +488,7 @@ export class MonetizationController {
       .leftJoin("billing.crypto_payout_accounts as crypto", (join) =>
         join
           .onRef("crypto.creator_user_id", "=", "profiles.creator_user_id")
-          .on("crypto.chain_id", "=", this.config.OG_CHAIN_ID),
+          .on("crypto.chain_id", "=", this.config.STELLAR_NETWORK === "mainnet" ? 1 : 2),
       )
       .select(["profiles.status", "crypto.status as crypto_status", "crypto.wallet_address"])
       .where("profiles.creator_user_id", "=", session.userId)
@@ -502,7 +500,10 @@ export class MonetizationController {
       profile.crypto_status !== "verified" ||
       !profile.wallet_address
     ) {
-      throw new DomainError("ENTITLEMENT_REQUIRED", "Set up a verified crypto payout wallet first");
+      throw new DomainError(
+        "ENTITLEMENT_REQUIRED",
+        "Set up a verified Stellar payout wallet first",
+      );
     }
 
     if (input.amountCents < this.config.CREATOR_MIN_PAYOUT_CENTS) {
@@ -535,13 +536,9 @@ export class MonetizationController {
           amount_cents: input.amountCents,
           currency: input.currency,
           status: "requested",
-          provider: "crypto",
+          provider: "stellar",
           idempotency_key: `payout:${session.userId}:${randomUUID()}`,
-          metadata_json: {
-            chainId: this.config.OG_CHAIN_ID,
-            provider: "crypto",
-            tokenSymbol: this.config.OG_PAYMENT_TOKEN_SYMBOL,
-          },
+          metadata_json: {},
         })
         .returning(["id"])
         .executeTakeFirstOrThrow();
@@ -629,7 +626,7 @@ export class AdminMonetizationController {
           .leftJoin("billing.crypto_payout_accounts as crypto", (join) =>
             join
               .onRef("crypto.creator_user_id", "=", "payouts.creator_user_id")
-              .on("crypto.chain_id", "=", this.config.OG_CHAIN_ID),
+              .on("crypto.chain_id", "=", this.config.STELLAR_NETWORK === "mainnet" ? 1 : 2),
           )
           .select([
             "payouts.id",
@@ -658,7 +655,7 @@ export class AdminMonetizationController {
           .leftJoin("billing.crypto_payout_accounts as crypto", (join) =>
             join
               .onRef("crypto.creator_user_id", "=", "profiles.creator_user_id")
-              .on("crypto.chain_id", "=", this.config.OG_CHAIN_ID),
+              .on("crypto.chain_id", "=", this.config.STELLAR_NETWORK === "mainnet" ? 1 : 2),
           )
           .select([
             "profiles.creator_user_id",
@@ -758,6 +755,7 @@ export class AdminMonetizationController {
   ) {
     const admin = await requireAdmin(this.db, this.config, authorization);
     const input = AdminProcessPayoutRequestSchema.parse(body);
+    const provider = input.provider;
     const payout = await this.db
       .selectFrom("billing.creator_payouts as payouts")
       .innerJoin(
@@ -768,7 +766,7 @@ export class AdminMonetizationController {
       .leftJoin("billing.crypto_payout_accounts as crypto", (join) =>
         join
           .onRef("crypto.creator_user_id", "=", "payouts.creator_user_id")
-          .on("crypto.chain_id", "=", this.config.OG_CHAIN_ID),
+          .on("crypto.chain_id", "=", this.config.STELLAR_NETWORK === "mainnet" ? 1 : 2),
       )
       .select([
         "payouts.id",
@@ -798,10 +796,10 @@ export class AdminMonetizationController {
     }
 
     if (payout.crypto_status !== "verified" || !payout.crypto_wallet_address) {
-      throw new DomainError("CONFLICT", "Creator crypto payout wallet is not verified");
+      throw new DomainError("CONFLICT", "Creator Stellar payout wallet is not verified");
     }
 
-    const providerResult = await verifyCryptoPayoutTransfer({
+    const providerResult = await verifyStellarPayoutTransfer({
       db: this.db,
       config: this.config,
       payoutId: payout.id,
@@ -814,24 +812,21 @@ export class AdminMonetizationController {
         verifiedBy: admin.userId,
       },
     });
-    const paid = providerResult.status === "finalized";
 
     await this.markPayoutProcessed({
       payoutId: payout.id,
       adminUserId: admin.userId,
-      provider: "crypto",
+      provider,
       providerPayoutId: providerResult.txHash,
-      status: paid ? "paid" : "processing",
+      status: "paid",
       metadata: { note: input.note, providerResult },
     });
 
     return {
       ok: true,
       payoutId: payout.id,
-      status: paid ? "paid" : "processing",
+      status: "paid",
       providerPayoutId: providerResult.txHash,
-      confirmationCount: providerResult.confirmationCount,
-      requiredConfirmations: providerResult.requiredConfirmations,
     };
   }
 
@@ -846,7 +841,7 @@ export class AdminMonetizationController {
       .leftJoin("billing.crypto_payout_accounts as crypto", (join) =>
         join
           .onRef("crypto.creator_user_id", "=", "payouts.creator_user_id")
-          .on("crypto.chain_id", "=", this.config.OG_CHAIN_ID),
+          .on("crypto.chain_id", "=", this.config.STELLAR_NETWORK === "mainnet" ? 1 : 2),
       )
       .select([
         "payouts.id",
@@ -869,15 +864,15 @@ export class AdminMonetizationController {
       return { ok: true, payoutId, status: payout.status };
     }
 
-    if (payout.provider !== "crypto" || !payout.provider_payout_id) {
-      throw new DomainError("CONFLICT", "Only crypto payouts can be refreshed");
+    if (payout.provider !== "stellar" || !payout.provider_payout_id) {
+      throw new DomainError("CONFLICT", "Only Stellar payouts can be refreshed");
     }
 
     if (payout.crypto_status !== "verified" || !payout.crypto_wallet_address) {
-      throw new DomainError("CONFLICT", "Creator crypto payout wallet is not verified");
+      throw new DomainError("CONFLICT", "Creator Stellar payout wallet is not verified");
     }
 
-    const providerResult = await verifyCryptoPayoutTransfer({
+    const providerResult = await verifyStellarPayoutTransfer({
       db: this.db,
       config: this.config,
       payoutId: payout.id,
@@ -894,7 +889,7 @@ export class AdminMonetizationController {
       await this.markPayoutProcessed({
         payoutId: payout.id,
         adminUserId: admin.userId,
-        provider: "crypto",
+        provider: "stellar",
         providerPayoutId: payout.provider_payout_id,
         status: "paid",
         metadata: { providerResult, refreshedBy: admin.userId },
@@ -903,13 +898,7 @@ export class AdminMonetizationController {
       return { ok: true, payoutId, status: "paid" };
     }
 
-    return {
-      ok: true,
-      payoutId,
-      status: "processing",
-      confirmationCount: providerResult.confirmationCount,
-      requiredConfirmations: providerResult.requiredConfirmations,
-    };
+    return { ok: true, payoutId, status: "processing" };
   }
 
   @Post("/payout-profiles/:creatorUserId/verify")
@@ -954,7 +943,7 @@ export class AdminMonetizationController {
           updated_at: new Date(),
         })
         .where("creator_user_id", "=", creatorUserId)
-        .where("chain_id", "=", this.config.OG_CHAIN_ID)
+        .where("chain_id", "=", this.config.STELLAR_NETWORK === "mainnet" ? 1 : 2)
         .execute();
     });
 
@@ -1334,6 +1323,10 @@ export async function paidCharacterTrialStatus(
     used,
     remaining: Math.max(0, limit - used),
   };
+}
+
+function resolvePaymentProvider(provider: "stellar"): "stellar" {
+  return provider;
 }
 
 function assertMonetizationEnabled(config: AppConfig): void {

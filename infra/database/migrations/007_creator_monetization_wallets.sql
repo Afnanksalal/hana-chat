@@ -26,11 +26,9 @@ CREATE TABLE IF NOT EXISTS billing.creator_payout_profiles (
   status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'pending_review', 'verified', 'disabled')),
   display_name TEXT NOT NULL,
   legal_name TEXT,
-  payout_mode TEXT NOT NULL DEFAULT 'upi' CHECK (payout_mode IN ('upi')),
+  payout_mode TEXT NOT NULL DEFAULT 'stellar' CHECK (payout_mode IN ('stellar')),
   encrypted_vpa TEXT,
   vpa_last4 TEXT,
-  razorpay_contact_id TEXT,
-  razorpay_fund_account_id TEXT,
   metadata_json JSONB NOT NULL DEFAULT '{}'::jsonb,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -48,7 +46,7 @@ CREATE TABLE IF NOT EXISTS billing.character_purchases (
   currency TEXT NOT NULL DEFAULT 'USD',
   platform_fee_cents INTEGER NOT NULL CHECK (platform_fee_cents >= 0),
   creator_net_cents INTEGER NOT NULL CHECK (creator_net_cents >= 0),
-  provider TEXT NOT NULL CHECK (provider IN ('mock', 'razorpay')),
+  provider TEXT NOT NULL CHECK (provider IN ('stellar')),
   provider_order_id TEXT,
   provider_payment_id TEXT,
   status TEXT NOT NULL DEFAULT 'created' CHECK (status IN ('created', 'paid', 'failed', 'refunded')),
@@ -118,7 +116,7 @@ CREATE TABLE IF NOT EXISTS billing.creator_payouts (
   status TEXT NOT NULL DEFAULT 'requested' CHECK (
     status IN ('requested', 'approved', 'processing', 'paid', 'failed', 'canceled')
   ),
-  provider TEXT NOT NULL DEFAULT 'manual' CHECK (provider IN ('manual', 'mock', 'razorpayx')),
+  provider TEXT NOT NULL DEFAULT 'stellar' CHECK (provider IN ('stellar')),
   provider_payout_id TEXT,
   idempotency_key TEXT NOT NULL,
   failure_reason TEXT,

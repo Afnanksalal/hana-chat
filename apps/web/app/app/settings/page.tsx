@@ -15,7 +15,7 @@ import {
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { apiJson, money } from "../api";
-import { completeCryptoPayment, type CryptoPaymentIntent } from "../crypto-payments";
+import { completeStellarPayment, type StellarPaymentIntent } from "../stellar-payments";
 
 type PlanId = "free" | "plus" | "ultra";
 
@@ -51,10 +51,10 @@ interface BillingResponse {
 }
 
 interface CheckoutResponse {
-  provider: "crypto";
+  provider: "stellar";
   internalOrderId: string;
   activated?: boolean;
-  payment?: CryptoPaymentIntent;
+  payment?: StellarPaymentIntent;
   plan?: {
     name: string;
   };
@@ -169,12 +169,12 @@ export default function SettingsPage() {
   }
 
   async function checkout(planId: "plus" | "ultra") {
-    setStatus("Preparing 0G payment...");
+    setStatus("Preparing Stellar payment...");
 
     try {
       const checkoutPayload = await apiJson<CheckoutResponse>("/api/v1/billing/checkout", {
         method: "POST",
-        body: JSON.stringify({ planId, provider: "crypto" }),
+        body: JSON.stringify({ planId, provider: "stellar" }),
       });
 
       if (checkoutPayload.activated) {
@@ -189,11 +189,11 @@ export default function SettingsPage() {
       }
 
       setStatus(
-        `Confirm ${checkoutPayload.payment.amountDisplay} ${checkoutPayload.payment.tokenSymbol} in your wallet...`,
+        `Confirm ${checkoutPayload.payment.amountDisplay} ${checkoutPayload.payment.assetCode} in your Stellar wallet.`,
       );
-      await completeCryptoPayment({
+      await completeStellarPayment({
         payment: checkoutPayload.payment,
-        verifyPath: "/api/v1/billing/crypto/verify",
+        verifyPath: "/api/v1/billing/stellar/verify",
         verifyBody: { paymentId: checkoutPayload.payment.id },
         onStatus: setStatus,
       });
@@ -372,7 +372,9 @@ export default function SettingsPage() {
           <div className="billing-plan-status">
             <span>{activePlan?.monthlyMessageLimit.toLocaleString() ?? "30"} monthly messages</span>
             <span>{activePlan?.deepMemoryEnabled ? "Deep memory" : "Basic memory"}</span>
-            <span>{monetizationComingSoon ? "0G checkout paused" : "0G checkout ready"}</span>
+            <span>
+              {monetizationComingSoon ? "Stellar checkout paused" : "Stellar checkout ready"}
+            </span>
           </div>
           <button
             className="secondary-action compact"
@@ -427,7 +429,7 @@ export default function SettingsPage() {
             >
               <div className="pricing-card-head">
                 <WalletCards size={22} />
-                <span>{paidPlanId ? "0G billing" : "Starter"}</span>
+                <span>{paidPlanId ? "Stellar billing" : "Starter"}</span>
               </div>
               <h3>{plan.name}</h3>
               {plan.comingSoon ? <span className="coming-soon-pill">Coming soon</span> : null}

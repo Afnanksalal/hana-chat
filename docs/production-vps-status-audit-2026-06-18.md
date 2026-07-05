@@ -61,7 +61,7 @@ In plain terms: admin login works, normal user email delivery is not proven and 
 
 ### Needs Attention
 
-- VPS deployed release is behind the current GitHub `master` by the docs-only 0G strategy commit.
+- VPS deployed release is behind the current GitHub `master` by the docs-only chain strategy commit.
   Runtime code is effectively unchanged, but deploy metadata is not at the newest commit.
 - Disk usage is high:
   - `/` is at about `84%`
@@ -265,17 +265,17 @@ Current:
 
 - `MONETIZATION_ENABLED=false`
 - Public paid plans and creator monetization should stay "coming soon."
-- Razorpay and RazorpayX env values are present even though monetization is disabled.
-- 0G strategy document exists, but no 0G runtime integration exists yet.
+- Legacy payment env values are present even though monetization is disabled.
+- Chain strategy document exists, but no runtime integration exists yet.
 
 Pending:
 
 - Decide final provider path:
-  - crypto/0G settlement,
+  - Stellar settlement,
   - adult-friendly card processor,
   - or both.
-- Remove or rotate Razorpay credentials if they are no longer intended.
-- Update CSP/permissions once Razorpay is no longer the target provider.
+- Remove or rotate legacy payment credentials if they are no longer intended.
+- Update CSP/permissions once the target payment provider is finalized.
 - Add crypto payment schemas/contracts only after the provider decision.
 
 ## Memory and Chat Status
@@ -294,7 +294,7 @@ Pending:
   data.
 - Add admin observability for "last memory write", "last graph projection", and "last Qdrant upsert"
   per environment.
-- 0G memory snapshots are design-only at this point. No decentralized memory bridge is implemented.
+- Decentralized memory snapshots are design-only at this point. No decentralized memory bridge is implemented.
 
 ## Security and Ops Findings
 
@@ -309,7 +309,7 @@ High priority:
 Medium priority:
 
 - Active sessions count is high for an early production environment.
-- Razorpay credentials are present while monetization is disabled.
+- Legacy payment credentials are present while monetization is disabled.
 - DMARC is still in monitor mode (`p=none`).
 - No production email smoke test exists for a real SMTP path.
 - No automated disk/cache cleanup policy is documented or scheduled.
@@ -348,8 +348,8 @@ Low priority:
 ### P2: Monetization Path
 
 1. Keep `MONETIZATION_ENABLED=false`.
-2. Decide whether Razorpay credentials should remain on the VPS.
-3. Start 0G as a design spike only; do not wire payments before contract/custody/compliance review.
+2. Decide whether legacy payment credentials should remain on the VPS.
+3. Start chain settlement as a design spike only; do not wire payments before contract/custody/compliance review.
 
 ### P2: Product Health Harness
 

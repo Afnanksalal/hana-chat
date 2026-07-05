@@ -292,6 +292,7 @@ export interface MemoryDecentralizedSnapshotsTable {
   root_hash: string;
   tx_hash: string | null;
   manifest_hash: string;
+  nft_token_id: string | null;
   encryption_mode: string;
   encryption_key_ref: string;
   status: "pending_upload" | "uploaded" | "confirmed" | "failed" | "disabled" | "unrecoverable";
@@ -374,7 +375,7 @@ export interface BillingPaymentOrdersTable {
   id: Generated<string>;
   user_id: string;
   plan_id: "plus" | "ultra";
-  provider: "crypto";
+  provider: "stellar";
   provider_order_id: string | null;
   amount_cents: number;
   currency: string;
@@ -427,11 +428,9 @@ export interface BillingCreatorPayoutProfilesTable {
   status: DefaultColumn<"draft" | "pending_review" | "verified" | "disabled">;
   display_name: string;
   legal_name: string | null;
-  payout_mode: DefaultColumn<"crypto">;
+  payout_mode: DefaultColumn<"stellar">;
   encrypted_vpa: string | null;
   vpa_last4: string | null;
-  razorpay_contact_id: string | null;
-  razorpay_fund_account_id: string | null;
   metadata_json: unknown;
   created_at: TimestampColumn;
   updated_at: TimestampColumn;
@@ -446,7 +445,7 @@ export interface BillingCharacterPurchasesTable {
   currency: string;
   platform_fee_cents: number;
   creator_net_cents: number;
-  provider: "crypto";
+  provider: "stellar";
   provider_order_id: string | null;
   provider_payment_id: string | null;
   status: "created" | "paid" | "failed" | "refunded";
@@ -487,7 +486,7 @@ export interface BillingCreatorPayoutsTable {
   amount_cents: number;
   currency: string;
   status: "requested" | "approved" | "processing" | "paid" | "failed" | "canceled";
-  provider: "crypto";
+  provider: "stellar";
   provider_payout_id: string | null;
   idempotency_key: string;
   failure_reason: string | null;
@@ -523,6 +522,7 @@ export interface BillingCryptoPayoutAccountsTable {
   creator_user_id: string;
   chain_id: number;
   wallet_address: string;
+  stellar_address: string | null;
   token_preference: string | null;
   status: "draft" | "pending_review" | "verified" | "disabled";
   metadata_json: unknown;
@@ -541,6 +541,25 @@ export interface Web3ChainTransactionsTable {
   block_number: string | null;
   confirmation_count: DefaultColumn<number>;
   raw_payload_hash: string | null;
+  metadata_json: unknown;
+  created_at: TimestampColumn;
+  updated_at: TimestampColumn;
+  confirmed_at: TimestampColumn | null;
+}
+
+export interface Web3NftMintsTable {
+  id: Generated<string>;
+  user_id: string;
+  character_id: string | null;
+  conversation_id: string | null;
+  snapshot_id: string | null;
+  contract_id: string;
+  token_id: string;
+  owner_address: string;
+  manifest_root_hash: string;
+  snapshot_kind: "conversation_memory" | "creator_soul_pack" | "user_export";
+  tx_hash: string | null;
+  status: "pending" | "confirmed" | "failed";
   metadata_json: unknown;
   created_at: TimestampColumn;
   updated_at: TimestampColumn;
@@ -614,6 +633,7 @@ export interface HanaDatabase {
   "billing.crypto_payments": BillingCryptoPaymentsTable;
   "billing.crypto_payout_accounts": BillingCryptoPayoutAccountsTable;
   "web3.chain_transactions": Web3ChainTransactionsTable;
+  "web3.nft_mints": Web3NftMintsTable;
   "platform.audit_events": PlatformAuditEventsTable;
   "platform.outbox_events": PlatformOutboxEventsTable;
 }

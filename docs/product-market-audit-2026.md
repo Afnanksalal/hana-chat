@@ -66,7 +66,7 @@ Observed in the repo:
 - Character builder supports avatar/cover uploads, persona, templates, traits, rating, pricing, publish state, marketplace fields, and model profile.
 - Marketplace uses persisted engagement events and trending score instead of purely fake cards.
 - Paid character flow includes mandatory 30-message trial before purchase.
-- Creator wallet, ledger entries, payout profiles, payout requests, admin monetization surface, Razorpay order verification, RazorpayX payout support, and 7-day hold logic are present.
+- Creator wallet, ledger entries, payout profiles, payout requests, admin monetization surface, Stellar order verification, Stellar payout support, and 7-day hold logic are present.
 - Chat has JSON and SSE paths, idempotent client message IDs, guardrail pre-checks, output safety checks, analytics model-call recording, typing UX, roleplay formatting, and conversation evolution state.
 - Public legal pages, PWA manifest, robots, sitemap, llms.txt, domain hierarchy, raw-IP access, and fully self-hosted VPS deployment docs exist.
 
@@ -442,8 +442,8 @@ Recommended new bounded contexts:
 - Nomi official site: https://nomi.ai/
 - Kindroid memory docs: https://kindroid.ai/docs/article/memory/
 - xAI Grok 3 Mini Fast pricing/model docs: https://docs.x.ai/developers/models/grok-3-mini-fast
-- RazorpayX payouts: https://razorpay.com/docs/x/payouts/
-- Razorpay Route: https://razorpay.com/route/
+- Stellar payments: https://developers.stellar.org/docs/learn/fundamentals/transactions
+- Stellar JavaScript SDK: https://stellar.github.io/js-stellar-sdk/
 - U.S. AI companion market estimate: https://www.grandviewresearch.com/horizon/outlook/ai-companion-market/united-states
 - Parasocial AI market scan: https://arxiv.org/abs/2507.14226
 - AI companions and well-being study: https://arxiv.org/abs/2506.12605

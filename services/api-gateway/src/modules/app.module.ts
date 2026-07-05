@@ -10,7 +10,7 @@ import { HealthController } from "./health.controller";
 import { MediaController } from "./media.controller";
 import { MemoryController } from "./memory.controller";
 import { AdminMonetizationController, MonetizationController } from "./monetization.controller";
-import { AdminOgMemoryController, OgMemoryController } from "./og-memory.controller";
+import { AdminStellarMemoryController, StellarMemoryController } from "./stellar-memory.controller";
 import { SessionsController } from "./sessions.controller";
 import { SettingsController } from "./settings.controller";
 import { SystemController } from "./system.controller";
@@ -25,12 +25,12 @@ import { SystemController } from "./system.controller";
     DashboardController,
     SettingsController,
     MemoryController,
-    OgMemoryController,
+    StellarMemoryController,
     MediaController,
     BillingController,
     MonetizationController,
     AdminMonetizationController,
-    AdminOgMemoryController,
+    AdminStellarMemoryController,
     AdminAnalyticsController,
     AdminCharactersController,
     SystemController,

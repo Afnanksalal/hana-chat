@@ -130,30 +130,28 @@ export const AppConfigSchema = z
     CREATOR_MIN_PAYOUT_CENTS: z.coerce.number().int().min(100).max(1_000_000).default(1_000),
     CREATOR_PAID_CHARACTER_TRIAL_MESSAGES: z.coerce.number().int().min(0).max(200).default(30),
 
-    OG_ENABLED: booleanEnvSchema.default(false),
-    OG_STORAGE_ENABLED: booleanEnvSchema.default(false),
-    OG_STORAGE_UPLOAD_ENABLED: booleanEnvSchema.default(false),
-    OG_PAYMENTS_ENABLED: booleanEnvSchema.default(false),
-    OG_NETWORK: z.enum(["mainnet", "testnet", "local"]).default("mainnet"),
-    OG_CHAIN_ID: z.coerce.number().int().positive().default(16_661),
-    OG_RPC_URL: z.string().url().default("https://evmrpc.0g.ai"),
-    OG_STORAGE_INDEXER_URL: z.string().url().default("https://indexer-storage-turbo.0g.ai"),
-    OG_TREASURY_WALLET_ADDRESS: z.string().optional(),
-    OG_TREASURY_CONTRACT_ADDRESS: z.string().optional(),
-    OG_CREATOR_ESCROW_CONTRACT_ADDRESS: z.string().optional(),
-    OG_PAYMENT_TOKEN_SYMBOL: z.string().trim().min(1).max(16).default("0G"),
-    OG_PAYMENT_TOKEN_DECIMALS: z.coerce.number().int().min(0).max(30).default(18),
-    OG_PAYMENT_TOKEN_USD_CENTS: z.coerce.number().int().min(1).max(1_000_000).default(100),
-    OG_PAYMENT_INTENT_TTL_MINUTES: z.coerce
+    STELLAR_ENABLED: booleanEnvSchema.default(false),
+    STELLAR_STORAGE_ENABLED: booleanEnvSchema.default(false),
+    STELLAR_PAYMENTS_ENABLED: booleanEnvSchema.default(false),
+    STELLAR_NFT_ENABLED: booleanEnvSchema.default(false),
+    STELLAR_NETWORK: z.enum(["mainnet", "testnet"]).default("testnet"),
+    STELLAR_HORIZON_URL: z.string().url().default("https://horizon-testnet.stellar.org"),
+    STELLAR_RPC_URL: z.string().url().default("https://soroban-testnet.stellar.org"),
+    STELLAR_TREASURY_ADDRESS: z.string().optional(),
+    STELLAR_NFT_CONTRACT_ID: z.string().optional(),
+    STELLAR_SERVER_KEY_REF: z.string().optional(),
+    STELLAR_PAYMENT_ASSET_CODE: z.string().trim().min(1).max(12).default("XLM"),
+    STELLAR_PAYMENT_ASSET_ISSUER: z.string().optional(),
+    STELLAR_PAYMENT_TOKEN_USD_CENTS: z.coerce.number().int().min(1).max(1_000_000).default(10),
+    STELLAR_PAYMENT_INTENT_TTL_MINUTES: z.coerce
       .number()
       .int()
       .min(5)
       .max(24 * 60)
       .default(30),
-    OG_SERVER_WALLET_KEY_REF: z.string().optional(),
-    OG_CONFIRMATION_BLOCKS: z.coerce.number().int().min(1).max(10_000).default(12),
-    OG_STORAGE_SNAPSHOT_INTERVAL_TURNS: z.coerce.number().int().min(1).max(10_000).default(25),
-    OG_STORAGE_SNAPSHOT_MIN_IMPORTANCE: z.coerce.number().min(0).max(1).default(0.65),
+    STELLAR_REQUIRED_CONFIRMATIONS: z.coerce.number().int().min(1).max(100).default(1),
+    STELLAR_STORAGE_SNAPSHOT_INTERVAL_TURNS: z.coerce.number().int().min(1).max(10_000).default(25),
+    STELLAR_STORAGE_SNAPSHOT_MIN_IMPORTANCE: z.coerce.number().min(0).max(1).default(0.65),
 
     EMAIL_HASH_SECRET: z.string().default("hana-local-dev-email-hash-secret-change-me"),
     EMAIL_ENCRYPTION_KEY_BASE64: z.string().default(localDevAesKeyBase64),
@@ -211,43 +209,51 @@ export const AppConfigSchema = z
     WORKER_SERVICE_PORT: portSchema.default(4120),
   })
   .superRefine((config, ctx) => {
-    if (config.OG_STORAGE_ENABLED && !config.OG_ENABLED) {
+    if (config.STELLAR_STORAGE_ENABLED && !config.STELLAR_ENABLED) {
       ctx.addIssue({
         code: "custom",
-        path: ["OG_STORAGE_ENABLED"],
-        message: "OG_STORAGE_ENABLED requires OG_ENABLED",
+        path: ["STELLAR_STORAGE_ENABLED"],
+        message: "STELLAR_STORAGE_ENABLED requires STELLAR_ENABLED",
       });
     }
 
-    if (config.OG_STORAGE_UPLOAD_ENABLED && !config.OG_STORAGE_ENABLED) {
+    if (config.STELLAR_PAYMENTS_ENABLED && !config.STELLAR_ENABLED) {
       ctx.addIssue({
         code: "custom",
-        path: ["OG_STORAGE_UPLOAD_ENABLED"],
-        message: "OG_STORAGE_UPLOAD_ENABLED requires OG_STORAGE_ENABLED",
+        path: ["STELLAR_PAYMENTS_ENABLED"],
+        message: "STELLAR_PAYMENTS_ENABLED requires STELLAR_ENABLED",
       });
     }
 
-    if (config.OG_STORAGE_UPLOAD_ENABLED && !config.OG_SERVER_WALLET_KEY_REF) {
+    if (config.STELLAR_PAYMENTS_ENABLED && !config.MONETIZATION_ENABLED) {
       ctx.addIssue({
         code: "custom",
-        path: ["OG_SERVER_WALLET_KEY_REF"],
-        message: "OG_SERVER_WALLET_KEY_REF must be configured when 0G storage uploads are enabled",
+        path: ["STELLAR_PAYMENTS_ENABLED"],
+        message: "STELLAR_PAYMENTS_ENABLED cannot bypass MONETIZATION_ENABLED",
       });
     }
 
-    if (config.OG_PAYMENTS_ENABLED && !config.OG_ENABLED) {
+    if (config.STELLAR_NFT_ENABLED && !config.STELLAR_ENABLED) {
       ctx.addIssue({
         code: "custom",
-        path: ["OG_PAYMENTS_ENABLED"],
-        message: "OG_PAYMENTS_ENABLED requires OG_ENABLED",
+        path: ["STELLAR_NFT_ENABLED"],
+        message: "STELLAR_NFT_ENABLED requires STELLAR_ENABLED",
       });
     }
 
-    if (config.OG_PAYMENTS_ENABLED && !config.MONETIZATION_ENABLED) {
+    if (config.STELLAR_NFT_ENABLED && !config.STELLAR_NFT_CONTRACT_ID) {
       ctx.addIssue({
         code: "custom",
-        path: ["OG_PAYMENTS_ENABLED"],
-        message: "OG_PAYMENTS_ENABLED cannot bypass MONETIZATION_ENABLED",
+        path: ["STELLAR_NFT_CONTRACT_ID"],
+        message: "STELLAR_NFT_CONTRACT_ID must be configured when Stellar NFT minting is enabled",
+      });
+    }
+
+    if (config.STELLAR_NFT_ENABLED && !config.STELLAR_SERVER_KEY_REF) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["STELLAR_SERVER_KEY_REF"],
+        message: "STELLAR_SERVER_KEY_REF must be configured when Stellar NFT minting is enabled",
       });
     }
 
@@ -359,21 +365,21 @@ export const AppConfigSchema = z
       });
     }
 
-    if (config.MONETIZATION_ENABLED && !config.OG_PAYMENTS_ENABLED) {
+    if (config.MONETIZATION_ENABLED && !config.STELLAR_PAYMENTS_ENABLED) {
       ctx.addIssue({
         code: "custom",
-        path: ["OG_PAYMENTS_ENABLED"],
-        message: "Production monetization requires 0G payments to be enabled",
+        path: ["STELLAR_PAYMENTS_ENABLED"],
+        message: "Production monetization requires Stellar payments to be enabled",
       });
     }
 
-    if (config.OG_PAYMENTS_ENABLED) {
-      for (const key of ["OG_TREASURY_WALLET_ADDRESS"] as const) {
+    if (config.STELLAR_PAYMENTS_ENABLED) {
+      for (const key of ["STELLAR_TREASURY_ADDRESS"] as const) {
         if (!config[key]) {
           ctx.addIssue({
             code: "custom",
             path: [key],
-            message: `${key} must be configured when 0G payments are enabled`,
+            message: `${key} must be configured when Stellar payments are enabled`,
           });
         }
       }

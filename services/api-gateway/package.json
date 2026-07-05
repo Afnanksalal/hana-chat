@@ -1,6 +1,6 @@
 {
   "name": "@hana/api-gateway",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "private": true,
   "main": "dist/main.js",
   "scripts": {
@@ -20,10 +20,10 @@
     "@hana/nest-core": "workspace:*",
     "@hana/risk-core": "workspace:*",
     "@hana/safety-core": "workspace:*",
+    "@hana/stellar-bridge": "workspace:*",
     "@nestjs/common": "^11.1.9",
     "@nestjs/core": "^11.1.9",
     "@nestjs/platform-fastify": "^11.1.9",
-    "ethers": "6.13.1",
     "kysely": "^0.28.8",
     "nodemailer": "^8.0.8",
     "reflect-metadata": "^0.2.2",

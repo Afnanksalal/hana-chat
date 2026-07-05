@@ -30,7 +30,7 @@ import type { CSSProperties } from "react";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { HanaLogo } from "../../components/hana-logo";
 import { apiJson, money } from "../api";
-import { completeCryptoPayment, type CryptoPaymentIntent } from "../crypto-payments";
+import { completeStellarPayment, type StellarPaymentIntent } from "../stellar-payments";
 import { renderRoleplayContent, renderRoleplayPreview } from "../roleplay-preview";
 
 type MemoryKind = "preference" | "boundary" | "relationship" | "canon" | "event" | "style";
@@ -197,7 +197,7 @@ interface MemoriesResponse {
 }
 
 interface CharacterPurchaseResponse {
-  provider?: "crypto";
+  provider?: "stellar";
   internalPurchaseId?: string;
   activated?: boolean;
   alreadyPurchased?: boolean;
@@ -205,7 +205,7 @@ interface CharacterPurchaseResponse {
   trialLimit?: number;
   trialUsed?: number;
   trialRemaining?: number;
-  payment?: CryptoPaymentIntent;
+  payment?: StellarPaymentIntent;
   character?: {
     id: string;
     name: string;
@@ -1575,14 +1575,14 @@ function ChatExperience() {
     }
 
     setIsUnlocking(true);
-    setStatus(`Preparing 0G unlock for ${selectedCharacter.name}...`);
+    setStatus(`Preparing Stellar unlock for ${selectedCharacter.name}...`);
 
     try {
       const purchase = await apiJson<CharacterPurchaseResponse>(
         "/api/v1/monetization/character-purchases",
         {
           method: "POST",
-          body: JSON.stringify({ characterId: selectedCharacter.id, provider: "crypto" }),
+          body: JSON.stringify({ characterId: selectedCharacter.id, provider: "stellar" }),
         },
       );
 
@@ -1602,15 +1602,15 @@ function ChatExperience() {
         return;
       }
 
-      if (purchase.provider !== "crypto" || !purchase.payment || !purchase.internalPurchaseId) {
+      if (purchase.provider !== "stellar" || !purchase.payment || !purchase.internalPurchaseId) {
         setStatus("Checkout could not start for this character.");
         return;
       }
 
       setStatus(
-        `Confirm ${purchase.payment.amountDisplay} ${purchase.payment.tokenSymbol} in your wallet...`,
+        `Confirm ${purchase.payment.amountDisplay} ${purchase.payment.assetCode} in your Stellar wallet.`,
       );
-      await completeCryptoPayment({
+      await completeStellarPayment({
         payment: purchase.payment,
         verifyPath: "/api/v1/monetization/character-purchases/verify",
         verifyBody: {
