@@ -54,7 +54,7 @@ flowchart TD
 - Creator revenue is posted to a signed wallet ledger: gross sale, platform fee, pending hold, available balance, payout reserve, payout release, settlement, and failure recovery.
 - Net paid-character earnings remain pending for a 7-day hold window before they can be requested for payout.
 - Creator payout profiles store Stellar wallet destinations in `billing.crypto_payout_accounts` with admin review status.
-- Admin monetization operations live at `/app/admin` and API prefix `/v1/admin/monetization`: profile verification, Stellar payout proof verification, and provider refresh.
+- Admin monetization operations live at `/app/admin` and API prefix `/v1/admin/monetization`: profile verification, Stellar payout proof verification, and failed-settlement recovery.
 - Creator wallet operations live at `/app/wallet` and API prefix `/v1/monetization`: payout profile, ledger, purchases, and payout requests.
 
 ## Marketplace Quality Rules

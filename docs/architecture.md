@@ -21,7 +21,7 @@ flowchart LR
   Gateway --> Xai["xAI chat completions and image generation"]
   Gateway --> Redis["Redis cache / rate state"]
   Gateway --> Mail["SMTP email"]
-  Gateway --> Payments["Payment providers (flag gated)"]
+  Gateway --> Stellar["Stellar settlement (flag gated)"]
   Gateway --> Redpanda["Redpanda event log"]
   Gateway --> Temporal["Temporal workflows"]
   Gateway --> ClickHouse["ClickHouse analytics"]
@@ -97,24 +97,24 @@ sequenceDiagram
   participant Web as Next.js app
   participant API as API Gateway
   participant DB as Postgres ledger
-  participant Payments as Payment provider
+  participant Stellar as Stellar settlement
   participant Admin as Admin dashboard
-  participant Payouts as Payout provider
+  participant Payouts as Stellar payout proof
 
   Web->>API: POST /v1/monetization/character-purchases
   API->>DB: Check paid unlock and 30-message character trial
   API-->>Web: Open trial chat while trial remains
   Web->>API: POST /v1/monetization/character-purchases
   API->>DB: Create idempotent purchase row after trial exhaustion
-  API->>Payments: Create checkout order when provider is live and monetization enabled
-  Payments-->>Web: Checkout completes
+  API->>Stellar: Create Stellar payment intent when monetization is enabled
+  Stellar-->>Web: Wallet transfer details
   Web->>API: POST /v1/monetization/character-purchases/verify
-  API->>DB: Verify signature, mark paid, write creator ledger
+  API->>DB: Verify Stellar transaction hash, mark paid, write creator ledger
   API->>DB: Hold net earnings until 7-day release window
   Web->>API: POST /v1/monetization/payouts
   API->>DB: Reserve available wallet balance
   Admin->>API: POST /v1/admin/monetization/payouts/:id/process
-  API->>Payouts: Send idempotent payout when selected
+  API->>Payouts: Verify submitted Stellar payout transaction hash
   API->>DB: Mark paid, processing, or failed and reconcile wallet
 ```
 
@@ -135,7 +135,7 @@ flowchart LR
 Admin analytics is guarded by `identity.user_roles.role = admin` and reads real product data:
 users, sessions, conversations, messages, model calls, safety decisions, memories, marketplace
 engagement, billing, webhooks, outbox events, and audit rows. The dashboard avoids secrets, hidden
-prompts, raw identity data, provider credentials, and internal model payloads.
+prompts, raw identity data, settlement credentials, and internal model payloads.
 
 ## Source Boundaries
 

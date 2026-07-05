@@ -1,8 +1,8 @@
 # Hana Chat
 
-Hana Chat is a private, production-oriented AI companion platform: Next.js web app, NestJS API gateway, typed TypeScript packages, Postgres, Qdrant, Neo4j, Redis, Redpanda, Temporal, and ClickHouse.
+Hana Chat is a production-oriented AI companion platform: Next.js web app, NestJS API gateway, typed TypeScript packages, Postgres, Qdrant, Neo4j, Redis, Redpanda, Temporal, and ClickHouse.
 
-The product centers on creator-owned characters, a premium marketplace, passwordless email identity, safety gates, and per-character/per-chat memory. Paid plans and creator monetization remain in the codebase but are server-gated as "coming soon" until a payment gateway is approved for the product category.
+The product centers on creator-owned characters, a premium marketplace, passwordless email identity, safety gates, and per-character/per-chat memory. Paid plans and creator monetization are Stellar-native and remain server-gated as "coming soon" until monetization is explicitly enabled with a funded Stellar treasury.
 
 ## Quick Start
 

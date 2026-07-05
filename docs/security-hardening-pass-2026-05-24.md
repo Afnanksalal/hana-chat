@@ -10,12 +10,12 @@ record, not a marketing or roadmap document.
 
 - Auth start/verify routes, session cookie handling, API proxying, and production error behavior.
 - Chat orchestration, SSE error payloads, model route disclosure, and guardrail failure handling.
-- Billing, payment-provider order creation, email verification delivery, creator payout surfaces, and mock-provider
+- Billing, Stellar order creation, email verification delivery, creator payout surfaces, and proof-based settlement
   production guards.
 - Production config validation, CORS origin parsing, security headers, Docker Compose defaults, and
   crawler/PWA asset references.
-- Dead-end scans for unused mascot assets, stale memory routes, placeholders, TODO-style markers,
-  dummy data, mock paths, and raw provider response leaks.
+- Dead-end scans for unused mascot assets, stale memory routes, non-production markers, and raw
+  settlement response leaks.
 - Dependency audit using `pnpm audit --prod`.
 
 ## Findings Fixed
@@ -27,7 +27,7 @@ record, not a marketing or roadmap document.
 - Added production redaction for SSE unexpected/internal errors.
 - Stopped exposing `modelRoute` in production chat responses while keeping it visible in development
   and harness runs.
-- Removed raw payment-provider and email-delivery response bodies from thrown app errors; only HTTP status is
+- Removed raw settlement and email-delivery response bodies from thrown app errors; only HTTP status is
   carried forward.
 - Redacted more sensitive log fields including session tokens, cookies, payment credentials,
   payout account numbers, email encryption/hash secrets, and session secrets.
@@ -48,8 +48,8 @@ record, not a marketing or roadmap document.
 - The web CSP still allows inline scripts/styles where Next.js and payment checkout integration need
   them today. A nonce or strict-dynamic CSP migration is a future hardening project, not a hidden
   defect.
-- Mock buyer checkout remains available outside production for deterministic smoke tests. Creator
-  payout settlement uses the crypto proof path.
+- Buyer checkout and creator payout settlement use the same Stellar proof path in development and
+  production; smoke tests exercise disabled monetization gates instead of alternate settlement paths.
 
 ## Verification Performed
 

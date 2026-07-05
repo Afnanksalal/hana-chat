@@ -1,6 +1,6 @@
 # Hana Chat Agent Guide
 
-This is a private product repository. Keep changes production-oriented, typed, and connected end to end.
+This is a production product repository. Keep changes production-oriented, typed, and connected end to end.
 
 ## First Read
 

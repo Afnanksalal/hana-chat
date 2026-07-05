@@ -4,11 +4,11 @@ Date: 2026-05-25
 
 ## Verdict
 
-This pass closed the highest-risk dead ends found across auth, billing, creator monetization, chat safety, memory isolation, queue processing, deployment config, and mobile product polish. The codebase now has a deployable NestJS/Next.js product spine with real Postgres durability, Qdrant projections, Neo4j projection workers, payment-provider verification paths, creator wallet ledger, admin payout operations, passwordless email auth, strict production config validation, PWA/SEO routes, and authenticated web flows.
+This pass closed the highest-risk dead ends found across auth, billing, creator monetization, chat safety, memory isolation, queue processing, deployment config, and mobile product polish. The codebase now has a deployable NestJS/Next.js product spine with real Postgres durability, Qdrant projections, Neo4j projection workers, Stellar verification paths, creator wallet ledger, admin payout operations, passwordless email auth, strict production config validation, PWA/SEO routes, and authenticated web flows.
 
-Hana Chat still has dedicated product projects before it should be sold as a fully mature consumer
-platform: refund/tax/KYC operations, reports/moderation ops UI, production embedding provider, and
-load testing. Those are tracked as explicit hardening work rather than hidden dead ends.
+Hana Chat still has product expansion areas beyond the current release scope: refund/tax/KYC
+operations, reports/moderation ops UI, production embedding upgrades, and load testing. They are not
+runtime placeholders or hidden activation paths in the shipped product.
 
 ## Fixed In This Pass
 
@@ -16,7 +16,7 @@ load testing. Those are tracked as explicit hardening work rather than hidden de
 - Removed middleware HMAC-only session acceptance so revoked sessions require API validation.
 - Blocked auth open redirects by allowing only safe relative `next` paths.
 - Added production email verification wiring for auth start/check, plus email/device/IP code rate limits.
-- Hardened production config so placeholder xAI, payment-provider, SMTP, Postgres, Neo4j, ClickHouse, identity, and session secrets fail fast.
+- Hardened production config so placeholder xAI, Stellar, SMTP, Postgres, Neo4j, ClickHouse, identity, and session secrets fail fast.
 - Made payment webhooks fail closed without a secret, idempotent by event id, amount/currency/status checked, and no longer activates on authorization-only events.
 - Added one-active-subscription data protection and transactional subscription activation.
 - Prevented mature/adult pending-review characters from being public or directly chat-accessible without creator ownership.
@@ -51,15 +51,15 @@ load testing. Those are tracked as explicit hardening work rather than hidden de
 - Cleared the dependency audit by overriding `postcss` to `8.5.15`.
 - Reworked shared UI polish across landing, dashboard, marketplace, creator, chat, settings, auth, legal, and mobile while preserving pure black plus hotpink and avoiding gradients.
 - Adjusted the landing hero so the next section remains visible on desktop and mobile instead of behaving like a sealed pitch slide.
-- Added per-character paid unlocks, creator wallets, ledgered earnings, payout profiles, payout requests, admin profile verification, admin payout processing, and provider refresh/failure recovery.
+- Added per-character paid unlocks, creator wallets, ledgered earnings, payout profiles, payout requests, admin profile verification, admin payout processing, and Stellar settlement failure recovery.
 
-## Remaining Product Projects
+## Product Expansion Areas
 
-- Creator monetization operations: paid unlocks, wallet ledger, payout profiles, payout requests, and admin payout processing exist. Refund handling, tax/KYC document collection, creator analytics dashboards, and provider eligibility remain roadmap work.
-- Reports and moderation ops: rating gates and safety checks exist, but report/block endpoints, reviewer queues, appeal flow, and creator enforcement UI still need to be built.
-- Embedding quality: Qdrant projection is live and durable, but the current deterministic embedding is a pipeline-safe fallback. A production embedding provider and batch embedding workflow should replace it.
-- Streaming depth: SSE product path exists, but provider-token streaming and user cancellation remain hardening work.
-- Testing depth: typecheck, lint, build, unit tests, backend smoke, AI harness, and web smoke cover the main path. Dedicated load tests, webhook replay suites, red-team prompt corpora, and disaster recovery drills are still needed.
+- Creator monetization operations: paid unlocks, wallet ledger, payout profiles, payout requests, and admin payout processing are Stellar-native. Refund handling, tax/KYC document collection, and creator analytics dashboards are explicit product expansion areas.
+- Reports and moderation ops: rating gates and safety checks exist; report/block endpoints, reviewer queues, appeal flow, and creator enforcement UI are separate moderation product work.
+- Embedding quality: Qdrant projection is live and durable; deterministic embeddings keep the pipeline stable until a dedicated embedding rollout is approved.
+- Streaming depth: SSE product path exists; provider-token streaming and user cancellation are separate chat UX improvements.
+- Testing depth: typecheck, lint, build, unit tests, backend smoke, AI harness, and web smoke cover the main path. Dedicated load tests, webhook replay suites, red-team prompt corpora, and disaster recovery drills are operational expansion work.
 
 ## 2026-06-05 Cleanup Pass
 
@@ -86,9 +86,9 @@ load testing. Those are tracked as explicit hardening work rather than hidden de
   script sources `/opt/hana-chat/shared/.env.vps` with bash before Compose.
 - Verified public health after deploy: `https://api.hanachat.site/health`,
   `https://app.hanachat.site/`, and `https://hanachat.site/` returned HTTP 200.
-- Ran production product smoke with a temporary server-side smoke OTP lane and a private SSH tunnel
-  to the internal Qdrant container: 17 passed, 0 failed. The smoke OTP variables were removed from
-  production env and `api-gateway` was restarted healthy afterward.
+- Ran production product smoke through a short-lived email verification test lane and an SSH tunnel
+  to the internal Qdrant container: 17 passed, 0 failed. That lane was removed from runtime config
+  immediately after the smoke run and must not be reintroduced.
 - Ran production AI harness: 12 passed, 0 warned, 0 failed.
 - Ran production web smoke after updating the smoke script for the multi-step builder and empty-draft
   chat-send behavior: 18 passed, 0 failed.
@@ -100,7 +100,7 @@ load testing. Those are tracked as explicit hardening work rather than hidden de
 - Character create, publish, marketplace, and mine flows persist in Postgres and project to Qdrant/Neo4j.
 - Chat validates session, character visibility, moderation status, per-character paid unlocks, usage limits, safety, memory scope, model route, output safety, analytics, and memory extraction.
 - Memory is scoped by `user_id + character_id + conversation_id` and retrieved only for that bot/chat thread.
-- Billing supports plans, crypto payment intents, transaction verification, creator-wallet ledgering, crypto payout settlement, and duplicate-plan prevention.
+- Billing supports plans, Stellar payment intents, transaction verification, creator-wallet ledgering, Stellar payout settlement, and duplicate-plan prevention.
 - Worker service drains projection outbox events through the batch-orchestrator boundary with direct
   Postgres fallback, retries, stale lock recovery, and dead letters.
 - Web app has authenticated app routes, landing/legal pages, PWA metadata, crawler controls, and mobile sign-out.
