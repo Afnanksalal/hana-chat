@@ -10,7 +10,7 @@ through the worker boundary for long-term analytics.
 
 - **Analytics:** users, conversations, message volume, revenue, model latency, memory depth,
   marketplace momentum, outbox health, and bounded-context pressure.
-- **Payout ops:** creator payout profile review, payout processing, provider refresh, and top
+- **Payout ops:** creator payout profile review, payout processing, Stellar settlement recovery, and top
   creator balances.
 - **Safety:** guardrail decisions, categories, recent blocked or transformed events, and audit
   trail rows.
@@ -26,7 +26,7 @@ All API calls are guarded by `identity.user_roles.role = 'admin'` through `requi
 - Returns real aggregates from Postgres: users, sessions, messages, model calls, safety decisions,
   memories, marketplace engagement, billing, webhooks, outbox rows, service-boundary pressure, and
   audit events.
-- Does not expose secrets, raw prompts, model payloads, raw identity values, or provider credentials.
+- Does not expose secrets, raw prompts, model payloads, raw identity values, or settlement credentials.
 
 ## Telemetry Flow
 

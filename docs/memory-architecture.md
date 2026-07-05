@@ -178,8 +178,11 @@ same assistant content as another token stream.
 - No cross-conversation memory bleed.
 - No safety memories are mixed into roleplay context.
 
-## Hardening Backlog
+## Optional Product Extensions
 
-- Optional LLM-assisted batch consolidation for long-running rooms after deterministic extraction.
-- User-visible memory import/copy between rooms, if product decides to support it.
-- User-visible export/delete controls by character and thread.
+- LLM-assisted batch consolidation can be added for very long-running rooms after deterministic
+  extraction remains stable under production traffic.
+- User-visible memory import/copy between rooms can be added if product decides to support explicit
+  cross-room transfer.
+- User-visible export/delete controls by character and thread can extend the current vault and legal
+  data controls without changing the scoped memory contract.

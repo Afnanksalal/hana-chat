@@ -47,7 +47,8 @@ export default function CommunityPage() {
           title: "Reporting",
           body: (
             <p>
-              Users should be able to report characters, messages, and profiles from inside the app.
+              Report characters, messages, profiles, impersonation, stolen media, or underage
+              concerns through <a href="mailto:support@hanachat.site">support@hanachat.site</a>.
               Reports may lead to review, limits, removal, or account action.
             </p>
           ),

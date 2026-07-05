@@ -1379,7 +1379,7 @@ export default function CreatePage() {
                 <small id="paid-price-help">
                   {monetizationAvailable
                     ? "Set a paid unlock price when monetization is enabled."
-                    : "Paid access is coming soon while payment gateway support is finalized."}
+                    : "Paid access is gated until Stellar monetization is enabled."}
                 </small>
                 {fieldErrors.priceDollars ? (
                   <p className="field-error" id="paid-price-error" role="alert">
@@ -1421,7 +1421,7 @@ export default function CreatePage() {
                   <strong>
                     {monetizationAvailable ? "Enable paid access" : "Paid access coming soon"}
                   </strong>
-                  <small>Billing stays disabled server-side for now.</small>
+                  <small>Stellar checkout stays disabled server-side for now.</small>
                 </span>
               </label>
             </div>

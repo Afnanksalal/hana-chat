@@ -289,15 +289,14 @@ FOREACH (_ IN CASE WHEN $conversationId IS NULL THEN [] ELSE [1] END |
     }
 
     const snapshotKind = parseSnapshotKind(payloadOptionalString(payload, "snapshotKind"));
-    const mintNft = Boolean((payload as Record<string, unknown>)?.["mintNft"]);
 
     if (snapshotKind === "user_export") {
-      await this.recordUserExportSnapshot(payloadString(payload, "userId"), mintNft);
+      await this.recordUserExportSnapshot(payloadString(payload, "userId"));
       return;
     }
 
     if (snapshotKind === "creator_soul_pack") {
-      await this.recordCreatorSoulPackSnapshot(payloadString(payload, "characterId"), mintNft);
+      await this.recordCreatorSoulPackSnapshot(payloadString(payload, "characterId"));
       return;
     }
 
@@ -349,14 +348,10 @@ FOREACH (_ IN CASE WHEN $conversationId IS NULL THEN [] ELSE [1] END |
       facts: snapshotFacts,
     } as const;
 
-    await this.persistDecentralizedSnapshot(
-      snapshotInput,
-      `memory.snapshot:${conversationId}`,
-      mintNft,
-    );
+    await this.persistDecentralizedSnapshot(snapshotInput, `memory.snapshot:${conversationId}`);
   }
 
-  private async recordUserExportSnapshot(userId: string, mintNft: boolean): Promise<void> {
+  private async recordUserExportSnapshot(userId: string): Promise<void> {
     const facts = await this.db
       .selectFrom("memory.facts")
       .select([
@@ -396,14 +391,10 @@ FOREACH (_ IN CASE WHEN $conversationId IS NULL THEN [] ELSE [1] END |
         })),
       },
       `memory.export:${userId}`,
-      mintNft,
     );
   }
 
-  private async recordCreatorSoulPackSnapshot(
-    characterId: string,
-    mintNft: boolean,
-  ): Promise<void> {
+  private async recordCreatorSoulPackSnapshot(characterId: string): Promise<void> {
     const character = await this.db
       .selectFrom("creator.characters as characters")
       .innerJoin(
@@ -486,22 +477,15 @@ FOREACH (_ IN CASE WHEN $conversationId IS NULL THEN [] ELSE [1] END |
         ],
       },
       `creator.soul_pack:${character.id}`,
-      mintNft,
     );
   }
 
   private async persistDecentralizedSnapshot(
     snapshotInput: StellarMemorySnapshotManifestInput,
     idempotencyPrefix: string,
-    mintNft: boolean,
   ): Promise<void> {
     const commitment = buildMemorySnapshotCommitment(snapshotInput);
-    let failureReason: string | null = null;
-
-    if (mintNft && this.config.STELLAR_NFT_ENABLED) {
-      failureReason =
-        "Stellar NFT minting requires generated Soroban contract bindings; no placeholder mint was recorded";
-    }
+    const failureReason: string | null = null;
 
     const now = new Date();
 
@@ -518,7 +502,7 @@ FOREACH (_ IN CASE WHEN $conversationId IS NULL THEN [] ELSE [1] END |
         manifest_hash: commitment.manifestHash,
         encryption_mode: "manifest_hash_only",
         encryption_key_ref: "stellar-manifest-only",
-        status: failureReason ? "failed" : "pending_upload",
+        status: "pending_upload",
         source_memory_ids: commitment.sourceMemoryIds,
         manifest_json: commitment.manifest,
         idempotency_key: `${idempotencyPrefix}:${commitment.manifestHash}`,
@@ -528,7 +512,7 @@ FOREACH (_ IN CASE WHEN $conversationId IS NULL THEN [] ELSE [1] END |
       })
       .onConflict((oc) =>
         oc.column("idempotency_key").doUpdateSet({
-          status: failureReason ? "failed" : "pending_upload",
+          status: "pending_upload",
           root_hash: commitment.rootHash,
           tx_hash: null,
           encryption_mode: "manifest_hash_only",

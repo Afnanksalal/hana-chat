@@ -4,10 +4,10 @@ Hana monetization is Stellar-native. `MONETIZATION_ENABLED=true` opens the paid 
 production monetization requires `STELLAR_ENABLED=true`, `STELLAR_PAYMENTS_ENABLED=true`, and a
 configured `STELLAR_TREASURY_ADDRESS`.
 
-## Provider Model
+## Stellar Settlement Model
 
-- Paid plans and paid character unlocks create `billing.crypto_payments` intents with provider
-  `stellar`.
+- Paid plans and paid character unlocks create `billing.crypto_payments` intents on the `stellar`
+  settlement lane.
 - The browser guides the user to send XLM or the configured Stellar asset to Hana's treasury address.
 - The API verifies the submitted Stellar transaction hash before activating access.
 - Creator payout destinations are Stellar addresses stored in `billing.crypto_payout_accounts`.

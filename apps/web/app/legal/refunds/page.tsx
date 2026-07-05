@@ -16,7 +16,7 @@ export default function RefundPolicyPage() {
             <p>
               Hana Chat may offer subscriptions, paid character access, message limits, memory
               upgrades, and mature spaces. Prices, plan benefits, billing interval, currency, taxes,
-              and payment provider details are shown before checkout.
+              and Stellar checkout details are shown before checkout.
             </p>
           ),
         },
@@ -60,8 +60,8 @@ export default function RefundPolicyPage() {
               Send refund requests to{" "}
               <a href="mailto:support@hanachat.site">support@hanachat.site</a> with your account
               email address, order ID, payment ID, date, amount, and reason. Approved refunds are
-              returned to the original payment method when supported by the payment provider.
-              Provider and bank processing times can vary after Hana approves the request.
+              returned through the original settlement route when the wallet, platform, or payment
+              rail supports it. Processing times can vary after Hana approves the request.
             </p>
           ),
         },

@@ -46,9 +46,9 @@ export default function SafetyPage() {
           title: "Controls",
           body: (
             <p>
-              The app should provide clear ways to leave a chat, delete memories, report content,
-              manage subscriptions, and turn mature spaces off. Safety controls should remain
-              understandable from the user interface instead of relying on hidden policy language.
+              The app provides clear ways to leave a chat, manage memories, manage subscriptions,
+              and turn mature spaces off. Content reports and urgent safety issues can be sent to{" "}
+              <a href="mailto:support@hanachat.site">support@hanachat.site</a>.
             </p>
           ),
         },

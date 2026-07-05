@@ -2,7 +2,7 @@
 
 Hana uses Stellar as the only blockchain payment and memory-proof lane. The live source of truth
 remains Postgres, Qdrant, Neo4j, and ClickHouse; Stellar records are settlement and provenance
-proofs around that private product state.
+proofs around product state.
 
 ## Release Position
 
@@ -12,8 +12,8 @@ proofs around that private product state.
 - Creator payout profiles store Stellar addresses and admin payout settlement requires a verified
   Stellar transaction hash.
 - Memory snapshots create deterministic encrypted manifest commitments in `memory.decentralized_snapshots`.
-- Automatic NFT minting fails closed until generated Soroban contract bindings are added. The system
-  must not record placeholder transaction hashes or fake token state.
+- Automatic NFT minting is disabled in this build until a real Soroban client is wired. The system
+  must not record synthetic transaction hashes or token state.
 
 ## Runtime Boundaries
 
@@ -56,6 +56,10 @@ STELLAR_STORAGE_SNAPSHOT_MIN_IMPORTANCE=0.65
 
 Production monetization requires `MONETIZATION_ENABLED=true`, `STELLAR_ENABLED=true`,
 `STELLAR_PAYMENTS_ENABLED=true`, and a funded `STELLAR_TREASURY_ADDRESS`.
+
+`STELLAR_NFT_ENABLED` must remain `false` until the release includes a real Soroban mint client and
+signing-key integration. Config validation rejects `STELLAR_NFT_ENABLED=true` so operators cannot
+enable a partially wired NFT path.
 
 ## Security Rules
 

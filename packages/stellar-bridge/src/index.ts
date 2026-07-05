@@ -86,38 +86,6 @@ export interface StellarTransferVerification {
 }
 
 // ---------------------------------------------------------------------------
-// NFT / Soroban types
-// ---------------------------------------------------------------------------
-
-export interface StellarNftMintInput {
-  /** Soroban contract address for the Hana memory NFT collection */
-  contractId: string;
-  /** Stellar address of the owner */
-  ownerAddress: string;
-  /** Off-chain manifest root hash stored as the token URI */
-  manifestRootHash: string;
-  snapshotKind: StellarSnapshotKind;
-  network: string;
-  /** Server keypair for signing the Soroban transaction */
-  serverKeypair: StellarSignerKeypair;
-  horizonUrl: string;
-  rpcUrl: string;
-}
-
-export interface StellarSignerKeypair {
-  publicKey(): string;
-}
-
-export interface StellarNftMintResult {
-  txHash: string;
-  tokenId: string;
-  contractId: string;
-  ownerAddress: string;
-  manifestRootHash: string;
-  mintedAt: string;
-}
-
-// ---------------------------------------------------------------------------
 // Manifest commitment (pure, no network I/O)
 // ---------------------------------------------------------------------------
 
@@ -295,7 +263,7 @@ export async function verifyStellarPayment(input: {
 }
 
 // ---------------------------------------------------------------------------
-// NFT token IDs are deterministic so a real Soroban mint can be retried safely.
+// NFT token IDs are deterministic so future Soroban minting can be retried safely.
 // ---------------------------------------------------------------------------
 
 export function deriveMemoryNftTokenId(input: {
@@ -303,30 +271,6 @@ export function deriveMemoryNftTokenId(input: {
   manifestRootHash: string;
 }): string {
   return `hana-nft:${input.snapshotKind}:${sha256Hex(input.manifestRootHash).slice(0, 16)}`;
-}
-
-export function mintMemoryNft(input: StellarNftMintInput): Promise<StellarNftMintResult> {
-  try {
-    const tokenId = deriveMemoryNftTokenId(input);
-
-    if (!input.contractId.trim()) {
-      throw new Error("Stellar NFT contract id is required");
-    }
-
-    normalizeStellarAddress(input.ownerAddress, "NFT owner");
-
-    if (!input.serverKeypair.publicKey()) {
-      throw new Error("Stellar NFT signer keypair is required");
-    }
-
-    return Promise.reject(
-      new Error(
-        `Stellar NFT minting for token ${tokenId} requires generated Soroban contract bindings; no placeholder mint was recorded`,
-      ),
-    );
-  } catch (error) {
-    return Promise.reject(error instanceof Error ? error : new Error(String(error)));
-  }
 }
 
 // ---------------------------------------------------------------------------

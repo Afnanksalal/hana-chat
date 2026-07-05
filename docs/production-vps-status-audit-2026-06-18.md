@@ -265,18 +265,15 @@ Current:
 
 - `MONETIZATION_ENABLED=false`
 - Public paid plans and creator monetization should stay "coming soon."
-- Legacy payment env values are present even though monetization is disabled.
-- Chain strategy document exists, but no runtime integration exists yet.
+- Stellar is the only settlement lane. Runtime env must not carry removed provider keys.
+- Runtime checkout and payout activation require `STELLAR_ENABLED=true`, `STELLAR_PAYMENTS_ENABLED=true`,
+  and a funded `STELLAR_TREASURY_ADDRESS`.
 
-Pending:
+Operator checks:
 
-- Decide final provider path:
-  - Stellar settlement,
-  - adult-friendly card processor,
-  - or both.
-- Remove or rotate legacy payment credentials if they are no longer intended.
-- Update CSP/permissions once the target payment provider is finalized.
-- Add crypto payment schemas/contracts only after the provider decision.
+- Keep monetization disabled until the treasury address and settlement runbook are configured.
+- Verify no removed payment credentials are present before each production deploy.
+- Update CSP/permissions only for the active Stellar wallet handoff surface.
 
 ## Memory and Chat Status
 
@@ -309,7 +306,8 @@ High priority:
 Medium priority:
 
 - Active sessions count is high for an early production environment.
-- Legacy payment credentials are present while monetization is disabled.
+- Removed-provider payment credentials were present during the June audit and were later removed from
+  the active VPS env during the Stellar cutover.
 - DMARC is still in monitor mode (`p=none`).
 - No production email smoke test exists for a real SMTP path.
 - No automated disk/cache cleanup policy is documented or scheduled.
