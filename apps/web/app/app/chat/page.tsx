@@ -74,11 +74,13 @@ interface SettingsResponse {
   adultModeEnabled: boolean;
 }
 
+type GroupResponseMode = "mentions" | "mentions_and_handoffs";
+
 interface ConversationSummary {
   id: string;
   type?: "direct" | "group";
   title?: string;
-  responseMode?: "mentions";
+  responseMode?: GroupResponseMode;
   characterId: string;
   updatedAt: string;
   character: CharacterSummary;
@@ -155,8 +157,14 @@ interface ChatResponse {
     speaker?: ConversationMember | null;
   }>;
   group?: {
-    responseMode: "mentions";
+    responseMode: GroupResponseMode;
     mentioned: Array<{ characterId: string; mentionSlug: string; name: string }>;
+    handoffs?: Array<{
+      fromCharacterId: string;
+      toCharacterId: string;
+      mentionSlug: string;
+      triggerMessageId: string;
+    }>;
   } | null;
   usage?: {
     used: number;

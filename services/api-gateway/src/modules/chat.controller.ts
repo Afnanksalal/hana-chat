@@ -34,7 +34,15 @@ import {
   projectMemoryDelete,
   projectMemoryUpsert,
 } from "./memory-projection";
-import { resolveMentionedMembers, uniqueMentionSlug } from "./group-chat";
+import {
+  GROUP_CHAT_MAX_BOT_HANDOFF_DEPTH,
+  GROUP_CHAT_MAX_BOT_HANDOFFS_PER_TURN,
+  groupResponseModeAllowsBotHandoffs,
+  isGroupResponseMode,
+  resolveMentionedMembers,
+  uniqueMentionSlug,
+  type GroupResponseMode,
+} from "./group-chat";
 import { hasPaidCharacterAccess, paidCharacterTrialStatus } from "./monetization.controller";
 import { enqueueOutboxEvent, eventKey, projectionIdempotencyKey } from "./outbox";
 import { auditEvent, requireSession } from "./session";
@@ -156,7 +164,25 @@ interface ActiveConversationContext {
   character_id: string;
   conversation_type: "direct" | "group";
   title: string;
-  response_mode: "mentions";
+  response_mode: GroupResponseMode;
+}
+
+type GroupTurnSource = "user_mention" | "bot_handoff";
+
+interface GroupResponseTarget {
+  member: ConversationMember;
+  source: GroupTurnSource;
+  handoffDepth: number;
+  triggeredBy: ConversationMember | null;
+  triggerMessageId: string | null;
+  triggerText: string | null;
+}
+
+interface GroupHandoffRecord {
+  fromCharacterId: string;
+  toCharacterId: string;
+  mentionSlug: string;
+  triggerMessageId: string;
 }
 
 interface UserEntitlements {
@@ -528,7 +554,7 @@ export class ChatController {
           character_id: primaryCharacter.id,
           conversation_type: "group",
           title,
-          response_mode: "mentions",
+          response_mode: "mentions_and_handoffs",
           status: "active",
         })
         .returning(["id", "created_at", "updated_at"])
@@ -584,7 +610,7 @@ export class ChatController {
         id: conversation.id,
         type: "group",
         title,
-        responseMode: "mentions",
+        responseMode: "mentions_and_handoffs",
         characterId: primaryCharacter.id,
         createdAt: conversation.created_at.toISOString(),
         updatedAt: conversation.updated_at.toISOString(),
@@ -1014,25 +1040,35 @@ export class ChatController {
     let conversationId = input.conversationId;
     let createdConversation = false;
     const isGroupConversation = conversationContext?.conversation_type === "group";
+    const groupResponseMode = isGroupConversation ? conversationContext.response_mode : "mentions";
     const mentionedMembers = isGroupConversation
       ? resolveMentionedMembers(input.content, groupMembers)
       : [];
     const responseCharacters = isGroupConversation
       ? await loadChatCharacters(
           this.db,
-          mentionedMembers.map((member) => member.characterId),
+          groupMembers.map((member) => member.characterId),
         )
       : [character];
     const responseCharacterById = new Map(
       responseCharacters.map((responseCharacter) => [responseCharacter.id, responseCharacter]),
     );
-    const orderedResponseCharacters = isGroupConversation
-      ? mentionedMembers
-          .map((member) => responseCharacterById.get(member.characterId))
-          .filter((responseCharacter): responseCharacter is ChatCharacterRow =>
-            Boolean(responseCharacter),
-          )
-      : responseCharacters;
+    const groupResponseQueue: GroupResponseTarget[] = isGroupConversation
+      ? mentionedMembers.map((member) => ({
+          member,
+          source: "user_mention",
+          handoffDepth: 0,
+          triggeredBy: null,
+          triggerMessageId: null,
+          triggerText: input.content,
+        }))
+      : [];
+    const queuedGroupCharacterIds = new Set(
+      groupResponseQueue.map((target) => target.member.characterId),
+    );
+    const answeredGroupCharacterIds = new Set<string>();
+    const groupHandoffs: GroupHandoffRecord[] = [];
+    let botHandoffCount = 0;
 
     if (!conversationId) {
       conversationId = (
@@ -1101,16 +1137,6 @@ export class ChatController {
       await incrementMarketplaceStats(this.db, character.id, "chat_start", session.userId);
     }
 
-    if (isGroupConversation) {
-      await Promise.all(
-        orderedResponseCharacters.map((responseCharacter) =>
-          incrementMarketplaceStats(this.db, responseCharacter.id, "message", session.userId),
-        ),
-      );
-    } else {
-      await incrementMarketplaceStats(this.db, character.id, "message", session.userId);
-    }
-
     await persistSafetyDecision(this.db, {
       userId: session.userId,
       conversationId,
@@ -1130,10 +1156,38 @@ export class ChatController {
     let firstUpdatedEvolution: Awaited<ReturnType<typeof upsertConversationEvolution>> | null =
       null;
 
-    for (const responseCharacter of orderedResponseCharacters) {
-      const speaker = isGroupConversation
-        ? (groupMembers.find((member) => member.characterId === responseCharacter.id) ?? null)
-        : null;
+    const directResponseCharacters = isGroupConversation ? [] : [character];
+
+    for (
+      let responseIndex = 0;
+      responseIndex <
+      (isGroupConversation ? groupResponseQueue.length : directResponseCharacters.length);
+      responseIndex += 1
+    ) {
+      const groupTarget = isGroupConversation ? groupResponseQueue[responseIndex] : null;
+      const responseCharacter = isGroupConversation
+        ? groupTarget
+          ? responseCharacterById.get(groupTarget.member.characterId)
+          : null
+        : directResponseCharacters[responseIndex];
+
+      if (!responseCharacter) {
+        continue;
+      }
+
+      const speaker = groupTarget?.member ?? null;
+      const memoryQuery = groupTarget?.triggerText
+        ? [input.content, `${groupTarget.triggeredBy?.name ?? "Room"}: ${groupTarget.triggerText}`]
+            .filter(Boolean)
+            .join("\n")
+        : input.content;
+
+      if (isGroupConversation) {
+        answeredGroupCharacterIds.add(responseCharacter.id);
+      }
+
+      await incrementMarketplaceStats(this.db, responseCharacter.id, "message", session.userId);
+
       const promptMemoryResult = settings?.memory_enabled
         ? await retrievePromptMemories({
             db: this.db,
@@ -1141,7 +1195,7 @@ export class ChatController {
             userId: session.userId,
             characterId: responseCharacter.id,
             conversationId,
-            query: input.content,
+            query: memoryQuery,
             limit: 8,
           })
         : { memories: [], graphContextPrompt: null };
@@ -1197,6 +1251,14 @@ export class ChatController {
               members: groupMembers,
               activeSpeaker: speaker,
               mentionedMembers,
+              responseMode: groupResponseMode,
+              handoff:
+                groupTarget?.source === "bot_handoff" && groupTarget.triggeredBy
+                  ? {
+                      from: groupTarget.triggeredBy,
+                      triggerText: groupTarget.triggerText ?? "",
+                    }
+                  : null,
             })
           : null,
         recentMessages: promptMessages.map((message) => ({
@@ -1245,6 +1307,24 @@ export class ChatController {
         });
       }
 
+      const remainingBotHandoffSlots = GROUP_CHAT_MAX_BOT_HANDOFFS_PER_TURN - botHandoffCount;
+      const routedHandoffMembers =
+        isGroupConversation &&
+        groupTarget &&
+        speaker &&
+        outputSafety.action === "allow" &&
+        groupResponseModeAllowsBotHandoffs(groupResponseMode) &&
+        groupTarget.handoffDepth < GROUP_CHAT_MAX_BOT_HANDOFF_DEPTH &&
+        remainingBotHandoffSlots > 0
+          ? resolveMentionedMembers(modelResult.content, groupMembers, {
+              excludeCharacterIds: new Set([
+                ...answeredGroupCharacterIds,
+                ...queuedGroupCharacterIds,
+              ]),
+              limit: remainingBotHandoffSlots,
+            })
+          : [];
+
       const assistantMessage = await this.db
         .insertInto("chat.messages")
         .values({
@@ -1266,6 +1346,13 @@ export class ChatController {
                   groupTurn: true,
                   speakerMentionSlug: speaker?.mentionSlug ?? null,
                   mentionedCharacterIds: mentionedMembers.map((member) => member.characterId),
+                  turnSource: groupTarget?.source ?? "user_mention",
+                  handoffDepth: groupTarget?.handoffDepth ?? 0,
+                  handoffFromCharacterId: groupTarget?.triggeredBy?.characterId ?? null,
+                  handoffTriggerMessageId: groupTarget?.triggerMessageId ?? null,
+                  routedHandoffCharacterIds: routedHandoffMembers.map(
+                    (member) => member.characterId,
+                  ),
                 }
               : {}),
           },
@@ -1279,6 +1366,40 @@ export class ChatController {
         messageId: assistantMessage.id,
         decision: outputSafety,
       });
+
+      if (isGroupConversation && groupTarget && speaker && routedHandoffMembers.length > 0) {
+        for (const handoffMember of routedHandoffMembers) {
+          queuedGroupCharacterIds.add(handoffMember.characterId);
+          botHandoffCount += 1;
+          groupResponseQueue.push({
+            member: handoffMember,
+            source: "bot_handoff",
+            handoffDepth: groupTarget.handoffDepth + 1,
+            triggeredBy: speaker,
+            triggerMessageId: assistantMessage.id,
+            triggerText: modelResult.content,
+          });
+          groupHandoffs.push({
+            fromCharacterId: responseCharacter.id,
+            toCharacterId: handoffMember.characterId,
+            mentionSlug: handoffMember.mentionSlug,
+            triggerMessageId: assistantMessage.id,
+          });
+
+          if (settings?.memory_enabled) {
+            await maybeStoreGroupHandoffMemories({
+              db: this.db,
+              config: this.config,
+              userId: session.userId,
+              conversationId,
+              sourceMessageIds: [userMessage.id, assistantMessage.id],
+              from: speaker,
+              to: handoffMember,
+              triggerText: modelResult.content,
+            });
+          }
+        }
+      }
 
       const modelCall = await this.db
         .insertInto("analytics.model_calls")
@@ -1378,12 +1499,13 @@ export class ChatController {
       assistantMessages,
       group: isGroupConversation
         ? {
-            responseMode: "mentions",
+            responseMode: groupResponseMode,
             mentioned: mentionedMembers.map((member) => ({
               characterId: member.characterId,
               mentionSlug: member.mentionSlug,
               name: member.name,
             })),
+            handoffs: groupHandoffs,
           }
         : null,
       modelRoute: this.config.NODE_ENV === "production" ? undefined : lastRoute,
@@ -1709,22 +1831,42 @@ function groupConversationTitleFromNames(names: string[]): string {
   return names.length > 3 ? `${visible} +${names.length - 3}` : visible || "Group chat";
 }
 
+function normalizeGroupResponseMode(value: string | undefined): GroupResponseMode {
+  return value && isGroupResponseMode(value) ? value : "mentions";
+}
+
 function formatGroupPromptContext(input: {
   members: ConversationMember[];
   activeSpeaker: ConversationMember | null;
   mentionedMembers: ConversationMember[];
+  responseMode: GroupResponseMode;
+  handoff: {
+    from: ConversationMember;
+    triggerText: string;
+  } | null;
 }): string {
   const active = input.activeSpeaker;
+  const handoffLines = input.handoff
+    ? [
+        `You were invited by ${input.handoff.from.name} (@${input.handoff.from.mentionSlug}) in the previous bot turn.`,
+        `Invitation context: ${clipText(input.handoff.triggerText, 420)}`,
+        "Respond as yourself to that invitation, then stop. Do not answer for the bot that invited you.",
+      ]
+    : [];
 
   return [
     "Group chat routing:",
-    "This is a shared room with multiple AI characters. The user controls the room and bots speak only when mentioned.",
+    "This is a shared room with multiple AI characters. A room turn starts from explicit @mentions.",
     active
       ? `You are replying as ${active.name} (@${active.mentionSlug}).`
       : "You are the active mentioned character.",
     "Do not write dialogue, actions, thoughts, or decisions for the user or for other bots.",
     "Do not prefix your reply with your name or handle; the app labels the speaker.",
+    input.responseMode === "mentions_and_handoffs"
+      ? "You may @mention one other active bot only when naturally inviting that bot to answer next. Do not use @mentions as decoration."
+      : "Do not @mention other bots to continue the round.",
     "If another bot was also mentioned, respond only with your own turn and leave room for the next bot.",
+    ...handoffLines,
     `Mentioned this turn: ${
       input.mentionedMembers.length
         ? input.mentionedMembers.map((member) => `@${member.mentionSlug}`).join(", ")
@@ -1874,6 +2016,12 @@ async function resolveDuplicateTurn(input: {
     (await loadConversationMembers(input.db, [userMessage.conversation_id])).get(
       userMessage.conversation_id,
     ) ?? [];
+  const conversation = await input.db
+    .selectFrom("chat.conversations")
+    .select(["response_mode"])
+    .where("id", "=", userMessage.conversation_id)
+    .executeTakeFirst();
+  const responseMode = normalizeGroupResponseMode(conversation?.response_mode);
   const replayedAssistantMessages = assistantMessages.map((message) => ({
     id: message.id,
     role: "assistant" as const,
@@ -1890,7 +2038,7 @@ async function resolveDuplicateTurn(input: {
     userMessageId: userMessage.id,
     assistantMessage: firstAssistantMessage,
     assistantMessages: replayedAssistantMessages,
-    group: members.length > 1 ? { responseMode: "mentions", mentioned: [] } : null,
+    group: members.length > 1 ? { responseMode, mentioned: [], handoffs: [] } : null,
     modelRoute: null,
     safety: null,
     outputSafety: null,
@@ -2826,7 +2974,7 @@ function buildModelMessages(input: {
         "- Relationship continuity must be evidence-based and gradual. Do not jump from enemies, strangers, or tense distrust into girlfriend/boyfriend/lover behavior after a few kind turns unless the user and character have explicitly established that bond.",
         "- Treat care, apologies, protection, and vulnerability as relationship signals that soften or complicate the current state; they do not erase prior conflict by themselves.",
         "- Never control the user's body, choices, consent, or inner thoughts. Invite the user to respond instead.",
-        "- In group chats, answer only as the active mentioned character. Do not produce turns for other bots, simulate the user, or continue a round after your own reply.",
+        "- In group chats, answer only as the active speaker. You may @mention another bot only as an invitation for that bot to answer next; never produce that bot's reply, simulate the user, or continue the round after your own message.",
         "- Character rating, tags, description, persona, and creator notes are strong style signals. Follow them for tone, heat level, archetype, vocabulary, and boundaries unless they conflict with the rules above.",
         "- Emojis are allowed only when they fit the character and scene; keep them sparse and intentional.",
       ].join("\n"),
@@ -3200,6 +3348,129 @@ function stableTextHash(value: string): number {
   }
 
   return hash >>> 0;
+}
+
+async function maybeStoreGroupHandoffMemories(input: {
+  db: ReturnType<typeof createDatabase>;
+  config: ReturnType<typeof loadConfig>;
+  userId: string;
+  conversationId: string;
+  sourceMessageIds: string[];
+  from: ConversationMember;
+  to: ConversationMember;
+  triggerText: string;
+}): Promise<void> {
+  const trigger = clipText(input.triggerText.replace(/\s+/g, " ").trim(), 240);
+  const entries = [
+    {
+      characterId: input.from.characterId,
+      text: `Relationship event: ${input.from.name} (@${input.from.mentionSlug}) invited ${input.to.name} (@${input.to.mentionSlug}) to answer in this room. Context: "${trigger}"`,
+    },
+    {
+      characterId: input.to.characterId,
+      text: `Relationship event: ${input.from.name} (@${input.from.mentionSlug}) asked ${input.to.name} (@${input.to.mentionSlug}) to answer in this room. Context: "${trigger}"`,
+    },
+  ];
+
+  for (const entry of entries) {
+    await upsertGroupHandoffMemory({
+      ...input,
+      characterId: entry.characterId,
+      text: entry.text,
+    });
+  }
+}
+
+async function upsertGroupHandoffMemory(input: {
+  db: ReturnType<typeof createDatabase>;
+  config: ReturnType<typeof loadConfig>;
+  userId: string;
+  characterId: string;
+  conversationId: string;
+  sourceMessageIds: string[];
+  text: string;
+}): Promise<void> {
+  const salience = await scoreMemorySalienceWithBoundary(input.config, {
+    explicitMemorySignal: 0.35,
+    emotionalIntensity: 0.28,
+    recurrenceSignal: 0.28,
+    relationshipImpact: 0.82,
+    preferenceOrBoundarySignal: 0,
+    novelty: 0.62,
+  });
+  const importance = Math.max(0.58, salience.score);
+
+  if (salience.action === "skip" && importance < 0.82) {
+    return;
+  }
+
+  const kind = "relationship" as const;
+  const normalizedText = input.text.toLowerCase();
+  const existing = await input.db
+    .selectFrom("memory.facts")
+    .select(["id", "confidence", "importance", "emotional_weight", "source_message_ids"])
+    .where("user_id", "=", input.userId)
+    .where("character_id", "=", input.characterId)
+    .where("conversation_id", "=", input.conversationId)
+    .where("scope", "=", "conversation")
+    .where("kind", "=", kind)
+    .where("normalized_text", "=", normalizedText)
+    .where("is_active", "=", true)
+    .executeTakeFirst();
+
+  if (existing) {
+    const memory = await input.db
+      .updateTable("memory.facts")
+      .set({
+        confidence: Math.max(existing.confidence, 0.68, salience.score),
+        importance: Math.max(existing.importance, importance),
+        emotional_weight: Math.max(existing.emotional_weight, 0.42),
+        source_message_ids: uniqueStrings([
+          ...existing.source_message_ids,
+          ...input.sourceMessageIds,
+        ]),
+        updated_at: new Date(),
+      })
+      .where("id", "=", existing.id)
+      .returning(memoryProjectionColumns)
+      .executeTakeFirstOrThrow();
+
+    await projectMemoryUpsert({
+      db: input.db,
+      config: input.config,
+      memory,
+      actorUserId: input.userId,
+      action: "extract",
+    });
+    return;
+  }
+
+  const memory = await input.db
+    .insertInto("memory.facts")
+    .values({
+      user_id: input.userId,
+      character_id: input.characterId,
+      conversation_id: input.conversationId,
+      scope: "conversation",
+      kind,
+      text: input.text,
+      normalized_text: normalizedText,
+      confidence: Math.max(0.68, salience.score),
+      importance,
+      emotional_weight: 0.42,
+      source_message_ids: uniqueStrings(input.sourceMessageIds),
+      is_active: true,
+    })
+    .returning(memoryProjectionColumns)
+    .executeTakeFirstOrThrow();
+
+  await projectMemoryUpsert({
+    db: input.db,
+    config: input.config,
+    memory,
+    actorUserId: input.userId,
+    action: "extract",
+  });
 }
 
 async function maybeExtractTurnMemories(input: {

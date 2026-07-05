@@ -218,7 +218,7 @@ export interface ChatConversationsTable {
   character_id: string;
   conversation_type: DefaultColumn<"direct" | "group">;
   title: DefaultColumn<string>;
-  response_mode: DefaultColumn<"mentions">;
+  response_mode: DefaultColumn<"mentions" | "mentions_and_handoffs">;
   created_at: TimestampColumn;
   updated_at: TimestampColumn;
   status: DefaultColumn<"active" | "archived" | "deleted">;
