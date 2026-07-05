@@ -338,17 +338,22 @@ export async function verifyStellarPayout(input: {
   assetIssuer: string | null;
   minimumAmountDisplay: string;
 }): Promise<StellarTransferVerification> {
-  return verifyStellarPayment({
+  const verificationInput: Parameters<typeof verifyStellarPayment>[0] = {
     horizonUrl: input.horizonUrl,
     network: input.network,
     txHash: input.txHash,
     expectedTo: input.expectedTo,
     expectedFrom: input.expectedFrom,
-    expectedMemo: input.expectedMemo,
     assetCode: input.assetCode,
     assetIssuer: input.assetIssuer,
     minimumAmountDisplay: input.minimumAmountDisplay,
-  });
+  };
+
+  if (input.expectedMemo) {
+    verificationInput.expectedMemo = input.expectedMemo;
+  }
+
+  return verifyStellarPayment(verificationInput);
 }
 
 // ---------------------------------------------------------------------------
