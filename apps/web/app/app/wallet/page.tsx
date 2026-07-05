@@ -166,7 +166,7 @@ export default function CreatorWalletPage() {
     setStatus("Reading Stellar address...");
 
     try {
-      setWalletAddress(await readStellarAddressFromUser());
+      setWalletAddress(readStellarAddressFromUser());
       setStatus("");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Could not read wallet address.");
