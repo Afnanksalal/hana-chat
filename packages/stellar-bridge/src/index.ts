@@ -85,6 +85,70 @@ export interface StellarTransferVerification {
   network: string;
 }
 
+export interface HanaNftMetadataInput {
+  id: string;
+  title: string;
+  description: string;
+  imageUrl: string;
+  mediaSha256Hex: string;
+  creatorUserId: string;
+  characterId: string;
+  characterName: string;
+  network: "mainnet" | "testnet";
+  contractId: string;
+  tokenId: string;
+  royaltyBps: number;
+  createdAt?: string;
+  attributes?: Array<{ trait_type: string; value: string | number }>;
+}
+
+export interface HanaNftMetadata {
+  name: string;
+  description: string;
+  image: string;
+  external_url: string;
+  attributes: Array<{ trait_type: string; value: string | number }>;
+  properties: {
+    schema: "hana-nft-v1";
+    mediaSha256Hex: string;
+    creatorUserId: string;
+    characterId: string;
+    characterName: string;
+    network: "mainnet" | "testnet";
+    contractId: string;
+    tokenId: string;
+    royaltyBps: number;
+    createdAt: string;
+  };
+}
+
+export interface SorobanNftInvocationInput {
+  rpcUrl: string;
+  network: "mainnet" | "testnet";
+  contractId: string;
+  serverSecret: string;
+}
+
+export interface SorobanNftMintInput extends SorobanNftInvocationInput {
+  ownerAddress: string;
+  creatorAddress: string;
+  tokenId: string;
+  metadataUri: string;
+  royaltyBps: number;
+}
+
+export interface SorobanNftTransferInput extends SorobanNftInvocationInput {
+  tokenId: string;
+  fromAddress: string;
+  toAddress: string;
+  saleReference: string;
+}
+
+export interface SorobanNftInvocationResult {
+  txHash: string;
+  tokenId: string;
+}
+
 // ---------------------------------------------------------------------------
 // Manifest commitment (pure, no network I/O)
 // ---------------------------------------------------------------------------
@@ -227,7 +291,7 @@ export async function verifyStellarPayment(input: {
   // Load payment operations for this transaction
   const ops = await server.operations().forTransaction(txHash).call();
   const paymentOp = ops.records.find(
-    (op): op is Horizon.ServerApi.PaymentOperationRecord =>
+    (op: unknown): op is Horizon.ServerApi.PaymentOperationRecord =>
       isPaymentOperationRecord(op) &&
       op.to === expectedTo &&
       isMatchingAsset(op, input.assetCode, input.assetIssuer),
@@ -271,6 +335,80 @@ export function deriveMemoryNftTokenId(input: {
   manifestRootHash: string;
 }): string {
   return `hana-nft:${input.snapshotKind}:${sha256Hex(input.manifestRootHash).slice(0, 16)}`;
+}
+
+export function deriveCreatorArtNftTokenId(input: {
+  mediaSha256Hex: string;
+  characterId: string;
+  creatorUserId: string;
+}): string {
+  return `hana-art:${sha256Hex(
+    `${input.creatorUserId}:${input.characterId}:${input.mediaSha256Hex}`,
+  ).slice(0, 24)}`;
+}
+
+export function buildHanaNftMetadata(input: HanaNftMetadataInput): {
+  metadata: HanaNftMetadata;
+  metadataHash: string;
+} {
+  const metadata: HanaNftMetadata = {
+    name: input.title,
+    description: input.description,
+    image: input.imageUrl,
+    external_url: input.imageUrl,
+    attributes: [
+      { trait_type: "Character", value: input.characterName },
+      { trait_type: "Network", value: input.network },
+      { trait_type: "Royalty bps", value: input.royaltyBps },
+      ...(input.attributes ?? []),
+    ],
+    properties: {
+      schema: "hana-nft-v1",
+      mediaSha256Hex: input.mediaSha256Hex,
+      creatorUserId: input.creatorUserId,
+      characterId: input.characterId,
+      characterName: input.characterName,
+      network: input.network,
+      contractId: input.contractId,
+      tokenId: input.tokenId,
+      royaltyBps: input.royaltyBps,
+      createdAt: input.createdAt ?? new Date().toISOString(),
+    },
+  };
+
+  return {
+    metadata,
+    metadataHash: sha256Hex(stableStringify(metadata)),
+  };
+}
+
+export async function mintHanaNft(input: SorobanNftMintInput): Promise<SorobanNftInvocationResult> {
+  const client = await hanaNftClient(input);
+  const tx = await callContractMethod(client, "mint", {
+    owner: normalizeStellarAddress(input.ownerAddress, "ownerAddress"),
+    creator: normalizeStellarAddress(input.creatorAddress, "creatorAddress"),
+    token_id: input.tokenId,
+    uri: input.metadataUri,
+    royalty_bps: input.royaltyBps,
+  });
+  const sent = await signAndSend(tx);
+
+  return { txHash: sent.txHash, tokenId: input.tokenId };
+}
+
+export async function transferHanaNft(
+  input: SorobanNftTransferInput,
+): Promise<SorobanNftInvocationResult> {
+  const client = await hanaNftClient(input);
+  const tx = await callContractMethod(client, "marketplace_transfer", {
+    token_id: input.tokenId,
+    from: normalizeStellarAddress(input.fromAddress, "fromAddress"),
+    to: normalizeStellarAddress(input.toAddress, "toAddress"),
+    sale_ref: input.saleReference,
+  });
+  const sent = await signAndSend(tx);
+
+  return { txHash: sent.txHash, tokenId: input.tokenId };
 }
 
 // ---------------------------------------------------------------------------
@@ -343,6 +481,91 @@ function stableStringify(value: unknown): string {
       (key) => `${JSON.stringify(key)}:${stableStringify((value as Record<string, unknown>)[key])}`,
     )
     .join(",")}}`;
+}
+
+async function hanaNftClient(input: SorobanNftInvocationInput): Promise<Record<string, unknown>> {
+  const stellarSdk = (await import("@stellar/stellar-sdk")) as unknown as {
+    Keypair: { fromSecret(secret: string): { publicKey(): string } };
+  };
+  const contractSdk = (await import("@stellar/stellar-sdk/contract")) as unknown as {
+    Client: {
+      from(options: Record<string, unknown>): Promise<Record<string, unknown>>;
+    };
+    basicNodeSigner(
+      keypair: { publicKey(): string },
+      networkPassphrase: string,
+    ): { signTransaction: unknown };
+  };
+  const sourceKeypair = stellarSdk.Keypair.fromSecret(input.serverSecret);
+  const networkPassphrase = stellarNetworkPassphrase(input.network);
+  const { signTransaction } = contractSdk.basicNodeSigner(sourceKeypair, networkPassphrase);
+
+  return contractSdk.Client.from({
+    contractId: input.contractId,
+    networkPassphrase,
+    rpcUrl: input.rpcUrl,
+    publicKey: sourceKeypair.publicKey(),
+    signTransaction,
+  });
+}
+
+async function callContractMethod(
+  client: Record<string, unknown>,
+  method: "mint" | "marketplace_transfer",
+  args: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const fn = client[method];
+
+  if (typeof fn !== "function") {
+    throw new Error(`Stellar NFT contract client does not expose ${method}`);
+  }
+
+  return (await fn.call(client, args, { timeoutInSeconds: 45 })) as Record<string, unknown>;
+}
+
+async function signAndSend(tx: Record<string, unknown>): Promise<{ txHash: string }> {
+  const signAndSendFn = tx["signAndSend"];
+
+  if (typeof signAndSendFn !== "function") {
+    throw new Error("Stellar NFT transaction cannot be signed");
+  }
+
+  const sent = (await signAndSendFn.call(tx)) as Record<string, unknown>;
+  const txHash = transactionHashFromSent(sent);
+
+  if (!txHash) {
+    throw new Error("Stellar NFT transaction completed without a transaction hash");
+  }
+
+  return { txHash };
+}
+
+function transactionHashFromSent(sent: Record<string, unknown>): string | null {
+  const sendResponse = sent["sendTransactionResponse"];
+  const getResponse = sent["getTransactionResponse"];
+  const directHash = sent["hash"];
+
+  for (const candidate of [directHash, sendResponse, getResponse]) {
+    if (typeof candidate === "string" && /^[a-f0-9]{64}$/i.test(candidate)) {
+      return candidate.toLowerCase();
+    }
+
+    if (candidate && typeof candidate === "object") {
+      const hash = (candidate as Record<string, unknown>)["hash"];
+
+      if (typeof hash === "string" && /^[a-f0-9]{64}$/i.test(hash)) {
+        return hash.toLowerCase();
+      }
+    }
+  }
+
+  return null;
+}
+
+function stellarNetworkPassphrase(network: "mainnet" | "testnet"): string {
+  return network === "mainnet"
+    ? "Public Global Stellar Network ; September 2015"
+    : "Test SDF Network ; September 2015";
 }
 
 function isPaymentOperationRecord(op: unknown): op is Horizon.ServerApi.PaymentOperationRecord {

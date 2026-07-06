@@ -91,7 +91,7 @@ export class StellarMemoryController {
       settings: {
         stellarEnabled: this.config.STELLAR_ENABLED,
         storageEnabled: this.config.STELLAR_STORAGE_ENABLED,
-        nftEnabled: this.config.STELLAR_NFT_ENABLED,
+        nftEnabled: false,
         network: this.config.STELLAR_NETWORK,
       },
       summary: {
@@ -207,7 +207,7 @@ export class StellarMemoryController {
         characterId: conversation.character_id,
         conversationId: conversation.id,
         reason: "user_memory_vault",
-        mintNft: this.config.STELLAR_NFT_ENABLED,
+        mintNft: false,
       },
     });
 
@@ -245,7 +245,7 @@ export class StellarMemoryController {
         snapshotKind: "user_export",
         userId: session.userId,
         reason: "user_memory_export",
-        mintNft: this.config.STELLAR_NFT_ENABLED,
+        mintNft: false,
       },
     });
 
@@ -289,7 +289,7 @@ export class StellarMemoryController {
         userId: session.userId,
         characterId: character.id,
         reason: "creator_soul_pack",
-        mintNft: this.config.STELLAR_NFT_ENABLED,
+        mintNft: false,
       },
     });
 
@@ -392,7 +392,7 @@ export class AdminStellarMemoryController {
       settings: {
         stellarEnabled: this.config.STELLAR_ENABLED,
         storageEnabled: this.config.STELLAR_STORAGE_ENABLED,
-        nftEnabled: this.config.STELLAR_NFT_ENABLED,
+        nftEnabled: false,
         network: this.config.STELLAR_NETWORK,
         horizonUrl: this.config.STELLAR_HORIZON_URL,
       },

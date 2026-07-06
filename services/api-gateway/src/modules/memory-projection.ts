@@ -140,7 +140,7 @@ async function enqueueMemoryProjectionEvents(input: {
         ...payload,
         reason: "memory_projection",
         minImportance: input.config.STELLAR_STORAGE_SNAPSHOT_MIN_IMPORTANCE,
-        mintNft: input.config.STELLAR_NFT_ENABLED,
+        mintNft: false,
       },
     });
   }

@@ -10,6 +10,7 @@ import { HealthController } from "./health.controller";
 import { MediaController } from "./media.controller";
 import { MemoryController } from "./memory.controller";
 import { AdminMonetizationController, MonetizationController } from "./monetization.controller";
+import { NftController } from "./nft.controller";
 import { AdminStellarMemoryController, StellarMemoryController } from "./stellar-memory.controller";
 import { SessionsController } from "./sessions.controller";
 import { SettingsController } from "./settings.controller";
@@ -27,6 +28,7 @@ import { SystemController } from "./system.controller";
     MemoryController,
     StellarMemoryController,
     MediaController,
+    NftController,
     BillingController,
     MonetizationController,
     AdminMonetizationController,

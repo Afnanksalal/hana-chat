@@ -2492,7 +2492,7 @@ button:disabled {
   }
 
   .app-nav {
-    grid-template-columns: repeat(6, minmax(48px, 1fr));
+    grid-template-columns: repeat(7, minmax(0, 1fr));
     gap: 6px;
     overflow-x: auto;
     padding-bottom: 0;
@@ -3582,6 +3582,266 @@ select:hover,
 
 .access-settings-card {
   grid-row: span 2;
+}
+
+.nft-page {
+  gap: 22px;
+}
+
+.nft-hero {
+  align-items: end;
+}
+
+.nft-tabbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.nft-tabbar button {
+  min-height: 42px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #050507;
+  color: var(--text);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 14px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.nft-tabbar button.active,
+.nft-tabbar button:hover {
+  border-color: rgba(255, 31, 109, 0.85);
+  color: var(--primary);
+}
+
+.nft-tabbar button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.nft-market-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.nft-card {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #050507;
+  overflow: hidden;
+}
+
+.nft-card > img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  object-fit: cover;
+  background: #030304;
+}
+
+.nft-card-body {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+}
+
+.nft-card-body h2,
+.nft-card-body p {
+  margin: 0;
+}
+
+.nft-card-body h2 {
+  font-size: 1.2rem;
+}
+
+.nft-card-body p {
+  min-height: 3.4em;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.nft-facts {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.nft-facts div {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px;
+  background: #030304;
+}
+
+.nft-facts dt,
+.nft-facts dd {
+  margin: 0;
+}
+
+.nft-facts dt {
+  color: var(--muted);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  font-weight: 900;
+}
+
+.nft-facts dd {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 900;
+}
+
+.nft-actions {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+.nft-actions label,
+.nft-mint-card label {
+  display: grid;
+  gap: 7px;
+  color: var(--muted);
+  font-weight: 850;
+}
+
+.nft-actions input,
+.nft-mint-card input,
+.nft-mint-card select,
+.nft-mint-card textarea,
+.nft-inline-listing input {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #030304;
+  color: var(--text);
+  padding: 11px 12px;
+  font: inherit;
+}
+
+.nft-mint-card textarea {
+  min-height: 110px;
+  resize: vertical;
+}
+
+.nft-studio-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.nft-generated-preview {
+  display: grid;
+  gap: 12px;
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+}
+
+.nft-generated-preview img {
+  width: 100%;
+  max-width: 360px;
+  aspect-ratio: 1 / 1;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: #030304;
+}
+
+.nft-owned-list,
+.nft-offer-list {
+  display: grid;
+  gap: 10px;
+}
+
+.nft-offer-list {
+  margin-top: 18px;
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
+}
+
+.nft-offer-list h3 {
+  margin: 0;
+}
+
+.nft-owned-row,
+.nft-offer-row {
+  display: grid;
+  grid-template-columns: 68px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+  background: #030304;
+}
+
+.nft-owned-row img,
+.nft-offer-row img {
+  width: 68px;
+  aspect-ratio: 1 / 1;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+}
+
+.nft-owned-row strong,
+.nft-offer-row strong,
+.nft-owned-row small,
+.nft-offer-row small {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nft-owned-row small,
+.nft-offer-row small {
+  color: var(--muted);
+}
+
+.nft-owned-row span {
+  color: var(--primary);
+  font-weight: 900;
+}
+
+.nft-inline-listing {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.builder-nft-entry {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  background: #030304;
+}
+
+.builder-nft-entry div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.builder-nft-entry span {
+  color: var(--muted);
 }
 
 .setting-toggle-row {
@@ -5266,11 +5526,11 @@ select:hover,
 
 @media (max-width: 860px) {
   .app-nav {
-    grid-template-columns: repeat(6, minmax(48px, 1fr));
+    grid-template-columns: repeat(7, minmax(0, 1fr));
   }
 
   .app-nav.has-admin {
-    grid-template-columns: repeat(7, minmax(46px, 1fr));
+    grid-template-columns: repeat(8, minmax(0, 1fr));
   }
 }
 
@@ -6800,11 +7060,11 @@ textarea:focus {
   }
 
   .app-nav {
-    grid-template-columns: repeat(6, minmax(0, 1fr));
+    grid-template-columns: repeat(7, minmax(0, 1fr));
   }
 
   .app-nav.has-admin {
-    grid-template-columns: repeat(7, minmax(0, 1fr));
+    grid-template-columns: repeat(8, minmax(0, 1fr));
   }
 
   .app-nav-item {
@@ -8082,7 +8342,52 @@ textarea {
   line-height: 1.5;
 }
 
+@media (max-width: 1180px) {
+  .nft-market-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .nft-studio-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (max-width: 760px) {
+  .nft-hero {
+    align-items: start;
+  }
+
+  .nft-market-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .nft-facts {
+    grid-template-columns: 1fr;
+  }
+
+  .nft-owned-row,
+  .nft-offer-row {
+    grid-template-columns: 56px minmax(0, 1fr);
+  }
+
+  .nft-owned-row img,
+  .nft-offer-row img {
+    width: 56px;
+  }
+
+  .nft-offer-row .primary-action {
+    grid-column: 1 / -1;
+  }
+
+  .nft-inline-listing {
+    grid-template-columns: 1fr;
+  }
+
+  .builder-nft-entry {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
   .field-meta {
     grid-template-columns: 1fr;
   }

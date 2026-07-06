@@ -2,6 +2,7 @@
 
 import {
   CheckCircle2,
+  Gem,
   Image as ImageIcon,
   MessageSquareText,
   Palette,
@@ -13,6 +14,7 @@ import {
   UserRound,
   Wand2,
 } from "lucide-react";
+import Link from "next/link";
 import type { CSSProperties, ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { PremiumSelect } from "../../components/premium-select";
@@ -1196,6 +1198,16 @@ export default function CreatePage() {
                   wide
                 />
               </div>
+            </div>
+            <div className="builder-nft-entry">
+              <div>
+                <strong>NFT marketplace art</strong>
+                <span>Generate a collectible image, mint it, and list it from NFT Studio.</span>
+              </div>
+              <Link className="media-upload-button" href="/app/nft">
+                <Gem size={16} />
+                Open NFT Studio
+              </Link>
             </div>
           </div>
         ) : null}

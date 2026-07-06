@@ -12,8 +12,11 @@ proofs around product state.
 - Creator payout profiles store Stellar addresses and admin payout settlement requires a verified
   Stellar transaction hash.
 - Memory snapshots create deterministic encrypted manifest commitments in `memory.decentralized_snapshots`.
-- Automatic NFT minting is disabled in this build until a real Soroban client is wired. The system
-  must not record synthetic transaction hashes or token state.
+- Creator-art NFTs are real Soroban mints. Creators generate or upload character-owned art, mint it
+  through the backend signer, list it, accept funded offers, and transfer ownership only after the
+  API verifies the matching Stellar payment intent and Soroban transfer transaction.
+- Memory snapshots remain commitment records in this release; they do not mint NFT proofs from the
+  creator-art marketplace flag.
 
 ## Runtime Boundaries
 
@@ -26,7 +29,8 @@ flowchart TD
   Api --> Pg["Postgres billing and memory rows"]
   Worker["Projection worker"] --> Bridge["Stellar bridge package"]
   Bridge --> Snapshots["Memory snapshot commitments"]
-  Bridge --> Soroban["Soroban NFT contract bindings"]
+  Bridge --> Soroban["Soroban NFT contract client"]
+  Api --> NftMarket["NFT assets, listings, offers, sales"]
 ```
 
 The bridge package is a backend boundary. The browser never marks a plan, character unlock, payout,
@@ -38,7 +42,7 @@ or NFT as complete by itself.
 STELLAR_ENABLED=true
 STELLAR_STORAGE_ENABLED=true
 STELLAR_PAYMENTS_ENABLED=true
-STELLAR_NFT_ENABLED=false
+STELLAR_NFT_ENABLED=true
 STELLAR_NETWORK=mainnet
 STELLAR_HORIZON_URL=https://horizon.stellar.org
 STELLAR_RPC_URL=https://mainnet.sorobanrpc.com
@@ -57,9 +61,28 @@ STELLAR_STORAGE_SNAPSHOT_MIN_IMPORTANCE=0.65
 Production monetization requires `MONETIZATION_ENABLED=true`, `STELLAR_ENABLED=true`,
 `STELLAR_PAYMENTS_ENABLED=true`, and a funded `STELLAR_TREASURY_ADDRESS`.
 
-`STELLAR_NFT_ENABLED` must remain `false` until the release includes a real Soroban mint client and
-signing-key integration. Config validation rejects `STELLAR_NFT_ENABLED=true` so operators cannot
-enable a partially wired NFT path.
+`STELLAR_NFT_ENABLED=true` requires `STELLAR_PAYMENTS_ENABLED=true`, `STELLAR_NFT_CONTRACT_ID`, and
+`STELLAR_SERVER_KEY_REF`. Production config rejects missing or placeholder values.
+`STELLAR_SERVER_KEY_REF` should resolve to a runtime secret handle such as
+`env:STELLAR_SERVER_SIGNING_SECRET`; the signer secret must never be committed.
+
+## Creator-Art NFT Marketplace
+
+- NFT art is created from authenticated Hana media assets with `purpose = nft_art`,
+  `character_avatar`, or `character_cover`; creators can only mint media they own for characters they
+  own.
+- Token IDs are deterministic from creator id, character id, and media hash so mint retries are
+  idempotent.
+- Metadata is served from `/v1/nft/assets/:assetId/metadata` and stores image URL, media hash,
+  character attribution, network, contract id, token id, royalty basis points, and schema version.
+- Minting calls the Hana Soroban NFT contract through `@hana/stellar-bridge`; DB rows stay in
+  `minting` until the backend receives a real transaction hash.
+- Listings reserve during checkout for the payment intent TTL to prevent double-sales. Expired
+  reservations can be reclaimed or cancelled.
+- Direct buys and offers use verified Stellar payment intents. The API binds each submitted
+  transaction hash to the exact sale or offer id before transferring the NFT.
+- Accepted sales update ownership, insert an ownership event, settle seller earnings, apply platform
+  fees, and route resale royalties to the original creator when the seller is not the creator.
 
 ## Security Rules
 
@@ -68,8 +91,11 @@ enable a partially wired NFT path.
 - Stellar transaction hashes and wallet addresses are normalized before persistence.
 - Payment and payout hashes are single-use across billing tables.
 - Private memory is never written to public chain state; only commitments and metadata are recorded.
-- NFT rows are only created after a real Soroban transaction is submitted and confirmed.
+- NFT rows start as `minting`; they only become minted/listable after a real Soroban transaction hash
+  is persisted.
 - Server signing keys are referenced through secret handles, never committed to repository files.
+- Browser state cannot mint, list, buy, accept offers, or mark transfers complete without API
+  validation and persisted settlement rows.
 
 ## References
 

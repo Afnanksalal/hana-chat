@@ -118,6 +118,36 @@ sequenceDiagram
   API->>DB: Mark paid, processing, or failed and reconcile wallet
 ```
 
+## NFT Marketplace Flow
+
+```mermaid
+sequenceDiagram
+  participant Creator as Creator
+  participant Web as NFT Studio
+  participant API as API Gateway
+  participant Media as Media assets
+  participant DB as Postgres marketplace
+  participant Stellar as Stellar payment verifier
+  participant Soroban as Hana NFT contract
+
+  Creator->>Web: Generate character art
+  Web->>API: POST /v1/media/generate purpose=nft_art
+  API->>Media: Store creator-owned image asset
+  Creator->>Web: Mint NFT
+  Web->>API: POST /v1/nft/assets
+  API->>DB: Insert minting asset and metadata
+  API->>Soroban: mint(owner, creator, token, uri, royalty)
+  API->>DB: Persist mint tx and ownership event
+  Creator->>Web: List asset or accept funded offer
+  Web->>API: Create listing, buy listing, fund offer, or accept offer
+  API->>Stellar: Verify exact payment intent and transaction hash
+  API->>Soroban: marketplace_transfer(from, to, token)
+  API->>DB: Transfer owner, settle seller earnings, record royalty
+```
+
+Listings reserve during checkout for the Stellar payment-intent TTL. A sale or offer transfer only
+continues when the submitted transaction hash matches the exact persisted sale or offer payment id.
+
 ## Admin Analytics Flow
 
 ```mermaid
