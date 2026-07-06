@@ -1,13 +1,18 @@
-# Hana Memory NFT Contract
+# Hana NFT Collection Contract
 
-A Soroban smart contract for minting memory snapshot NFTs on Stellar.
+A Soroban smart contract for Hana creator-art and memory-proof NFTs on Stellar.
 
 ## Features
 
-- **Deterministic Token IDs**: Token IDs are derived from the SHA-256 hash of the memory snapshot's manifest root hash, ensuring uniqueness and verifiability
-- **Idempotent Minting**: Calling `mint()` multiple times with the same token_id will not create duplicates
-- **On-chain Metadata**: Each NFT stores the owner address, URI (pointing to snapshot manifest), and mint timestamp
-- **Admin-controlled Minting**: Only the contract admin (Hana backend) can mint new tokens
+- **Deterministic Token IDs**: Creator-art token IDs are derived from creator id, character id, and
+  media hash; memory-proof IDs remain derived from the committed manifest root.
+- **Strict Idempotent Minting**: Calling `mint()` again with the same token id succeeds only when
+  owner, creator, URI, and royalty match the existing token.
+- **On-chain Ownership**: Each token stores owner, creator, metadata URI, royalty basis points, mint
+  timestamp, and update timestamp.
+- **Backend-Controlled Settlement**: Only the contract admin signer can mint and marketplace-transfer
+  tokens after the API has verified payment and ownership state.
+- **Owner Indexes**: `get_owner_tokens()` supports reconciliation and wallet-facing inventory views.
 
 ## Contract Interface
 
@@ -22,10 +27,33 @@ Sets up the contract with a name, symbol, and admin address. Can only be called 
 ### Mint
 
 ```rust
-fn mint(env: Env, owner: Address, token_id: String, uri: String) -> String
+fn mint(
+  env: Env,
+  owner: Address,
+  creator: Address,
+  token_id: String,
+  uri: String,
+  royalty_bps: u32,
+) -> String
 ```
 
-Mints a new memory NFT. The `token_id` should be deterministically derived from the snapshot's manifest root hash (e.g., `sha256:abc123...`). Returns the minted token_id.
+Mints a new Hana NFT. The backend computes deterministic token ids and stores metadata at the URI
+before invoking this method. Returns the minted token id.
+
+### Marketplace Transfer
+
+```rust
+fn marketplace_transfer(
+  env: Env,
+  token_id: String,
+  from: Address,
+  to: Address,
+  sale_ref: String,
+) -> String
+```
+
+Transfers a token after the API verifies the matching sale or offer payment. The contract checks
+that `from` is the current owner and emits a sale event with the sale reference.
 
 ### Read Methods
 
@@ -72,8 +100,8 @@ soroban contract invoke \
   --network testnet \
   -- initialize \
   --admin <ADMIN_ADDRESS> \
-  --name "Hana Memory NFT" \
-  --symbol "HANA-MEM"
+  --name "Hana NFT Collection" \
+  --symbol "HANA"
 ```
 
 ### Mint an NFT
@@ -84,18 +112,24 @@ soroban contract invoke \
   --network testnet \
   -- mint \
   --owner <OWNER_ADDRESS> \
-  --token_id "sha256:abc123..." \
-  --uri "stellar://manifest/<HASH>"
+  --creator <CREATOR_ADDRESS> \
+  --token_id "hana-art:abc123..." \
+  --uri "https://app.hanachat.site/api/v1/nft/assets/<ASSET_ID>/metadata" \
+  --royalty_bps 500
 ```
 
 ## Integration with Hana Backend
 
 The Hana backend uses the `@hana/stellar-bridge` package to interact with this contract:
 
-1. **Deterministic Token ID**: The token ID is computed as `sha256(manifestRootHash)`
-2. **Idempotent Minting**: The backend can safely retry mints without creating duplicates
-3. **Server Signing**: The backend uses `STELLAR_SERVER_KEY_REF` to sign mint transactions
-4. **Network Support**: Works on both mainnet and testnet via `STELLAR_NETWORK` config
+1. **Deterministic Token ID**: Creator-art token IDs are computed from creator, character, and media
+   hash.
+2. **Idempotent Minting**: The backend can safely retry mints without creating duplicates.
+3. **Verified Settlement**: The API verifies the exact sale or offer payment before calling
+   `marketplace_transfer`.
+4. **Server Signing**: The backend resolves `STELLAR_SERVER_KEY_REF` to sign mint and transfer
+   transactions.
+5. **Network Support**: Works on both mainnet and testnet via `STELLAR_NETWORK` config.
 
 ## License
 

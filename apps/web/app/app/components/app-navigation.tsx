@@ -3,6 +3,7 @@
 import {
   Brain,
   Compass,
+  Gem,
   House,
   MessageSquareText,
   Plus,
@@ -21,6 +22,7 @@ const items = [
   { href: "/app/memory", label: "Memory", icon: Brain },
   { href: "/app/discover", label: "Discover", icon: Compass },
   { href: "/app/create", label: "Create", icon: Plus },
+  { href: "/app/nft", label: "NFTs", icon: Gem },
   { href: "/app/settings", label: "Settings", icon: Settings },
 ];
 

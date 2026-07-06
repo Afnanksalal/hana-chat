@@ -42,8 +42,8 @@ initialize-testnet:
 		--network testnet \
 		-- initialize \
 		--admin $(ADMIN_ADDRESS) \
-		--name "Hana Memory NFT" \
-		--symbol "HANA-MEM"
+		--name "Hana NFT Collection" \
+		--symbol "HANA"
 
 initialize-mainnet:
 	soroban contract invoke \
@@ -51,19 +51,21 @@ initialize-mainnet:
 		--network mainnet \
 		-- initialize \
 		--admin $(ADMIN_ADDRESS) \
-		--name "Hana Memory NFT" \
-		--symbol "HANA-MEM"
+		--name "Hana NFT Collection" \
+		--symbol "HANA"
 
 # Example: Mint an NFT
-# Usage: make mint-testnet CONTRACT_ID=<contract_id> OWNER=<address> TOKEN_ID=<token_id> URI=<uri>
+# Usage: make mint-testnet CONTRACT_ID=<contract_id> OWNER=<address> CREATOR=<address> TOKEN_ID=<token_id> URI=<uri> ROYALTY_BPS=500
 mint-testnet:
 	soroban contract invoke \
 		--id $(CONTRACT_ID) \
 		--network testnet \
 		-- mint \
 		--owner $(OWNER) \
+		--creator $(CREATOR) \
 		--token_id $(TOKEN_ID) \
-		--uri $(URI)
+		--uri $(URI) \
+		--royalty_bps $(ROYALTY_BPS)
 
 mint-mainnet:
 	soroban contract invoke \
@@ -71,8 +73,10 @@ mint-mainnet:
 		--network mainnet \
 		-- mint \
 		--owner $(OWNER) \
+		--creator $(CREATOR) \
 		--token_id $(TOKEN_ID) \
-		--uri $(URI)
+		--uri $(URI) \
+		--royalty_bps $(ROYALTY_BPS)
 
 # Check contract info
 info-testnet:

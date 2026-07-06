@@ -241,12 +241,11 @@ export const AppConfigSchema = z
       });
     }
 
-    if (config.STELLAR_NFT_ENABLED) {
+    if (config.STELLAR_NFT_ENABLED && !config.STELLAR_PAYMENTS_ENABLED) {
       ctx.addIssue({
         code: "custom",
         path: ["STELLAR_NFT_ENABLED"],
-        message:
-          "Stellar NFT minting is disabled in this build until a real Soroban mint client is shipped",
+        message: "STELLAR_NFT_ENABLED requires STELLAR_PAYMENTS_ENABLED",
       });
     }
 
@@ -373,6 +372,18 @@ export const AppConfigSchema = z
             code: "custom",
             path: [key],
             message: `${key} must be configured when Stellar payments are enabled`,
+          });
+        }
+      }
+    }
+
+    if (config.STELLAR_NFT_ENABLED) {
+      for (const key of ["STELLAR_NFT_CONTRACT_ID", "STELLAR_SERVER_KEY_REF"] as const) {
+        if (!config[key] || isMissingOrPlaceholder(config[key])) {
+          ctx.addIssue({
+            code: "custom",
+            path: [key],
+            message: `${key} must be configured when Stellar NFT minting is enabled`,
           });
         }
       }

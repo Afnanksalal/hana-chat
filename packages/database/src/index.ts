@@ -182,7 +182,7 @@ export interface CreatorMediaAssetsTable {
   owner_user_id: string;
   created_at: TimestampColumn;
   updated_at: TimestampColumn;
-  purpose: "character_avatar" | "character_cover" | "user_avatar";
+  purpose: "character_avatar" | "character_cover" | "nft_art" | "user_avatar";
   storage_provider: DefaultColumn<"local">;
   storage_key: string;
   public_url: string;
@@ -566,6 +566,113 @@ export interface Web3NftMintsTable {
   confirmed_at: TimestampColumn | null;
 }
 
+export interface Web3NftAssetsTable {
+  id: Generated<string>;
+  creator_user_id: string;
+  owner_user_id: string;
+  character_id: string;
+  media_asset_id: string;
+  contract_id: string;
+  token_id: string;
+  network: string;
+  title: string;
+  description: string;
+  image_url: string;
+  metadata_uri: string;
+  metadata_hash: string;
+  royalty_bps: DefaultColumn<number>;
+  creator_address: string;
+  owner_address: string;
+  mint_tx_hash: string | null;
+  status: DefaultColumn<"minting" | "minted" | "listed" | "sold" | "delisted" | "failed">;
+  moderation_status: DefaultColumn<"approved" | "pending_review" | "rejected">;
+  failure_reason: string | null;
+  metadata_json: unknown;
+  minted_at: TimestampColumn | null;
+  listed_at: TimestampColumn | null;
+  sold_at: TimestampColumn | null;
+  created_at: TimestampColumn;
+  updated_at: TimestampColumn;
+}
+
+export interface Web3NftListingsTable {
+  id: Generated<string>;
+  nft_asset_id: string;
+  seller_user_id: string;
+  seller_address: string;
+  price_cents: number;
+  currency: DefaultColumn<string>;
+  asset_code: DefaultColumn<string>;
+  asset_issuer: string | null;
+  status: DefaultColumn<"active" | "reserved" | "sold" | "cancelled" | "expired">;
+  reserved_by_user_id: string | null;
+  reserved_sale_id: string | null;
+  reserved_until: TimestampColumn | null;
+  expires_at: TimestampColumn | null;
+  created_at: TimestampColumn;
+  updated_at: TimestampColumn;
+  sold_at: TimestampColumn | null;
+}
+
+export interface Web3NftOffersTable {
+  id: Generated<string>;
+  nft_asset_id: string;
+  buyer_user_id: string;
+  buyer_address: string;
+  amount_cents: number;
+  currency: DefaultColumn<string>;
+  asset_code: DefaultColumn<string>;
+  asset_issuer: string | null;
+  provider_payment_id: string | null;
+  tx_hash: string | null;
+  status: DefaultColumn<"created" | "funded" | "accepted" | "declined" | "expired" | "failed">;
+  expires_at: TimestampColumn | null;
+  metadata_json: unknown;
+  created_at: TimestampColumn;
+  updated_at: TimestampColumn;
+  funded_at: TimestampColumn | null;
+  accepted_at: TimestampColumn | null;
+}
+
+export interface Web3NftSalesTable {
+  id: Generated<string>;
+  nft_asset_id: string;
+  listing_id: string | null;
+  offer_id: string | null;
+  seller_user_id: string;
+  buyer_user_id: string;
+  seller_address: string;
+  buyer_address: string;
+  amount_cents: number;
+  currency: DefaultColumn<string>;
+  platform_fee_cents: DefaultColumn<number>;
+  royalty_fee_cents: DefaultColumn<number>;
+  seller_net_cents: number;
+  provider_payment_id: string | null;
+  payment_tx_hash: string | null;
+  transfer_tx_hash: string | null;
+  status: DefaultColumn<"pending_payment" | "paid" | "transferring" | "transferred" | "failed">;
+  failure_reason: string | null;
+  metadata_json: unknown;
+  created_at: TimestampColumn;
+  updated_at: TimestampColumn;
+  paid_at: TimestampColumn | null;
+  transferred_at: TimestampColumn | null;
+}
+
+export interface Web3NftOwnershipEventsTable {
+  id: Generated<string>;
+  nft_asset_id: string;
+  from_user_id: string | null;
+  to_user_id: string;
+  from_address: string | null;
+  to_address: string;
+  tx_hash: string | null;
+  event_type: "mint" | "sale_transfer" | "offer_transfer";
+  metadata_json: unknown;
+  created_at: TimestampColumn;
+}
+
 export interface PlatformAuditEventsTable {
   id: Generated<string>;
   actor_user_id: string | null;
@@ -634,6 +741,11 @@ export interface HanaDatabase {
   "billing.crypto_payout_accounts": BillingCryptoPayoutAccountsTable;
   "web3.chain_transactions": Web3ChainTransactionsTable;
   "web3.nft_mints": Web3NftMintsTable;
+  "web3.nft_assets": Web3NftAssetsTable;
+  "web3.nft_listings": Web3NftListingsTable;
+  "web3.nft_offers": Web3NftOffersTable;
+  "web3.nft_sales": Web3NftSalesTable;
+  "web3.nft_ownership_events": Web3NftOwnershipEventsTable;
   "platform.audit_events": PlatformAuditEventsTable;
   "platform.outbox_events": PlatformOutboxEventsTable;
 }

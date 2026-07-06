@@ -196,6 +196,7 @@ export type RateCharacterRequest = z.infer<typeof RateCharacterRequestSchema>;
 export const MediaUploadPurposeSchema = z.enum([
   "character_avatar",
   "character_cover",
+  "nft_art",
   "user_avatar",
 ]);
 export type MediaUploadPurpose = z.infer<typeof MediaUploadPurposeSchema>;
@@ -210,7 +211,7 @@ export const CreateMediaAssetRequestSchema = z.object({
 export type CreateMediaAssetRequest = z.infer<typeof CreateMediaAssetRequestSchema>;
 
 export const GenerateMediaAssetRequestSchema = z.object({
-  purpose: z.enum(["character_avatar", "character_cover"]),
+  purpose: z.enum(["character_avatar", "character_cover", "nft_art"]),
   prompt: z.string().trim().min(12).max(8_000),
   characterName: z.string().trim().max(80).optional().default(""),
   style: z.string().trim().max(1_200).optional().default("premium fictional character art"),
@@ -232,6 +233,78 @@ export const GenerateMediaAssetRequestSchema = z.object({
 });
 
 export type GenerateMediaAssetRequest = z.infer<typeof GenerateMediaAssetRequestSchema>;
+
+export const StellarWalletAddressSchema = z
+  .string()
+  .trim()
+  .regex(/^G[A-Z2-7]{55}$/, "Enter a valid Stellar address");
+
+export const CreateNftAssetRequestSchema = z.object({
+  characterId: z.string().uuid(),
+  mediaAssetId: z.string().uuid(),
+  title: z.string().trim().min(2).max(120),
+  description: z.string().trim().min(12).max(1_000),
+  ownerWalletAddress: StellarWalletAddressSchema,
+  royaltyBps: z.number().int().min(0).max(1_000).default(500),
+});
+
+export type CreateNftAssetRequest = z.infer<typeof CreateNftAssetRequestSchema>;
+
+export const CreateNftListingRequestSchema = z.object({
+  priceCents: z.number().int().min(100).max(10_000_000),
+  currency: z.string().length(3).default("USD"),
+  expiresAt: IsoDateTimeSchema.optional(),
+});
+
+export type CreateNftListingRequest = z.infer<typeof CreateNftListingRequestSchema>;
+
+export const CreateNftListingPurchaseRequestSchema = z.object({
+  listingId: z.string().uuid(),
+  buyerWalletAddress: StellarWalletAddressSchema,
+});
+
+export type CreateNftListingPurchaseRequest = z.infer<typeof CreateNftListingPurchaseRequestSchema>;
+
+export const VerifyNftListingPurchaseRequestSchema = z.object({
+  saleId: z.string().uuid(),
+  paymentId: z.string().min(1),
+  txHash: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .regex(/^[a-f0-9]{64}$/, "Enter a valid Stellar transaction hash"),
+  buyerWalletAddress: StellarWalletAddressSchema,
+});
+
+export type VerifyNftListingPurchaseRequest = z.infer<typeof VerifyNftListingPurchaseRequestSchema>;
+
+export const CreateNftOfferRequestSchema = z.object({
+  amountCents: z.number().int().min(100).max(10_000_000),
+  currency: z.string().length(3).default("USD"),
+  buyerWalletAddress: StellarWalletAddressSchema,
+  expiresAt: IsoDateTimeSchema.optional(),
+});
+
+export type CreateNftOfferRequest = z.infer<typeof CreateNftOfferRequestSchema>;
+
+export const VerifyNftOfferRequestSchema = z.object({
+  offerId: z.string().uuid(),
+  paymentId: z.string().min(1),
+  txHash: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .regex(/^[a-f0-9]{64}$/, "Enter a valid Stellar transaction hash"),
+  buyerWalletAddress: StellarWalletAddressSchema,
+});
+
+export type VerifyNftOfferRequest = z.infer<typeof VerifyNftOfferRequestSchema>;
+
+export const AcceptNftOfferRequestSchema = z.object({
+  offerId: z.string().uuid(),
+});
+
+export type AcceptNftOfferRequest = z.infer<typeof AcceptNftOfferRequestSchema>;
 
 export const SendChatMessageRequestSchema = z.object({
   conversationId: z.string().optional(),

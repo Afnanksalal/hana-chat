@@ -339,7 +339,7 @@ function assertImageSignature(buffer: Buffer, mimeType: keyof typeof mimeExtensi
 }
 
 function buildGeneratedImagePrompt(input: {
-  purpose: "character_avatar" | "character_cover";
+  purpose: "character_avatar" | "character_cover" | "nft_art";
   prompt: string;
   characterName: string;
   style: string;
@@ -353,7 +353,9 @@ function buildGeneratedImagePrompt(input: {
   const framing =
     input.purpose === "character_avatar"
       ? "single fictional character portrait, shoulders-up, clear face, expressive eyes, clean readable silhouette"
-      : "wide cinematic cover scene, environment-forward composition, character can be present but not cropped awkwardly";
+      : input.purpose === "character_cover"
+        ? "wide cinematic cover scene, environment-forward composition, character can be present but not cropped awkwardly"
+        : "collectible character artwork, polished full composition, strong silhouette, visually distinctive enough for a marketplace listing";
   const nameLine = input.characterName ? `Character name: ${input.characterName}.` : "";
 
   const prompt = [
