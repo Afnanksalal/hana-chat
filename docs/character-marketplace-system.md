@@ -35,9 +35,9 @@ flowchart TD
 - Web cards show imagery, tags, price, rating, model feel, and engagement stats.
 - Character images are uploaded media assets owned by the creator and served through `/v1/media/:id/file`; URL text boxes are not the creation path.
 - Creator Studio can also generate profile and cover images through the authenticated `/v1/media/generate` path. Generated images use xAI image generation/editing only, are downloaded into Hana-owned `creator.media_assets`, and are stored beside uploaded assets. The builder exposes art-direction, mood, backdrop, and detail presets so generation is not locked to anime-only prompts or Hana's hotpink brand palette. When a cover is generated after the creator selected or uploaded a profile image, the server resolves that Hana media asset and sends it to xAI as the identity reference for the cover.
-- NFT Studio extends the same creator-owned media path with `nft_art`: creators select one of their
-  characters, generate collectible artwork, mint it to a Stellar wallet, set resale royalties up to
-  10%, list the asset, cancel an active listing, and accept funded offers.
+- Creator collectibles extend the same creator-owned media path with `nft_art`: creators select one
+  of their characters, generate collectible artwork, create ownership, set resale royalties up to
+  10%, set a minimum offer floor, list the asset, cancel an active listing, and accept funded offers.
 - Empty profile and cover art uses dedicated Hana-colored character fallback SVGs, not the Hana mascot or landing hero. Creator lists, Discover cards, and chat rooms should all fall back to those character assets until uploaded/generated media exists.
 - Marketplace ranking uses persisted engagement counters and event rows: views, profile opens, chat starts, messages, likes, saves, interactions, and a computed trending score.
 - Marketplace cards expose the creator display name/avatar and persisted user ratings. Ratings are stored once per user per character and roll into `ratingAverage`, `ratingCount`, and the trending score.
@@ -62,6 +62,8 @@ flowchart TD
 - Creator NFT resale earnings use the same wallet ledger and hold policy. Direct listing buys and
   accepted offers verify the exact Stellar payment intent before Soroban ownership transfer; resale
   royalties are routed to the original creator when the seller is a later owner.
+- Creator collectible listings store a seller-defined minimum offer, disclose Hana's fee and royalty
+  policy in the studio, and reject under-floor offers at the API boundary.
 
 ## Marketplace Quality Rules
 

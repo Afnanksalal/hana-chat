@@ -3585,7 +3585,7 @@ select:hover,
 }
 
 .nft-page {
-  gap: 22px;
+  gap: 16px;
 }
 
 .nft-page,
@@ -3594,7 +3594,29 @@ select:hover,
 }
 
 .nft-hero {
-  align-items: end;
+  align-items: center;
+  padding: 18px 20px;
+}
+
+.nft-hero.wallet-hero {
+  gap: 16px;
+}
+
+.nft-hero .payment-hero-copy {
+  flex-basis: 460px;
+}
+
+.nft-hero .payment-hero-copy h1 {
+  font-size: clamp(30px, 3vw, 46px);
+}
+
+.nft-hero .payment-hero-copy p {
+  max-width: 760px;
+}
+
+.nft-hero .payment-hero-chips {
+  flex: 0 1 520px;
+  justify-content: flex-end;
 }
 
 .nft-tabbar {
@@ -3714,6 +3736,8 @@ select:hover,
 
 .nft-actions label,
 .nft-mint-card label,
+.nft-offer-controls label,
+.nft-listing-form label,
 .nft-field-block {
   display: grid;
   gap: 7px;
@@ -3736,50 +3760,9 @@ select:hover,
 }
 
 .nft-character-picker {
-  position: relative;
-  z-index: 20;
-}
-
-.nft-character-trigger {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  min-height: 58px;
-  padding: 8px 10px;
-  text-align: left;
-  color: var(--text);
-  background: #030304;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  cursor: pointer;
-}
-
-.nft-character-trigger:hover,
-.nft-character-trigger[aria-expanded="true"] {
-  border-color: var(--primary);
-  background: #10050b;
-}
-
-.nft-character-trigger:disabled {
-  cursor: not-allowed;
-  opacity: 0.65;
-}
-
-.nft-character-trigger strong,
-.nft-character-trigger small {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.nft-character-trigger small {
-  margin-top: 3px;
-  color: var(--subtle);
-  font-size: 12px;
-  font-weight: 800;
+  gap: 8px;
+  min-height: 0;
 }
 
 .nft-character-avatar {
@@ -3798,23 +3781,6 @@ select:hover,
   width: 100%;
   height: 100%;
   object-fit: cover;
-}
-
-.nft-character-popover {
-  position: absolute;
-  top: calc(100% + 8px);
-  right: 0;
-  left: 0;
-  z-index: 40;
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  max-height: min(360px, 52vh);
-  padding: 8px;
-  overflow: hidden;
-  background: #050507;
-  border: 1px solid #3b2434;
-  border-radius: 8px;
-  box-shadow: 0 24px 72px rgba(0, 0, 0, 0.72);
 }
 
 .nft-mint-card .nft-character-search {
@@ -3842,7 +3808,7 @@ select:hover,
   display: grid;
   gap: 6px;
   min-height: 0;
-  margin-top: 8px;
+  max-height: 280px;
   overflow-y: auto;
   overscroll-behavior: contain;
   padding-right: 2px;
@@ -3871,10 +3837,26 @@ select:hover,
 }
 
 .nft-character-options button span:nth-child(2) {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.nft-character-options button strong,
+.nft-character-options button small {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.nft-character-options button strong {
   font-weight: 850;
+}
+
+.nft-character-options button small {
+  color: var(--subtle);
+  font-size: 12px;
+  font-weight: 800;
 }
 
 .nft-character-options svg {
@@ -3891,7 +3873,8 @@ select:hover,
 .nft-actions input,
 .nft-mint-card input,
 .nft-mint-card textarea,
-.nft-inline-listing input {
+.nft-inline-listing input,
+.nft-listing-form input {
   width: 100%;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -3911,6 +3894,46 @@ select:hover,
 .nft-mint-card textarea {
   min-height: 110px;
   resize: vertical;
+}
+
+.nft-policy-strip,
+.nft-economics-strip,
+.nft-fee-preview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.nft-policy-strip span,
+.nft-economics-strip span,
+.nft-fee-preview span {
+  min-height: 34px;
+  padding: 8px 10px;
+  color: var(--muted);
+  background: #020203;
+  border: 1px solid #2b2530;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.nft-policy-strip strong {
+  margin-right: 6px;
+  color: var(--text);
+}
+
+.nft-economics-strip {
+  margin-top: -2px;
+}
+
+.nft-offer-controls,
+.nft-listing-form {
+  display: grid;
+  gap: 8px;
+}
+
+.nft-offer-controls {
+  grid-template-columns: minmax(0, 1fr) 96px;
 }
 
 .nft-studio-grid {
@@ -3991,13 +4014,20 @@ select:hover,
 .nft-owned-row,
 .nft-offer-row {
   display: grid;
-  grid-template-columns: 68px minmax(0, 1fr) auto;
   gap: 12px;
   align-items: center;
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 10px;
   background: #030304;
+}
+
+.nft-owned-row {
+  grid-template-columns: 68px minmax(0, 1fr);
+}
+
+.nft-offer-row {
+  grid-template-columns: 68px minmax(0, 1fr) auto;
 }
 
 .nft-owned-row img,
@@ -4034,9 +4064,33 @@ select:hover,
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
+  align-items: center;
   margin-top: 8px;
 }
 
+.nft-inline-listing.active span {
+  display: grid;
+  gap: 3px;
+}
+
+.nft-inline-listing.active b {
+  color: var(--primary);
+}
+
+.nft-listing-form {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 82px;
+  margin-top: 10px;
+}
+
+.nft-listing-form .nft-fee-preview,
+.nft-listing-form .secondary-action {
+  grid-column: 1 / -1;
+}
+
+.nft-listing-form .secondary-action {
+  justify-content: center;
+  width: 100%;
+}
 .builder-nft-entry {
   display: flex;
   justify-content: space-between;
@@ -8571,6 +8625,10 @@ textarea {
     align-items: start;
   }
 
+  .nft-hero .payment-hero-chips {
+    justify-content: flex-start;
+  }
+
   .nft-tabbar {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -8598,8 +8656,8 @@ textarea {
     grid-template-columns: 1fr;
   }
 
-  .nft-character-popover {
-    max-height: min(320px, 48vh);
+  .nft-character-options {
+    max-height: min(240px, 42vh);
   }
 
   .nft-owned-row,
@@ -8617,6 +8675,11 @@ textarea {
   }
 
   .nft-inline-listing {
+    grid-template-columns: 1fr;
+  }
+
+  .nft-offer-controls,
+  .nft-listing-form {
     grid-template-columns: 1fr;
   }
 

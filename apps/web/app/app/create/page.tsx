@@ -1201,12 +1201,14 @@ export default function CreatePage() {
             </div>
             <div className="builder-nft-entry">
               <div>
-                <strong>NFT marketplace art</strong>
-                <span>Generate a collectible image, mint it, and list it from NFT Studio.</span>
+                <strong>Collectible marketplace art</strong>
+                <span>
+                  Generate a collectible image, create ownership, and list it from Studio.
+                </span>
               </div>
               <Link className="media-upload-button" href="/app/nft">
                 <Gem size={16} />
-                Open NFT Studio
+                Open Studio
               </Link>
             </div>
           </div>
@@ -1391,7 +1393,7 @@ export default function CreatePage() {
                 <small id="paid-price-help">
                   {monetizationAvailable
                     ? "Set a paid unlock price when monetization is enabled."
-                    : "Paid access is gated until Stellar monetization is enabled."}
+                    : "Paid access stays unavailable until creator monetization is enabled."}
                 </small>
                 {fieldErrors.priceDollars ? (
                   <p className="field-error" id="paid-price-error" role="alert">
@@ -1433,7 +1435,7 @@ export default function CreatePage() {
                   <strong>
                     {monetizationAvailable ? "Enable paid access" : "Paid access coming soon"}
                   </strong>
-                  <small>Stellar checkout stays disabled server-side for now.</small>
+                  <small>Checkout stays disabled until creator monetization is ready.</small>
                 </span>
               </label>
             </div>
@@ -1447,7 +1449,7 @@ export default function CreatePage() {
               icon={<ShieldCheck size={18} />}
               eyebrow="Step 5 of 5"
               title="Review"
-              body="Check the character contract before saving. Missing required fields are shown inline."
+              body="Check the character profile before saving. Missing required fields are shown inline."
             />
             <div className="builder-review-grid">
               <ReviewTile

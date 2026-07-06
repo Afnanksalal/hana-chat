@@ -601,6 +601,7 @@ export interface Web3NftListingsTable {
   seller_user_id: string;
   seller_address: string;
   price_cents: number;
+  min_offer_cents: DefaultColumn<number>;
   currency: DefaultColumn<string>;
   asset_code: DefaultColumn<string>;
   asset_issuer: string | null;

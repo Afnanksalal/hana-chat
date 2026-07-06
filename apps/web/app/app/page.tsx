@@ -271,7 +271,7 @@ export default function AppHomePage() {
               <Brain size={18} />
               <span>
                 <strong>Memory Vault</strong>
-                <small>Stellar snapshots, exports, and soul-pack archives.</small>
+                <small>Room snapshots, exports, and soul-pack archives.</small>
               </span>
             </Link>
             <Link href="/app/wallet">

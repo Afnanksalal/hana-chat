@@ -250,11 +250,22 @@ export const CreateNftAssetRequestSchema = z.object({
 
 export type CreateNftAssetRequest = z.infer<typeof CreateNftAssetRequestSchema>;
 
-export const CreateNftListingRequestSchema = z.object({
-  priceCents: z.number().int().min(100).max(10_000_000),
-  currency: z.string().length(3).default("USD"),
-  expiresAt: IsoDateTimeSchema.optional(),
-});
+export const CreateNftListingRequestSchema = z
+  .object({
+    priceCents: z.number().int().min(100).max(10_000_000),
+    minOfferCents: z.number().int().min(100).max(10_000_000).optional(),
+    currency: z.string().length(3).default("USD"),
+    expiresAt: IsoDateTimeSchema.optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.minOfferCents && value.minOfferCents > value.priceCents) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["minOfferCents"],
+        message: "Minimum offer cannot be higher than the list price",
+      });
+    }
+  });
 
 export type CreateNftListingRequest = z.infer<typeof CreateNftListingRequestSchema>;
 

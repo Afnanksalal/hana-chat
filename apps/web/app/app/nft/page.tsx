@@ -3,7 +3,6 @@
 import {
   ArrowRight,
   BadgeCheck,
-  ChevronDown,
   Gem,
   Image as ImageIcon,
   ListPlus,
@@ -18,7 +17,6 @@ import { useEffect, useMemo, useState } from "react";
 import { apiJson, money } from "../api";
 import {
   completeStellarPayment,
-  formatStellarAddress,
   readStellarAddressFromUser,
   type StellarPaymentIntent,
 } from "../stellar-payments";
@@ -47,6 +45,7 @@ interface MediaAssetResponse {
 interface NftListing {
   id: string;
   priceCents: number;
+  minOfferCents: number;
   currency: string;
   assetCode: string;
   expiresAt: string | null;
@@ -77,6 +76,8 @@ interface NftListing {
 
 interface NftMarketplaceResponse {
   enabled: boolean;
+  platformFeeBps: number;
+  maxRoyaltyBps: number;
   listings: NftListing[];
 }
 
@@ -90,6 +91,7 @@ interface OwnedNftAsset {
   network: string;
   status: "minting" | "minted" | "listed" | "sold" | "delisted" | "failed";
   moderationStatus: "approved" | "pending_review" | "rejected";
+  creatorUserId: string;
   ownerUserId: string;
   ownerAddress: string;
   creatorAddress: string;
@@ -102,6 +104,7 @@ interface OwnedNftAsset {
   listing: {
     id: string;
     priceCents: number;
+    minOfferCents: number;
     currency: string;
     status: "active" | "reserved";
     reservedUntil: string | null;
@@ -128,6 +131,8 @@ interface NftOffer {
 
 interface NftMineResponse {
   enabled: boolean;
+  platformFeeBps: number;
+  maxRoyaltyBps: number;
   assets: OwnedNftAsset[];
   offers: NftOffer[];
 }
@@ -140,7 +145,12 @@ interface CreateNftPaymentResponse {
 }
 
 const defaultMintPrompt =
-  "A polished collectible key art image for this character, iconic pose, strong silhouette, premium marketplace-ready finish.";
+  "Premium collectible portrait for this character, iconic pose, strong silhouette, rich detail, finished for collectors.";
+
+const defaultMarketplacePolicy = {
+  platformFeeBps: 0,
+  maxRoyaltyBps: 1_000,
+};
 
 function formatHash(value: string): string {
   if (value.length <= 14) {
@@ -158,6 +168,61 @@ function listingHasLiveReservation(listing: OwnedNftAsset["listing"]): boolean {
   );
 }
 
+function formatPercentFromBps(bps: number): string {
+  return `${(bps / 100).toLocaleString("en", {
+    maximumFractionDigits: 2,
+    minimumFractionDigits: bps % 100 === 0 ? 0 : 2,
+  })}%`;
+}
+
+function parseMoneyInput(value: string): number | null {
+  const dollars = Number.parseFloat(value);
+
+  if (!Number.isFinite(dollars) || dollars <= 0) {
+    return null;
+  }
+
+  return Math.round(dollars * 100);
+}
+
+function parseDurationDays(value: string): number {
+  const days = Number.parseInt(value, 10);
+
+  if (!Number.isInteger(days)) {
+    return 30;
+  }
+
+  return Math.min(180, Math.max(1, days));
+}
+
+function expiresAtFromDays(value: string): string {
+  const expiresAt = new Date();
+  expiresAt.setUTCDate(expiresAt.getUTCDate() + parseDurationDays(value));
+
+  return expiresAt.toISOString();
+}
+
+function sellerNetEstimateCents(input: {
+  amountCents: number;
+  platformFeeBps: number;
+  royaltyBps: number;
+  isCreatorOwner: boolean;
+}): number {
+  const platformFeeCents = Math.floor((input.amountCents * input.platformFeeBps) / 10_000);
+  const royaltyFeeCents = input.isCreatorOwner
+    ? 0
+    : Math.floor((input.amountCents * input.royaltyBps) / 10_000);
+
+  return Math.max(0, input.amountCents - platformFeeCents - royaltyFeeCents);
+}
+
+function formatStatusLabel(value: string): string {
+  return value
+    .replace(/[_-]+/g, " ")
+    .replace(/\b[a-z]/g, (letter) => letter.toUpperCase())
+    .trim();
+}
+
 function CharacterPicker({
   characters,
   selectedCharacter,
@@ -167,7 +232,6 @@ function CharacterPicker({
   selectedCharacter: CharacterSummary | undefined;
   onSelect: (characterId: string) => void;
 }) {
-  const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const filteredCharacters = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -179,88 +243,51 @@ function CharacterPicker({
     return characters.filter((character) => character.name.toLowerCase().includes(normalizedQuery));
   }, [characters, query]);
 
-  function selectCharacter(character: CharacterSummary) {
-    onSelect(character.id);
-    setQuery("");
-    setOpen(false);
-  }
-
   return (
-    <div
-      className="nft-character-picker"
-      onBlur={(event) => {
-        const nextTarget = event.relatedTarget;
+    <div className="nft-character-picker">
+      <label className="nft-character-search">
+        <Search size={16} />
+        <input
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Search characters"
+          value={query}
+        />
+      </label>
+      <div className="nft-character-options" role="listbox" aria-label="Creator characters">
+        {filteredCharacters.map((character) => {
+          const selected = character.id === selectedCharacter?.id;
 
-        if (!(nextTarget instanceof Node) || !event.currentTarget.contains(nextTarget)) {
-          setOpen(false);
-        }
-      }}
-    >
-      <button
-        aria-expanded={open}
-        aria-haspopup="listbox"
-        className="nft-character-trigger"
-        disabled={characters.length === 0}
-        onClick={() => setOpen((current) => !current)}
-        type="button"
-      >
-        <span className="nft-character-avatar" aria-hidden="true">
-          {selectedCharacter?.avatarUrl ? (
-            <img src={selectedCharacter.avatarUrl} alt="" />
-          ) : (
-            <UserRound size={18} />
-          )}
-        </span>
-        <span>
-          <strong>{selectedCharacter?.name ?? "No characters yet"}</strong>
-          <small>{characters.length.toLocaleString()} creator characters</small>
-        </span>
-        <ChevronDown size={18} />
-      </button>
-
-      {open ? (
-        <div className="nft-character-popover">
-          <label className="nft-character-search">
-            <Search size={16} />
-            <input
-              autoFocus
-              onChange={(event) => setQuery(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Escape") {
-                  setOpen(false);
-                }
-              }}
-              placeholder="Search characters"
-              value={query}
-            />
-          </label>
-          <div className="nft-character-options" role="listbox" aria-label="Creator characters">
-            {filteredCharacters.map((character) => (
-              <button
-                aria-selected={character.id === selectedCharacter?.id}
-                className={character.id === selectedCharacter?.id ? "active" : ""}
-                key={character.id}
-                onClick={() => selectCharacter(character)}
-                role="option"
-                type="button"
-              >
-                <span className="nft-character-avatar" aria-hidden="true">
-                  {character.avatarUrl ? (
-                    <img src={character.avatarUrl} alt="" />
-                  ) : (
-                    <UserRound size={18} />
-                  )}
-                </span>
-                <span>{character.name}</span>
-                {character.id === selectedCharacter?.id ? <BadgeCheck size={16} /> : null}
-              </button>
-            ))}
-            {filteredCharacters.length === 0 ? (
-              <p className="nft-character-empty">No matching characters.</p>
-            ) : null}
-          </div>
-        </div>
-      ) : null}
+          return (
+            <button
+              aria-selected={selected}
+              className={selected ? "active" : ""}
+              key={character.id}
+              onClick={() => onSelect(character.id)}
+              role="option"
+              type="button"
+            >
+              <span className="nft-character-avatar" aria-hidden="true">
+                {character.avatarUrl ? (
+                  <img src={character.avatarUrl} alt="" />
+                ) : (
+                  <UserRound size={18} />
+                )}
+              </span>
+              <span>
+                <strong>{character.name}</strong>
+                <small>{selected ? "Selected for this collectible" : "Use this character"}</small>
+              </span>
+              {selected ? <BadgeCheck size={16} /> : null}
+            </button>
+          );
+        })}
+        {filteredCharacters.length === 0 ? (
+          <p className="nft-character-empty">No matching characters.</p>
+        ) : null}
+        {characters.length === 0 ? (
+          <p className="nft-character-empty">Create a character before opening the studio.</p>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -268,9 +295,15 @@ function CharacterPicker({
 export default function NftStudioPage() {
   const [marketplace, setMarketplace] = useState<NftMarketplaceResponse>({
     enabled: false,
+    ...defaultMarketplacePolicy,
     listings: [],
   });
-  const [mine, setMine] = useState<NftMineResponse>({ enabled: false, assets: [], offers: [] });
+  const [mine, setMine] = useState<NftMineResponse>({
+    enabled: false,
+    ...defaultMarketplacePolicy,
+    assets: [],
+    offers: [],
+  });
   const [characters, setCharacters] = useState<CharacterSummary[]>([]);
   const [activeTab, setActiveTab] = useState<"market" | "studio">("market");
   const [selectedCharacterId, setSelectedCharacterId] = useState("");
@@ -281,9 +314,12 @@ export default function NftStudioPage() {
   const [mintWallet, setMintWallet] = useState("");
   const [royaltyBps, setRoyaltyBps] = useState(500);
   const [listingDrafts, setListingDrafts] = useState<Record<string, string>>({});
+  const [listingMinimumDrafts, setListingMinimumDrafts] = useState<Record<string, string>>({});
+  const [listingDurationDrafts, setListingDurationDrafts] = useState<Record<string, string>>({});
   const [offerDrafts, setOfferDrafts] = useState<Record<string, string>>({});
+  const [offerDurationDrafts, setOfferDurationDrafts] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<string | null>(null);
-  const [status, setStatus] = useState("Loading NFT marketplace...");
+  const [status, setStatus] = useState("Loading collectibles market...");
 
   useEffect(() => {
     void loadAll();
@@ -294,6 +330,8 @@ export default function NftStudioPage() {
     [characters, selectedCharacterId],
   );
   const nftReady = marketplace.enabled || mine.enabled;
+  const platformFeeBps = marketplace.platformFeeBps || mine.platformFeeBps;
+  const maxRoyaltyBps = marketplace.maxRoyaltyBps || mine.maxRoyaltyBps;
 
   useEffect(() => {
     if (!selectedCharacterId && characters[0]) {
@@ -317,10 +355,10 @@ export default function NftStudioPage() {
       setStatus(
         marketplacePayload.enabled
           ? ""
-          : "NFT contract configuration is required before minting or trading can run.",
+          : "Collectibles trading is being activated. You can prepare artwork while the market is read-only.",
       );
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "NFT marketplace unavailable.");
+      setStatus(error instanceof Error ? error.message : "Collectibles market unavailable.");
     } finally {
       setBusy(null);
     }
@@ -328,12 +366,12 @@ export default function NftStudioPage() {
 
   async function generateNftArt() {
     if (!selectedCharacter) {
-      setStatus("Create a character before generating NFT art.");
+      setStatus("Create a character before generating collectible art.");
       return;
     }
 
     setBusy("generate");
-    setStatus("Generating NFT art...");
+    setStatus("Generating collectible art...");
 
     try {
       const media = await apiJson<MediaAssetResponse>("/api/v1/media/generate", {
@@ -354,11 +392,11 @@ export default function NftStudioPage() {
       setGenerated(media);
       setMintTitle(`${selectedCharacter.name} Genesis Art`);
       setMintDescription(
-        `A creator-minted collectible artwork for ${selectedCharacter.name} on Hana Chat.`,
+        `A creator collectible artwork for ${selectedCharacter.name} on Hana Chat.`,
       );
-      setStatus("Art generated. Review it, add ownership details, then mint.");
+      setStatus("Art generated. Review ownership details, then create the collectible.");
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Could not generate NFT art.");
+      setStatus(error instanceof Error ? error.message : "Could not generate collectible art.");
     } finally {
       setBusy(null);
     }
@@ -366,12 +404,12 @@ export default function NftStudioPage() {
 
   async function mintGeneratedArt() {
     if (!selectedCharacter || !generated) {
-      setStatus("Generate NFT art before minting.");
+      setStatus("Generate collectible art before creating ownership.");
       return;
     }
 
     setBusy("mint");
-    setStatus("Minting NFT...");
+    setStatus("Creating collectible ownership...");
 
     try {
       const payload = await apiJson<{ assetId: string; tokenId: string; txHash: string }>(
@@ -389,21 +427,32 @@ export default function NftStudioPage() {
         },
       );
 
-      setStatus(`Minted ${payload.tokenId} in transaction ${formatHash(payload.txHash)}.`);
+      setStatus(`Created ${payload.tokenId} with receipt ${formatHash(payload.txHash)}.`);
       setGenerated(null);
       await loadAll();
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "NFT mint failed.");
+      setStatus(error instanceof Error ? error.message : "Collectible creation failed.");
     } finally {
       setBusy(null);
     }
   }
 
   async function listAsset(asset: OwnedNftAsset) {
-    const dollars = Number.parseFloat(listingDrafts[asset.id] ?? "");
+    const priceCents = parseMoneyInput(listingDrafts[asset.id] ?? "");
+    const minOfferCents = parseMoneyInput(listingMinimumDrafts[asset.id] ?? "");
 
-    if (!Number.isFinite(dollars) || dollars <= 0) {
+    if (!priceCents) {
       setStatus("Enter a valid list price.");
+      return;
+    }
+
+    if (!minOfferCents) {
+      setStatus("Enter a valid minimum offer.");
+      return;
+    }
+
+    if (minOfferCents > priceCents) {
+      setStatus("Minimum offer cannot be higher than the list price.");
       return;
     }
 
@@ -413,12 +462,17 @@ export default function NftStudioPage() {
     try {
       await apiJson(`/api/v1/nft/assets/${encodeURIComponent(asset.id)}/listings`, {
         method: "POST",
-        body: JSON.stringify({ priceCents: Math.round(dollars * 100), currency: "USD" }),
+        body: JSON.stringify({
+          priceCents,
+          minOfferCents,
+          currency: "USD",
+          expiresAt: expiresAtFromDays(listingDurationDrafts[asset.id] ?? "30"),
+        }),
       });
-      setStatus("NFT listed.");
+      setStatus("Collectible listed.");
       await loadAll();
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Could not list NFT.");
+      setStatus(error instanceof Error ? error.message : "Could not list collectible.");
     } finally {
       setBusy(null);
     }
@@ -459,7 +513,7 @@ export default function NftStudioPage() {
       );
 
       if (!checkout.saleId) {
-        throw new Error("NFT sale did not start.");
+        throw new Error("Collectible sale did not start.");
       }
 
       await completeStellarPayment({
@@ -472,20 +526,25 @@ export default function NftStudioPage() {
         },
         onStatus: setStatus,
       });
-      setStatus("NFT transferred.");
+      setStatus("Collectible transferred.");
       await loadAll();
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "NFT purchase failed.");
+      setStatus(error instanceof Error ? error.message : "Collectible purchase failed.");
     } finally {
       setBusy(null);
     }
   }
 
   async function makeOffer(listing: NftListing) {
-    const dollars = Number.parseFloat(offerDrafts[listing.asset.id] ?? "");
+    const amountCents = parseMoneyInput(offerDrafts[listing.asset.id] ?? "");
 
-    if (!Number.isFinite(dollars) || dollars <= 0) {
+    if (!amountCents) {
       setStatus("Enter a valid offer amount.");
+      return;
+    }
+
+    if (amountCents < listing.minOfferCents) {
+      setStatus(`Offer must be at least ${money(listing.minOfferCents, listing.currency)}.`);
       return;
     }
 
@@ -498,15 +557,16 @@ export default function NftStudioPage() {
         {
           method: "POST",
           body: JSON.stringify({
-            amountCents: Math.round(dollars * 100),
-            currency: "USD",
+            amountCents,
+            currency: listing.currency,
             buyerWalletAddress,
+            expiresAt: expiresAtFromDays(offerDurationDrafts[listing.asset.id] ?? "30"),
           }),
         },
       );
 
       if (!offer.offerId) {
-        throw new Error("NFT offer did not start.");
+        throw new Error("Collectible offer did not start.");
       }
 
       await completeStellarPayment({
@@ -530,7 +590,7 @@ export default function NftStudioPage() {
 
   async function acceptOffer(offer: NftOffer) {
     setBusy(`accept:${offer.id}`);
-    setStatus("Accepting offer and transferring NFT...");
+    setStatus("Accepting offer and transferring collectible...");
 
     try {
       await apiJson(`/api/v1/nft/offers/${encodeURIComponent(offer.id)}/accept`, {
@@ -551,28 +611,28 @@ export default function NftStudioPage() {
       <section className="wallet-hero nft-hero">
         <div className="payment-hero-copy">
           <span className="section-label">
-            <Gem size={15} /> NFT Studio
+            <Gem size={15} /> Hana Collectibles
           </span>
-          <h1>Mint and trade creator art</h1>
+          <h1>Creator collectibles</h1>
           <p>
-            Generate character artwork, mint it to your wallet, list it, and settle sales with
-            on-chain transfer proof.
+            Launch character artwork, manage listings, review offers, and track creator earnings.
           </p>
         </div>
-        <div className="payment-hero-chips" aria-label="NFT status">
-          <span>{marketplace.enabled || mine.enabled ? "Minting ready" : "Read-only"}</span>
+        <div className="payment-hero-chips" aria-label="Collectibles status">
+          <span>{nftReady ? "Market live" : "Activation pending"}</span>
           <span>{marketplace.listings.length.toLocaleString()} listings</span>
-          <span>{mine.assets.length.toLocaleString()} owned</span>
+          <span>{mine.assets.length.toLocaleString()} in vault</span>
+          <span>Hana fee {formatPercentFromBps(platformFeeBps)}</span>
         </div>
       </section>
 
-      <div className="nft-tabbar" role="tablist" aria-label="NFT sections">
+      <div className="nft-tabbar" role="tablist" aria-label="Collectibles sections">
         <button
           className={activeTab === "market" ? "active" : ""}
           onClick={() => setActiveTab("market")}
           type="button"
         >
-          <Tags size={16} /> Marketplace
+          <Tags size={16} /> Market
         </button>
         <button
           className={activeTab === "studio" ? "active" : ""}
@@ -590,71 +650,95 @@ export default function NftStudioPage() {
 
       {activeTab === "market" ? (
         <section className="nft-market-grid">
-          {marketplace.listings.map((listing) => (
-            <article className="nft-card" key={listing.id}>
-              <img src={listing.asset.imageUrl} alt="" />
-              <div className="nft-card-body">
-                <span className="section-label">
-                  <BadgeCheck size={14} /> {listing.asset.character.name}
-                </span>
-                <h2>{listing.asset.title}</h2>
-                <p>{listing.asset.description}</p>
-                <dl className="nft-facts">
-                  <div>
-                    <dt>Price</dt>
-                    <dd>{money(listing.priceCents, listing.currency)}</dd>
+          {marketplace.listings.map((listing) => {
+            const offerDuration = offerDurationDrafts[listing.asset.id] ?? "30";
+
+            return (
+              <article className="nft-card" key={listing.id}>
+                <img src={listing.asset.imageUrl} alt="" />
+                <div className="nft-card-body">
+                  <span className="section-label">
+                    <BadgeCheck size={14} /> {listing.asset.character.name}
+                  </span>
+                  <h2>{listing.asset.title}</h2>
+                  <p>{listing.asset.description}</p>
+                  <dl className="nft-facts">
+                    <div>
+                      <dt>Price</dt>
+                      <dd>{money(listing.priceCents, listing.currency)}</dd>
+                    </div>
+                    <div>
+                      <dt>Min offer</dt>
+                      <dd>{money(listing.minOfferCents, listing.currency)}</dd>
+                    </div>
+                    <div>
+                      <dt>Royalty</dt>
+                      <dd>{formatPercentFromBps(listing.asset.royaltyBps)}</dd>
+                    </div>
+                  </dl>
+                  <div className="nft-economics-strip">
+                    <span>Hana fee {formatPercentFromBps(platformFeeBps)}</span>
+                    <span>Offers expire in {parseDurationDays(offerDuration)} days</span>
                   </div>
-                  <div>
-                    <dt>Royalty</dt>
-                    <dd>{listing.asset.royaltyBps / 100}%</dd>
+                  <div className="nft-actions">
+                    <button
+                      className="primary-action compact"
+                      type="button"
+                      onClick={() => void buyListing(listing)}
+                      disabled={Boolean(busy) || !nftReady}
+                    >
+                      Buy <WalletCards size={16} />
+                    </button>
+                    <div className="nft-offer-controls">
+                      <label>
+                        Offer amount
+                        <input
+                          inputMode="decimal"
+                          placeholder={(listing.minOfferCents / 100).toFixed(2)}
+                          value={offerDrafts[listing.asset.id] ?? ""}
+                          onChange={(event) =>
+                            setOfferDrafts((current) => ({
+                              ...current,
+                              [listing.asset.id]: event.target.value,
+                            }))
+                          }
+                        />
+                      </label>
+                      <label>
+                        Days
+                        <input
+                          inputMode="numeric"
+                          max={180}
+                          min={1}
+                          type="number"
+                          value={offerDuration}
+                          onChange={(event) =>
+                            setOfferDurationDrafts((current) => ({
+                              ...current,
+                              [listing.asset.id]: event.target.value,
+                            }))
+                          }
+                        />
+                      </label>
+                    </div>
+                    <button
+                      className="secondary-action compact"
+                      type="button"
+                      onClick={() => void makeOffer(listing)}
+                      disabled={Boolean(busy) || !nftReady}
+                    >
+                      Make offer <ArrowRight size={16} />
+                    </button>
                   </div>
-                  <div>
-                    <dt>Owner</dt>
-                    <dd>{formatStellarAddress(listing.asset.ownerAddress)}</dd>
-                  </div>
-                </dl>
-                <div className="nft-actions">
-                  <button
-                    className="primary-action compact"
-                    type="button"
-                    onClick={() => void buyListing(listing)}
-                    disabled={Boolean(busy) || !nftReady}
-                  >
-                    Buy <WalletCards size={16} />
-                  </button>
-                  <label>
-                    Offer
-                    <input
-                      inputMode="decimal"
-                      placeholder="25.00"
-                      value={offerDrafts[listing.asset.id] ?? ""}
-                      onChange={(event) =>
-                        setOfferDrafts((current) => ({
-                          ...current,
-                          [listing.asset.id]: event.target.value,
-                        }))
-                      }
-                    />
-                  </label>
-                  <button
-                    className="secondary-action compact"
-                    type="button"
-                    onClick={() => void makeOffer(listing)}
-                    disabled={Boolean(busy) || !nftReady}
-                  >
-                    Make offer <ArrowRight size={16} />
-                  </button>
                 </div>
-              </div>
-            </article>
-          ))}
+              </article>
+            );
+          })}
           {marketplace.listings.length === 0 ? (
             <article className="settings-card empty-state">
               <Gem size={24} />
-              <h2>No active NFT listings</h2>
-              <p>
-                Mint creator art from the Studio tab and list it when the contract is configured.
-              </p>
+              <h2>No collectibles listed yet</h2>
+              <p>Live character collectibles will appear here as creators publish them.</p>
             </article>
           ) : null}
         </section>
@@ -664,9 +748,23 @@ export default function NftStudioPage() {
             <div className="settings-card-title">
               <ImageIcon />
               <div>
-                <h2>Generate and mint</h2>
-                <p>Create character art and mint it to a Stellar wallet.</p>
+                <h2>Create a collectible</h2>
+                <p>Generate character art, set royalties, and prepare it for collectors.</p>
               </div>
+            </div>
+            <div className="nft-policy-strip">
+              <span>
+                <strong>Hana fee</strong>
+                {formatPercentFromBps(platformFeeBps)}
+              </span>
+              <span>
+                <strong>Royalty cap</strong>
+                {formatPercentFromBps(maxRoyaltyBps)}
+              </span>
+              <span>
+                <strong>Offer floors</strong>
+                Seller controlled
+              </span>
             </div>
             <div className="nft-mint-controls">
               <div className="nft-field-block">
@@ -706,7 +804,7 @@ export default function NftStudioPage() {
                     />
                   </label>
                   <label>
-                    Owner wallet
+                    Recipient wallet
                     <input
                       value={mintWallet}
                       onChange={(event) => setMintWallet(event.target.value.trim())}
@@ -725,7 +823,7 @@ export default function NftStudioPage() {
                     <input
                       inputMode="decimal"
                       min={0}
-                      max={10}
+                      max={maxRoyaltyBps / 100}
                       step={0.25}
                       type="number"
                       value={royaltyBps / 100}
@@ -740,7 +838,7 @@ export default function NftStudioPage() {
                     onClick={() => void mintGeneratedArt()}
                     disabled={Boolean(busy) || !nftReady}
                   >
-                    Mint NFT <Gem size={16} />
+                    Create collectible <Gem size={16} />
                   </button>
                 </div>
               </div>
@@ -751,75 +849,136 @@ export default function NftStudioPage() {
             <div className="settings-card-title">
               <ListPlus />
               <div>
-                <h2>Your NFTs</h2>
-                <p>List minted art or review funded offers.</p>
+                <h2>Vault and offers</h2>
+                <p>Manage live listings, offer floors, and buyer offers.</p>
               </div>
             </div>
             <div className="nft-owned-list">
-              {mine.assets.map((asset) => (
-                <div className="nft-owned-row" key={asset.id}>
-                  <img src={asset.imageUrl} alt="" />
-                  <div>
-                    <strong>{asset.title}</strong>
-                    <small>
-                      {asset.status} -{" "}
-                      {asset.mintTxHash ? `tx ${formatHash(asset.mintTxHash)}` : "no tx"}
-                    </small>
-                    {asset.listing ? (
-                      <div className="nft-inline-listing">
-                        <span>
-                          {asset.listing.status === "reserved"
-                            ? "Reserved"
-                            : money(asset.listing.priceCents, asset.listing.currency)}
-                        </span>
-                        <button
-                          className="secondary-action compact"
-                          type="button"
-                          onClick={() => void cancelListing(asset)}
-                          disabled={
-                            Boolean(busy) || !nftReady || listingHasLiveReservation(asset.listing)
-                          }
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    ) : asset.status === "minted" ? (
-                      <div className="nft-inline-listing">
-                        <input
-                          inputMode="decimal"
-                          placeholder="49.00"
-                          value={listingDrafts[asset.id] ?? ""}
-                          onChange={(event) =>
-                            setListingDrafts((current) => ({
-                              ...current,
-                              [asset.id]: event.target.value,
-                            }))
-                          }
-                        />
-                        <button
-                          className="secondary-action compact"
-                          type="button"
-                          onClick={() => void listAsset(asset)}
-                          disabled={Boolean(busy) || !nftReady}
-                        >
-                          List
-                        </button>
-                      </div>
-                    ) : null}
+              {mine.assets.map((asset) => {
+                const listPriceCents = parseMoneyInput(listingDrafts[asset.id] ?? "");
+                const sellerNetCents = listPriceCents
+                  ? sellerNetEstimateCents({
+                      amountCents: listPriceCents,
+                      platformFeeBps,
+                      royaltyBps: asset.royaltyBps,
+                      isCreatorOwner: asset.creatorUserId === asset.ownerUserId,
+                    })
+                  : null;
+
+                return (
+                  <div className="nft-owned-row" key={asset.id}>
+                    <img src={asset.imageUrl} alt="" />
+                    <div>
+                      <strong>{asset.title}</strong>
+                      <small>
+                        {formatStatusLabel(asset.status)} -{" "}
+                        {asset.mintedAt
+                          ? `created ${new Date(asset.mintedAt).toLocaleDateString()}`
+                          : "pending"}
+                      </small>
+                      {asset.listing ? (
+                        <div className="nft-inline-listing active">
+                          <span>
+                            <b>
+                              {asset.listing.status === "reserved"
+                                ? "Checkout reserved"
+                                : money(asset.listing.priceCents, asset.listing.currency)}
+                            </b>
+                            <small>
+                              Min offer {money(asset.listing.minOfferCents, asset.listing.currency)}
+                            </small>
+                          </span>
+                          <button
+                            className="secondary-action compact"
+                            type="button"
+                            onClick={() => void cancelListing(asset)}
+                            disabled={
+                              Boolean(busy) || !nftReady || listingHasLiveReservation(asset.listing)
+                            }
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      ) : asset.status === "minted" ? (
+                        <div className="nft-listing-form">
+                          <label>
+                            List price
+                            <input
+                              inputMode="decimal"
+                              placeholder="49.00"
+                              value={listingDrafts[asset.id] ?? ""}
+                              onChange={(event) =>
+                                setListingDrafts((current) => ({
+                                  ...current,
+                                  [asset.id]: event.target.value,
+                                }))
+                              }
+                            />
+                          </label>
+                          <label>
+                            Min offer
+                            <input
+                              inputMode="decimal"
+                              placeholder="39.00"
+                              value={listingMinimumDrafts[asset.id] ?? ""}
+                              onChange={(event) =>
+                                setListingMinimumDrafts((current) => ({
+                                  ...current,
+                                  [asset.id]: event.target.value,
+                                }))
+                              }
+                            />
+                          </label>
+                          <label>
+                            Days
+                            <input
+                              inputMode="numeric"
+                              max={180}
+                              min={1}
+                              type="number"
+                              value={listingDurationDrafts[asset.id] ?? "30"}
+                              onChange={(event) =>
+                                setListingDurationDrafts((current) => ({
+                                  ...current,
+                                  [asset.id]: event.target.value,
+                                }))
+                              }
+                            />
+                          </label>
+                          <div className="nft-fee-preview">
+                            <span>Hana fee {formatPercentFromBps(platformFeeBps)}</span>
+                            <span>
+                              Seller net{" "}
+                              {sellerNetCents === null
+                                ? "after fees"
+                                : money(sellerNetCents, "USD")}
+                            </span>
+                          </div>
+                          <button
+                            className="secondary-action compact"
+                            type="button"
+                            onClick={() => void listAsset(asset)}
+                            disabled={Boolean(busy) || !nftReady}
+                          >
+                            List
+                          </button>
+                        </div>
+                      ) : null}
+                    </div>
                   </div>
-                </div>
-              ))}
-              {mine.assets.length === 0 ? <p>No minted creator art yet.</p> : null}
+                );
+              })}
+              {mine.assets.length === 0 ? <p>No collectibles in your vault yet.</p> : null}
             </div>
             <div className="nft-offer-list">
-              <h3>Offers</h3>
+              <h3>Buyer offers</h3>
               {mine.offers.map((offer) => (
                 <div className="nft-offer-row" key={offer.id}>
                   <img src={offer.imageUrl} alt="" />
                   <div>
                     <strong>{offer.title}</strong>
                     <small>
-                      {offer.status} - {money(offer.amountCents, offer.currency)}
+                      {formatStatusLabel(offer.status)} - {money(offer.amountCents, offer.currency)}
                     </small>
                   </div>
                   {offer.canAccept ? (
@@ -834,7 +993,7 @@ export default function NftStudioPage() {
                   ) : null}
                 </div>
               ))}
-              {mine.offers.length === 0 ? <p>No offers yet.</p> : null}
+              {mine.offers.length === 0 ? <p>No buyer offers yet.</p> : null}
             </div>
           </article>
         </section>

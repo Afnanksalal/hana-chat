@@ -372,9 +372,7 @@ export default function SettingsPage() {
           <div className="billing-plan-status">
             <span>{activePlan?.monthlyMessageLimit.toLocaleString() ?? "30"} monthly messages</span>
             <span>{activePlan?.deepMemoryEnabled ? "Deep memory" : "Basic memory"}</span>
-            <span>
-              {monetizationComingSoon ? "Stellar checkout paused" : "Stellar checkout ready"}
-            </span>
+            <span>{monetizationComingSoon ? "Checkout paused" : "Wallet checkout ready"}</span>
           </div>
           <button
             className="secondary-action compact"
@@ -429,7 +427,7 @@ export default function SettingsPage() {
             >
               <div className="pricing-card-head">
                 <WalletCards size={22} />
-                <span>{paidPlanId ? "Stellar billing" : "Starter"}</span>
+                <span>{paidPlanId ? "Wallet billing" : "Starter"}</span>
               </div>
               <h3>{plan.name}</h3>
               {plan.comingSoon ? <span className="coming-soon-pill">Coming soon</span> : null}
@@ -439,9 +437,7 @@ export default function SettingsPage() {
               </strong>
               <div className="plan-payment-note">
                 <CreditCard size={15} />
-                <span>
-                  {paidPlanId ? "Wallet checkout with on-chain verification" : "Free access"}
-                </span>
+                <span>{paidPlanId ? "Verified wallet checkout" : "Free access"}</span>
               </div>
               <ul>
                 <li>

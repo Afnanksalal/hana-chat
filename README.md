@@ -54,9 +54,9 @@ pnpm web:smoke
 
 - Character builder with profile image, cover image, templates, persona, scenario, speaking style, model profile, tags, rating, pricing, and publish controls.
 - Marketplace with category filters, search, image-led cards, stats, tags, monetization-ready character records, and fresh-room starts into chat.
-- NFT Studio for creator-owned character art: generate collectible images, mint through the Stellar
-  contract, list assets, fund offers, buy listings, cancel listings, and settle transfers through
-  verified payment intents.
+- Creator collectibles studio for character art: generate collectible images, create ownership,
+  set royalties and offer floors, list assets, fund offers, buy listings, cancel listings, and
+  settle transfers through verified payment intents.
 - Chat orchestration through xAI with private identity, risk, chat-planning, billing, moderation, memory-policy, retrieval, graph, and batch boundaries, strict input/output guardrails, entitlement checks, usage limits, SSE streaming, durable memory injection, and an evolving per-chat relationship profile.
 - Memory scoped by `user_id + character_id + conversation_id`; no global user memories are injected into chat context.
 - Billing plans, Stellar checkout flow, creator wallet ledger, 7-day creator earning hold, Stellar payout profiles, and admin payout operations are preserved behind `MONETIZATION_ENABLED`; current public billing and creator monetization copy shows "coming soon."

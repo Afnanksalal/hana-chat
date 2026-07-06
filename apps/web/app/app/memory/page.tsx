@@ -170,11 +170,11 @@ export default function MemoryVaultPage() {
   }
 
   const storageLabel = vault.settings.nftEnabled
-    ? "NFT proofs"
+    ? "Sealed records"
     : vault.settings.storageEnabled
-      ? "Proofs queued"
+      ? "Records queued"
       : vault.settings.stellarEnabled
-        ? "Stellar ready"
+        ? "Vault ready"
         : "Local only";
   const newestSnapshot = vault.snapshots[0] ?? null;
   const creatorArchiveReady = characters.length > 0;
@@ -189,8 +189,8 @@ export default function MemoryVaultPage() {
         : "Healthy";
   const latestProof = newestSnapshot?.txHash ?? newestSnapshot?.rootHash ?? null;
   const proofRows = [
-    ["Network", vault.settings.network],
-    ["Mode", storageLabel],
+    ["Archive", storageLabel],
+    ["Status", vaultHealth],
     ["Root", formatHash(newestSnapshot?.rootHash ?? null)],
     ["Manifest", formatHash(newestSnapshot?.manifestHash ?? null)],
   ];
@@ -215,12 +215,7 @@ export default function MemoryVaultPage() {
         detail: "waiting for upload",
         icon: Clock3,
       },
-      {
-        label: "Network",
-        value: vault.settings.network,
-        detail: vaultHealth,
-        icon: ShieldCheck,
-      },
+      { label: "Integrity", value: storageLabel, detail: vaultHealth, icon: ShieldCheck },
     ],
     [uploadRate, vault, vaultHealth],
   );
@@ -241,11 +236,8 @@ export default function MemoryVaultPage() {
               <RefreshCw size={15} /> Refresh
             </button>
           </div>
-          <h1>Stellar memory control room</h1>
-          <p>
-            Review what is remembered, package private exports, and publish encrypted proofs without
-            hunting through chat history.
-          </p>
+          <h1>Memory vault</h1>
+          <p>Review saved memories, prepare private archives, and manage room snapshots.</p>
           <div className="memory-integrity-meter">
             <div>
               <span>Upload coverage</span>
@@ -256,13 +248,10 @@ export default function MemoryVaultPage() {
             </i>
           </div>
         </div>
-        <div
-          className="memory-proof-card memory-proof-terminal"
-          aria-label="Latest Stellar memory proof"
-        >
+        <div className="memory-proof-card memory-proof-terminal" aria-label="Latest memory record">
           <div className="memory-terminal-header">
             <span>
-              <KeyRound size={15} /> Proof stream
+              <KeyRound size={15} /> Record stream
             </span>
             <b>{vaultHealth}</b>
           </div>
@@ -270,7 +259,7 @@ export default function MemoryVaultPage() {
           <small>
             {newestSnapshot
               ? `${formatSnapshotKind(newestSnapshot.kind)} - ${formatDate(newestSnapshot.createdAt)}`
-              : "Create a snapshot to publish the first encrypted commitment."}
+              : "Create a snapshot to start your private archive."}
           </small>
           <dl className="memory-proof-list">
             {proofRows.map(([label, value]) => (
@@ -317,9 +306,7 @@ export default function MemoryVaultPage() {
             <span>
               <b>{vault.summary.roomsWithMemory.toLocaleString()}</b>
               <strong>rooms ready</strong>
-              <small>
-                {vault.summary.snapshots.toLocaleString()} decentralized records created
-              </small>
+              <small>{vault.summary.snapshots.toLocaleString()} private records prepared</small>
             </span>
           </div>
           <div className="memory-process-list" aria-label="Export process">
@@ -330,7 +317,7 @@ export default function MemoryVaultPage() {
               <Layers3 size={15} /> Write manifest hash
             </span>
             <span>
-              <ShieldCheck size={15} /> Queue Stellar proof
+              <ShieldCheck size={15} /> Seal archive
             </span>
           </div>
         </article>
@@ -349,7 +336,7 @@ export default function MemoryVaultPage() {
             <span>
               <b>{characters.length.toLocaleString()}</b>
               <strong>creator characters</strong>
-              <small>Archive character context into portable Stellar packages.</small>
+              <small>Archive character context into portable packages.</small>
             </span>
           </div>
           <div className="wallet-table memory-creator-list">
@@ -460,7 +447,7 @@ export default function MemoryVaultPage() {
           <div className="panel-heading split">
             <div>
               <span className="section-label">
-                <FileJson size={15} /> Stellar records
+                <FileJson size={15} /> Private records
               </span>
               <h2>Snapshot ledger</h2>
             </div>
@@ -488,8 +475,8 @@ export default function MemoryVaultPage() {
             {vault.snapshots.length === 0 ? (
               <div className="dashboard-empty-card compact-empty">
                 <FileJson size={20} />
-                <h3>No decentralized records</h3>
-                <p>Queued snapshots will create encrypted Stellar records.</p>
+                <h3>No private records</h3>
+                <p>Queued snapshots will create sealed archive records.</p>
               </div>
             ) : null}
           </div>
