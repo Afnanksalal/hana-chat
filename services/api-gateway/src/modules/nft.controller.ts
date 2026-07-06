@@ -18,12 +18,13 @@ import {
   transferHanaNft,
 } from "@hana/stellar-bridge";
 import { Body, Controller, Get, Headers, Param, Post, Query } from "@nestjs/common";
-import { Kysely } from "kysely";
+import { Kysely, type Insertable } from "kysely";
 import { randomUUID } from "node:crypto";
 import { auditEvent, requireSession } from "./session";
 import { createStellarPaymentIntent, verifyStellarPaymentIntent } from "./stellar-payments";
 
 type Db = Kysely<HanaDatabase>;
+type CreatorLedgerEntryInsert = Insertable<HanaDatabase["billing.creator_ledger_entries"]>;
 
 @Controller("/v1/nft")
 export class NftController {
@@ -1279,7 +1280,7 @@ async function finalizeNftSale(
       })
       .execute();
 
-    const ledgerRows = [
+    const ledgerRows: CreatorLedgerEntryInsert[] = [
       {
         creator_user_id: input.sellerUserId,
         character_id: input.characterId,
