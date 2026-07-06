@@ -41,6 +41,7 @@ export class NftController {
       .select([
         "listings.id as listing_id",
         "listings.price_cents",
+        "listings.min_offer_cents",
         "listings.currency",
         "listings.asset_code",
         "listings.expires_at",
@@ -83,9 +84,12 @@ export class NftController {
 
     return {
       enabled: this.nftConfigured(),
+      platformFeeBps: this.config.CREATOR_PLATFORM_FEE_BPS,
+      maxRoyaltyBps: 1_000,
       listings: rows.map((row) => ({
         id: row.listing_id,
         priceCents: row.price_cents,
+        minOfferCents: row.min_offer_cents,
         currency: row.currency,
         assetCode: row.asset_code,
         expiresAt: row.expires_at?.toISOString() ?? null,
@@ -140,6 +144,7 @@ export class NftController {
           "assets.network",
           "assets.status",
           "assets.moderation_status",
+          "assets.creator_user_id",
           "assets.owner_user_id",
           "assets.owner_address",
           "assets.creator_address",
@@ -151,6 +156,7 @@ export class NftController {
           "assets.listed_at",
           "listings.id as listing_id",
           "listings.price_cents",
+          "listings.min_offer_cents",
           "listings.currency",
           "listings.status as listing_status",
           "listings.reserved_until as listing_reserved_until",
@@ -195,6 +201,8 @@ export class NftController {
 
     return {
       enabled: this.nftConfigured(),
+      platformFeeBps: this.config.CREATOR_PLATFORM_FEE_BPS,
+      maxRoyaltyBps: 1_000,
       assets: assets.map((asset) => ({
         id: asset.id,
         title: asset.title,
@@ -205,6 +213,7 @@ export class NftController {
         network: asset.network,
         status: asset.status,
         moderationStatus: asset.moderation_status,
+        creatorUserId: asset.creator_user_id,
         ownerUserId: asset.owner_user_id,
         ownerAddress: asset.owner_address,
         creatorAddress: asset.creator_address,
@@ -218,6 +227,7 @@ export class NftController {
           ? {
               id: asset.listing_id,
               priceCents: asset.price_cents,
+              minOfferCents: asset.min_offer_cents,
               currency: asset.currency,
               status: asset.listing_status,
               reservedUntil: asset.listing_reserved_until?.toISOString() ?? null,
@@ -483,6 +493,7 @@ export class NftController {
     const input = CreateNftListingRequestSchema.parse(body);
     assertNftReady(this.config);
     const expiresAt = input.expiresAt ? requireFutureDate(input.expiresAt, "Listing") : null;
+    const minOfferCents = input.minOfferCents ?? input.priceCents;
 
     const asset = await this.db
       .selectFrom("web3.nft_assets")
@@ -510,6 +521,7 @@ export class NftController {
           seller_user_id: session.userId,
           seller_address: asset.owner_address,
           price_cents: input.priceCents,
+          min_offer_cents: minOfferCents,
           currency: input.currency,
           asset_code: this.config.STELLAR_PAYMENT_ASSET_CODE,
           asset_issuer: this.config.STELLAR_PAYMENT_ASSET_ISSUER ?? null,
@@ -537,7 +549,7 @@ export class NftController {
       action: "nft.listing.create",
       resourceType: "web3.nft_listing",
       resourceId: listing.id,
-      metadata: { assetId: asset.id, priceCents: input.priceCents },
+      metadata: { assetId: asset.id, priceCents: input.priceCents, minOfferCents },
     });
 
     return { ok: true, listingId: listing.id };
@@ -832,9 +844,23 @@ export class NftController {
     const expiresAt = input.expiresAt ? requireFutureDate(input.expiresAt, "Offer") : null;
 
     const asset = await this.db
-      .selectFrom("web3.nft_assets")
-      .select(["id", "title", "owner_user_id", "status", "moderation_status"])
-      .where("id", "=", assetId)
+      .selectFrom("web3.nft_assets as assets")
+      .leftJoin("web3.nft_listings as listings", (join) =>
+        join
+          .onRef("listings.nft_asset_id", "=", "assets.id")
+          .on((eb) =>
+            eb.or([eb("listings.status", "=", "active"), eb("listings.status", "=", "reserved")]),
+          ),
+      )
+      .select([
+        "assets.id",
+        "assets.title",
+        "assets.owner_user_id",
+        "assets.status",
+        "assets.moderation_status",
+        "listings.min_offer_cents",
+      ])
+      .where("assets.id", "=", assetId)
       .executeTakeFirst();
 
     if (
@@ -847,6 +873,13 @@ export class NftController {
 
     if (asset.owner_user_id === session.userId) {
       throw new DomainError("CONFLICT", "You already own this NFT");
+    }
+
+    if (asset.min_offer_cents !== null && input.amountCents < asset.min_offer_cents) {
+      throw new DomainError(
+        "VALIDATION_FAILED",
+        `Offer must be at least ${asset.min_offer_cents} cents`,
+      );
     }
 
     const offer = await this.db
@@ -970,6 +1003,7 @@ export class NftController {
   private nftConfigured(): boolean {
     return Boolean(
       this.config.STELLAR_ENABLED &&
+      this.config.STELLAR_PAYMENTS_ENABLED &&
       this.config.STELLAR_NFT_ENABLED &&
       this.config.STELLAR_NFT_CONTRACT_ID &&
       this.config.STELLAR_SERVER_KEY_REF,
@@ -1493,6 +1527,13 @@ function requireFutureDate(value: string, label: string): Date {
 
   if (parsed.getTime() <= Date.now()) {
     throw new DomainError("VALIDATION_FAILED", `${label} expiry must be in the future`);
+  }
+
+  const maxExpiry = new Date();
+  maxExpiry.setUTCDate(maxExpiry.getUTCDate() + 180);
+
+  if (parsed.getTime() > maxExpiry.getTime()) {
+    throw new DomainError("VALIDATION_FAILED", `${label} expiry cannot exceed 180 days`);
   }
 
   return parsed;
