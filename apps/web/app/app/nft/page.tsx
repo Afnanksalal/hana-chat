@@ -3,12 +3,15 @@
 import {
   ArrowRight,
   BadgeCheck,
+  ChevronDown,
   Gem,
   Image as ImageIcon,
   ListPlus,
   RefreshCw,
+  Search,
   Sparkles,
   Tags,
+  UserRound,
   WalletCards,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -152,6 +155,113 @@ function listingHasLiveReservation(listing: OwnedNftAsset["listing"]): boolean {
     listing?.status === "reserved" &&
     listing.reservedUntil !== null &&
     new Date(listing.reservedUntil).getTime() > Date.now(),
+  );
+}
+
+function CharacterPicker({
+  characters,
+  selectedCharacter,
+  onSelect,
+}: {
+  characters: CharacterSummary[];
+  selectedCharacter: CharacterSummary | undefined;
+  onSelect: (characterId: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const filteredCharacters = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
+
+    if (!normalizedQuery) {
+      return characters;
+    }
+
+    return characters.filter((character) => character.name.toLowerCase().includes(normalizedQuery));
+  }, [characters, query]);
+
+  function selectCharacter(character: CharacterSummary) {
+    onSelect(character.id);
+    setQuery("");
+    setOpen(false);
+  }
+
+  return (
+    <div
+      className="nft-character-picker"
+      onBlur={(event) => {
+        const nextTarget = event.relatedTarget;
+
+        if (!(nextTarget instanceof Node) || !event.currentTarget.contains(nextTarget)) {
+          setOpen(false);
+        }
+      }}
+    >
+      <button
+        aria-expanded={open}
+        aria-haspopup="listbox"
+        className="nft-character-trigger"
+        disabled={characters.length === 0}
+        onClick={() => setOpen((current) => !current)}
+        type="button"
+      >
+        <span className="nft-character-avatar" aria-hidden="true">
+          {selectedCharacter?.avatarUrl ? (
+            <img src={selectedCharacter.avatarUrl} alt="" />
+          ) : (
+            <UserRound size={18} />
+          )}
+        </span>
+        <span>
+          <strong>{selectedCharacter?.name ?? "No characters yet"}</strong>
+          <small>{characters.length.toLocaleString()} creator characters</small>
+        </span>
+        <ChevronDown size={18} />
+      </button>
+
+      {open ? (
+        <div className="nft-character-popover">
+          <label className="nft-character-search">
+            <Search size={16} />
+            <input
+              autoFocus
+              onChange={(event) => setQuery(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  setOpen(false);
+                }
+              }}
+              placeholder="Search characters"
+              value={query}
+            />
+          </label>
+          <div className="nft-character-options" role="listbox" aria-label="Creator characters">
+            {filteredCharacters.map((character) => (
+              <button
+                aria-selected={character.id === selectedCharacter?.id}
+                className={character.id === selectedCharacter?.id ? "active" : ""}
+                key={character.id}
+                onClick={() => selectCharacter(character)}
+                role="option"
+                type="button"
+              >
+                <span className="nft-character-avatar" aria-hidden="true">
+                  {character.avatarUrl ? (
+                    <img src={character.avatarUrl} alt="" />
+                  ) : (
+                    <UserRound size={18} />
+                  )}
+                </span>
+                <span>{character.name}</span>
+                {character.id === selectedCharacter?.id ? <BadgeCheck size={16} /> : null}
+              </button>
+            ))}
+            {filteredCharacters.length === 0 ? (
+              <p className="nft-character-empty">No matching characters.</p>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -558,23 +668,20 @@ export default function NftStudioPage() {
                 <p>Create character art and mint it to a Stellar wallet.</p>
               </div>
             </div>
-            <label>
-              Character
-              <select
-                value={selectedCharacter?.id ?? ""}
-                onChange={(event) => setSelectedCharacterId(event.target.value)}
-              >
-                {characters.map((character) => (
-                  <option key={character.id} value={character.id}>
-                    {character.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Art direction
-              <textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} />
-            </label>
+            <div className="nft-mint-controls">
+              <div className="nft-field-block">
+                <span className="nft-field-label">Character</span>
+                <CharacterPicker
+                  characters={characters}
+                  selectedCharacter={selectedCharacter}
+                  onSelect={setSelectedCharacterId}
+                />
+              </div>
+              <label>
+                Art direction
+                <textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} />
+              </label>
+            </div>
             <button
               className="primary-action compact"
               type="button"
@@ -586,48 +693,56 @@ export default function NftStudioPage() {
 
             {generated ? (
               <div className="nft-generated-preview">
-                <img src={generated.url} alt="" />
-                <label>
-                  Title
-                  <input value={mintTitle} onChange={(event) => setMintTitle(event.target.value)} />
-                </label>
-                <label>
-                  Description
-                  <textarea
-                    value={mintDescription}
-                    onChange={(event) => setMintDescription(event.target.value)}
-                  />
-                </label>
-                <label>
-                  Owner wallet
-                  <input
-                    value={mintWallet}
-                    onChange={(event) => setMintWallet(event.target.value.trim())}
-                    placeholder="G..."
-                  />
-                </label>
-                <label>
-                  Royalty %
-                  <input
-                    inputMode="decimal"
-                    min={0}
-                    max={10}
-                    step={0.25}
-                    type="number"
-                    value={royaltyBps / 100}
-                    onChange={(event) =>
-                      setRoyaltyBps(Math.round(Number(event.target.value || 0) * 100))
-                    }
-                  />
-                </label>
-                <button
-                  className="primary-action compact"
-                  type="button"
-                  onClick={() => void mintGeneratedArt()}
-                  disabled={Boolean(busy) || !nftReady}
-                >
-                  Mint NFT <Gem size={16} />
-                </button>
+                <div className="nft-generated-art">
+                  <img src={generated.url} alt="" />
+                  <span>{selectedCharacter?.name ?? "Generated"} artwork</span>
+                </div>
+                <div className="nft-mint-fields">
+                  <label>
+                    Title
+                    <input
+                      value={mintTitle}
+                      onChange={(event) => setMintTitle(event.target.value)}
+                    />
+                  </label>
+                  <label>
+                    Owner wallet
+                    <input
+                      value={mintWallet}
+                      onChange={(event) => setMintWallet(event.target.value.trim())}
+                      placeholder="G..."
+                    />
+                  </label>
+                  <label className="wide">
+                    Description
+                    <textarea
+                      value={mintDescription}
+                      onChange={(event) => setMintDescription(event.target.value)}
+                    />
+                  </label>
+                  <label>
+                    Royalty %
+                    <input
+                      inputMode="decimal"
+                      min={0}
+                      max={10}
+                      step={0.25}
+                      type="number"
+                      value={royaltyBps / 100}
+                      onChange={(event) =>
+                        setRoyaltyBps(Math.round(Number(event.target.value || 0) * 100))
+                      }
+                    />
+                  </label>
+                  <button
+                    className="primary-action compact nft-mint-submit"
+                    type="button"
+                    onClick={() => void mintGeneratedArt()}
+                    disabled={Boolean(busy) || !nftReady}
+                  >
+                    Mint NFT <Gem size={16} />
+                  </button>
+                </div>
               </div>
             ) : null}
           </article>
