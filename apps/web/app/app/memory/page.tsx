@@ -283,8 +283,8 @@ export default function MemoryVaultPage() {
         ))}
       </section>
 
-      <section className="wallet-grid memory-action-grid memory-operations-grid">
-        <article className="wallet-table-panel memory-action-panel">
+      <section className="memory-bento-grid">
+        <article className="wallet-table-panel memory-action-panel memory-export-panel">
           <div className="panel-heading split">
             <div>
               <span className="section-label">
@@ -322,7 +322,7 @@ export default function MemoryVaultPage() {
           </div>
         </article>
 
-        <article className="wallet-table-panel memory-action-panel">
+        <article className="wallet-table-panel memory-action-panel memory-soul-panel">
           <div className="panel-heading split">
             <div>
               <span className="section-label">
@@ -371,9 +371,6 @@ export default function MemoryVaultPage() {
             ) : null}
           </div>
         </article>
-      </section>
-
-      <section className="wallet-ledger-grid">
         <article className="wallet-table-panel memory-rooms-panel">
           <div className="panel-heading split">
             <div>

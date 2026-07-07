@@ -3585,7 +3585,7 @@ select:hover,
 }
 
 .nft-page {
-  gap: 16px;
+  gap: 12px;
 }
 
 .nft-page,
@@ -3595,28 +3595,38 @@ select:hover,
 
 .nft-hero {
   align-items: center;
-  padding: 18px 20px;
+  padding: 14px 16px;
 }
 
 .nft-hero.wallet-hero {
-  gap: 16px;
+  gap: 14px;
+  min-height: auto;
 }
 
 .nft-hero .payment-hero-copy {
-  flex-basis: 460px;
+  flex: 1 1 460px;
+  min-height: auto;
+  padding: 0;
 }
 
 .nft-hero .payment-hero-copy h1 {
-  font-size: clamp(30px, 3vw, 46px);
+  font-size: clamp(28px, 2.4vw, 38px);
+  line-height: 0.98;
 }
 
 .nft-hero .payment-hero-copy p {
   max-width: 760px;
+  margin-top: 2px;
+  line-height: 1.45;
 }
 
 .nft-hero .payment-hero-chips {
-  flex: 0 1 520px;
+  flex: 0 1 440px;
   justify-content: flex-end;
+}
+
+.nft-hero .payment-hero-chips span {
+  min-height: 34px;
 }
 
 .nft-tabbar {
@@ -4357,15 +4367,16 @@ select:hover,
 
 .memory-character-list {
   display: grid;
-  gap: 10px;
+  gap: 8px;
 }
 
 .memory-character-card {
   display: grid;
-  grid-template-columns: 46px minmax(0, 1fr) auto;
-  gap: 14px;
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+  gap: 12px;
   align-items: center;
-  padding: 12px;
+  min-height: 76px;
+  padding: 10px;
   background: #050506;
   border: 1px solid #26222b;
   border-radius: calc(var(--radius) - 2px);
@@ -4379,7 +4390,7 @@ select:hover,
 
 .memory-character-main strong {
   color: #f8f4f7;
-  font-size: 17px;
+  font-size: 15px;
 }
 
 .memory-character-main small,
@@ -4395,17 +4406,17 @@ select:hover,
 }
 
 .memory-room-mini-list span {
-  min-height: 28px;
-  padding: 5px 8px;
-  font-size: 12px;
+  min-height: 24px;
+  padding: 4px 7px;
+  font-size: 11px;
   background: #020203;
   border: 1px solid #2a2530;
   border-radius: calc(var(--radius) - 4px);
 }
 
 .memory-room-avatar {
-  width: 42px;
-  height: 42px;
+  width: 40px;
+  height: 40px;
   object-fit: cover;
   background: #08080b;
   border: 1px solid rgba(255, 31, 109, 0.36);
@@ -4418,12 +4429,17 @@ select:hover,
 }
 
 .memory-character-card .memory-action-buttons .secondary-action {
-  min-height: 38px;
-  padding-inline: 12px;
+  min-height: 34px;
+  padding-inline: 10px;
 }
 
 .memory-snapshot-row {
   align-items: flex-start;
+  min-height: 78px;
+  padding: 11px;
+  background: #030304;
+  border: 1px solid #24212a;
+  border-radius: 8px;
 }
 
 .memory-hash {
@@ -4633,10 +4649,6 @@ select:hover,
 
 .payment-purchase-row b {
   color: #f8f4f7;
-}
-
-.memory-action-panel {
-  min-height: 258px;
 }
 
 .memory-process-list {
@@ -4894,8 +4906,44 @@ select:hover,
   background: #37d67a;
 }
 
-.memory-operations-grid {
-  grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr);
+.memory-bento-grid {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 12px;
+  align-items: stretch;
+}
+
+.memory-bento-grid > .wallet-table-panel {
+  min-height: 0;
+  height: 100%;
+}
+
+.memory-export-panel {
+  grid-column: span 5;
+}
+
+.memory-soul-panel {
+  grid-column: span 7;
+}
+
+.memory-rooms-panel,
+.memory-snapshot-panel {
+  grid-column: span 6;
+}
+
+.memory-action-panel {
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  min-height: 238px;
+  padding: 14px;
+}
+
+.memory-soul-panel {
+  grid-template-rows: auto auto minmax(0, 1fr);
+}
+
+.memory-rooms-panel,
+.memory-snapshot-panel {
+  padding: 14px;
 }
 
 .memory-action-panel,
@@ -4908,20 +4956,43 @@ select:hover,
 
 .memory-action-copy {
   background: #070708;
+  min-height: 74px;
+}
+
+.memory-export-panel .memory-action-copy {
+  align-items: center;
 }
 
 .memory-action-copy.compact {
   align-items: center;
+  min-height: 70px;
 }
 
 .memory-action-copy b {
   color: #f8f4f7;
-  font-size: clamp(30px, 4vw, 46px);
+  font-size: clamp(26px, 3vw, 38px);
   line-height: 0.95;
 }
 
 .memory-primary-action {
-  min-width: 150px;
+  min-width: 128px;
+}
+
+.memory-creator-list {
+  gap: 8px;
+}
+
+.memory-creator-row {
+  min-height: 42px;
+  padding: 9px;
+  background: #030304;
+  border: 1px solid #24212a;
+  border-radius: 8px;
+}
+
+.memory-creator-row .secondary-action {
+  min-height: 34px;
+  padding-inline: 10px;
 }
 
 .payout-profile-card,
@@ -8953,8 +9024,16 @@ textarea {
 @media (max-width: 1120px) {
   .payment-desk-hero,
   .memory-command-hero,
-  .memory-operations-grid {
+  .memory-operations-grid,
+  .memory-bento-grid {
     grid-template-columns: 1fr;
+  }
+
+  .memory-export-panel,
+  .memory-soul-panel,
+  .memory-rooms-panel,
+  .memory-snapshot-panel {
+    grid-column: 1 / -1;
   }
 
   .payment-wallet-card,
