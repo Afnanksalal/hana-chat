@@ -141,7 +141,10 @@ export const AppConfigSchema = z
     STELLAR_NFT_CONTRACT_ID: z.string().optional(),
     STELLAR_SERVER_KEY_REF: z.string().optional(),
     STELLAR_PAYMENT_ASSET_CODE: z.string().trim().min(1).max(12).default("XLM"),
-    STELLAR_PAYMENT_ASSET_ISSUER: z.string().optional(),
+    STELLAR_PAYMENT_ASSET_ISSUER: z.preprocess(
+      (value) => (value === "" ? undefined : value),
+      z.string().optional(),
+    ),
     STELLAR_PAYMENT_TOKEN_USD_CENTS: z.coerce.number().int().min(1).max(1_000_000).default(10),
     STELLAR_PAYMENT_INTENT_TTL_MINUTES: z.coerce
       .number()

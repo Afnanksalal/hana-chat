@@ -587,13 +587,13 @@ function isPaymentOperationRecord(op: unknown): op is Horizon.ServerApi.PaymentO
 function isMatchingAsset(
   op: Horizon.ServerApi.PaymentOperationRecord,
   assetCode: string,
-  assetIssuer: string | null,
+  assetIssuer: string | null | undefined,
 ): boolean {
-  if (assetCode === "XLM" && assetIssuer === null) {
+  if (assetCode === "XLM") {
     return op.asset_type === "native";
   }
 
-  return op.asset_code === assetCode && op.asset_issuer === assetIssuer;
+  return op.asset_code === assetCode && op.asset_issuer === (assetIssuer || null);
 }
 
 function isSufficientAmount(actual: string, minimum: string): boolean {

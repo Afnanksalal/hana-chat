@@ -25,6 +25,8 @@ const sshOptions = [
   "-o",
   "StrictHostKeyChecking=accept-new",
   "-o",
+  "BatchMode=yes",
+  "-o",
   "ServerAliveInterval=30",
   "-o",
   "ServerAliveCountMax=6",
