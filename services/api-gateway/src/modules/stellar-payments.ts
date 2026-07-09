@@ -156,14 +156,15 @@ export async function verifyStellarPaymentIntent(input: {
       );
     }
 
+    const paymentAsset = resolveStellarPaymentAsset(payment, input.config);
     const verificationInput: Parameters<typeof verifyStellarPayment>[0] = {
       horizonUrl: input.config.STELLAR_HORIZON_URL,
       network: input.config.STELLAR_NETWORK,
       txHash,
       expectedTo: treasuryAddress(input.config),
       expectedMemo: stellarMemo(payment),
-      assetCode: input.config.STELLAR_PAYMENT_ASSET_CODE,
-      assetIssuer: input.config.STELLAR_PAYMENT_ASSET_ISSUER ?? null,
+      assetCode: paymentAsset.assetCode,
+      assetIssuer: paymentAsset.assetIssuer,
       minimumAmountDisplay: String(payment.amount_atomic),
     };
     if (walletAddress) {
@@ -207,14 +208,15 @@ export async function verifyStellarPaymentIntent(input: {
     throw new DomainError("CONFLICT", "This transaction hash is already attached to a payment");
   }
 
+  const paymentAsset = resolveStellarPaymentAsset(payment, input.config);
   const verificationInput: Parameters<typeof verifyStellarPayment>[0] = {
     horizonUrl: input.config.STELLAR_HORIZON_URL,
     network: input.config.STELLAR_NETWORK,
     txHash,
     expectedTo: treasuryAddress(input.config),
     expectedMemo: stellarMemo(payment),
-    assetCode: input.config.STELLAR_PAYMENT_ASSET_CODE,
-    assetIssuer: input.config.STELLAR_PAYMENT_ASSET_ISSUER ?? null,
+    assetCode: paymentAsset.assetCode,
+    assetIssuer: paymentAsset.assetIssuer,
     minimumAmountDisplay: String(payment.amount_atomic),
   };
   if (walletAddress) {
@@ -349,18 +351,20 @@ export function toStellarPaymentIntent(
     currency: string;
     expires_at: Date;
     provider_reference: string;
+    metadata_json?: unknown;
   },
   config: AppConfig,
 ): StellarPaymentIntent {
   const memo = String(payment.provider_reference).slice(0, 28);
+  const paymentAsset = resolveStellarPaymentAsset(payment, config);
 
   return buildStellarPaymentIntent({
     id: payment.id,
     network: config.STELLAR_NETWORK,
     horizonUrl: config.STELLAR_HORIZON_URL,
     treasuryAddress: treasuryAddress(config),
-    assetCode: config.STELLAR_PAYMENT_ASSET_CODE,
-    assetIssuer: config.STELLAR_PAYMENT_ASSET_ISSUER ?? null,
+    assetCode: paymentAsset.assetCode,
+    assetIssuer: paymentAsset.assetIssuer,
     amountCents: payment.amount_cents,
     tokenUsdCents: config.STELLAR_PAYMENT_TOKEN_USD_CENTS,
     currency: payment.currency,
@@ -439,6 +443,38 @@ function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : {};
+}
+
+export function resolveStellarPaymentAsset(
+  payment: {
+    metadata_json?: unknown;
+    token_address: string | null;
+  },
+  config: Pick<AppConfig, "STELLAR_PAYMENT_ASSET_CODE" | "STELLAR_PAYMENT_ASSET_ISSUER">,
+): { assetCode: string; assetIssuer: string | null } {
+  const metadata = asRecord(payment.metadata_json);
+  const metadataAssetCode = optionalString(metadata["assetCode"]);
+  const metadataAssetIssuer = optionalString(metadata["assetIssuer"]);
+  const assetCode = (metadataAssetCode ?? config.STELLAR_PAYMENT_ASSET_CODE).trim().toUpperCase();
+
+  if (assetCode === "XLM") {
+    return { assetCode, assetIssuer: null };
+  }
+
+  const assetIssuer =
+    metadataAssetIssuer ??
+    optionalString(payment.token_address) ??
+    optionalString(config.STELLAR_PAYMENT_ASSET_ISSUER);
+
+  if (!assetIssuer) {
+    throw new DomainError("INTERNAL", `Stellar payment intent is missing issuer for ${assetCode}`);
+  }
+
+  return { assetCode, assetIssuer };
+}
+
+function optionalString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
 }
 
 function stellarMemo(payment: {

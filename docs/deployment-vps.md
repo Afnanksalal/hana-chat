@@ -62,6 +62,11 @@ Stellar payments when `MONETIZATION_ENABLED=true` and `STELLAR_PAYMENTS_ENABLED=
 lightweight `smtp-relay` Postfix container on the private Docker network; keep DKIM keys under
 `/opt/hana-chat/shared/opendkim-keys` and do not commit private keys.
 
+AgentRouter's OpenAI-compatible base URL is `https://agentrouter.org/v1`, so chat completions route
+to `https://agentrouter.org/v1/chat/completions`. If VPS probes return `text/html` with an Aliyun WAF
+challenge instead of JSON, keep `TEXT_MODEL_FALLBACK_PROVIDER=xai` enabled and contact AgentRouter for
+backend traffic allowlisting before removing fallback.
+
 Generate the DKIM key before first production mail send:
 
 ```bash
