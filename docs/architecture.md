@@ -18,7 +18,8 @@ flowchart LR
   GraphSvc --> Neo4j["Neo4j graph memory"]
   GraphSvc --> Postgres
   Gateway --> Qdrant["Qdrant vector retrieval"]
-  Gateway --> Xai["xAI chat completions and image generation"]
+  Gateway --> TextModels["Configured text model provider"]
+  Gateway --> Xai["xAI image generation"]
   Gateway --> Redis["Redis cache / rate state"]
   Gateway --> Mail["SMTP email"]
   Gateway --> Stellar["Stellar settlement (flag gated)"]
@@ -43,7 +44,7 @@ sequenceDiagram
   participant Vec as Qdrant
   participant Graph as Graph Service
   participant Rank as Retrieval Service
-  participant Model as xAI
+  participant Model as Text model provider
 
   Web->>API: POST /v1/chat/messages
   API->>DB: Validate session, entitlement, character, conversation
@@ -171,7 +172,8 @@ prompts, raw identity data, settlement credentials, and internal model payloads.
 
 - `apps/web`: consumer web app, PWA, landing, auth, app shell, marketplace, chat, creator tools.
 - `apps/android-twa`: Bubblewrap Trusted Web Activity wrapper for Android APK/AAB builds.
-- `services/api-gateway`: stable public product API and request coordinator, including image-only xAI media generation stored through Hana media assets.
+- `services/api-gateway`: stable public product API and request coordinator, including configured
+  text model routing and image-only xAI media generation stored through Hana media assets.
 - `services/*`: private NestJS bounded contexts used by the gateway, workers, or operators.
 - `packages/contracts`: shared validation schemas and branded types.
 - `packages/database`: typed Kysely database model.

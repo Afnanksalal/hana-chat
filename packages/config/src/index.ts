@@ -68,6 +68,7 @@ const placeholderSecrets = new Set([
   "replace-with-32-byte-session-secret",
   "replace-with-32-byte-base64-key",
   "replace-with-xai-key",
+  "replace-with-agent-router-key",
   "replace-with-email-hash-secret",
   "replace-with-email-encryption-key",
   "replace-with-payout-encryption-key",
@@ -113,6 +114,13 @@ export const AppConfigSchema = z
     XAI_BASE_URL: z.string().url().default("https://api.x.ai/v1"),
     XAI_DEFAULT_MODEL: z.string().default("grok-4.3"),
     XAI_IMAGE_MODEL: z.string().default("grok-imagine-image-quality"),
+    TEXT_MODEL_PROVIDER: z.enum(["xai", "agentrouter"]).default("xai"),
+    TEXT_MODEL_FALLBACK_PROVIDER: z.enum(["none", "xai"]).default("none"),
+    AGENT_ROUTER_API_KEY: z.string().optional(),
+    AGENT_ROUTER_BASE_URL: z.string().url().default("https://agentrouter.org/v1"),
+    AGENT_ROUTER_DEFAULT_MODEL: z.string().trim().min(1).default("deepseek-v3.2"),
+    AGENT_ROUTER_COMPLEX_MODEL: z.string().trim().min(1).default("gpt-5.1"),
+    AGENT_ROUTER_MEMORY_MODEL: z.string().trim().min(1).default("deepseek-v3.2"),
     TURN_MEMORY_FEEDBACK_ENABLED: booleanEnvSchema.default(true),
 
     MEDIA_STORAGE_DIR: z.string().default(join(process.cwd(), "data", "media")),
@@ -294,7 +302,30 @@ export const AppConfigSchema = z
       ctx.addIssue({
         code: "custom",
         path: ["XAI_API_KEY"],
-        message: "XAI_API_KEY must be configured with a non-placeholder value in production",
+        message:
+          "XAI_API_KEY must be configured with a non-placeholder value in production for image generation and xAI fallback routing",
+      });
+    }
+
+    if (
+      config.TEXT_MODEL_PROVIDER === "agentrouter" &&
+      isMissingOrPlaceholder(config.AGENT_ROUTER_API_KEY)
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["AGENT_ROUTER_API_KEY"],
+        message: "AGENT_ROUTER_API_KEY must be configured when TEXT_MODEL_PROVIDER=agentrouter",
+      });
+    }
+
+    if (
+      config.TEXT_MODEL_FALLBACK_PROVIDER === "xai" &&
+      isMissingOrPlaceholder(config.XAI_API_KEY)
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["TEXT_MODEL_FALLBACK_PROVIDER"],
+        message: "TEXT_MODEL_FALLBACK_PROVIDER=xai requires XAI_API_KEY",
       });
     }
 

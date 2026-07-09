@@ -479,7 +479,14 @@ export const ApiHealthResponseSchema = z.object({
 
 export type ApiHealthResponse = z.infer<typeof ApiHealthResponseSchema>;
 
-export const ModelProviderSchema = z.enum(["xai", "nous", "openrouter", "local", "custom"]);
+export const ModelProviderSchema = z.enum([
+  "xai",
+  "agentrouter",
+  "nous",
+  "openrouter",
+  "local",
+  "custom",
+]);
 export type ModelProviderName = z.infer<typeof ModelProviderSchema>;
 
 export const ModelReasoningEffortSchema = z.enum(["none", "low", "medium", "high"]);

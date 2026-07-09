@@ -749,8 +749,11 @@ Do not put raw Hermes Agent in the public hot path with broad tools enabled. It 
 
 ### Default Chat Model
 
-- Provider: xAI.
-- Model: `grok-4.3`.
+- Provider: configured text model provider. Production can use AgentRouter through
+  `TEXT_MODEL_PROVIDER=agentrouter`; xAI remains available for image generation and explicit text
+  fallback.
+- Default AgentRouter model: `deepseek-v3.2`.
+- Complex AgentRouter model: `gpt-5.1`.
 - Reasoning: `none` by default.
 - Use `low` for:
   - story repair,
@@ -763,7 +766,7 @@ Do not put raw Hermes Agent in the public hot path with broad tools enabled. It 
 
 ```ts
 export interface ModelProvider {
-  readonly provider: "xai" | "nous" | "openrouter" | "local" | "custom";
+  readonly provider: "xai" | "agentrouter" | "nous" | "openrouter" | "local" | "custom";
   complete(input: ModelCompleteInput): Promise<ModelCompleteResult>;
   stream(input: ModelStreamInput): AsyncIterable<ModelStreamEvent>;
   countTokens(input: TokenCountInput): Promise<TokenCountResult>;
@@ -785,12 +788,12 @@ export interface ModelProvider {
 ### Routing Policy
 
 ```text
-free normal chat       -> grok-4.3 none, strict token budget
-plus normal chat       -> grok-4.3 none, larger memory budget
-ultra normal chat      -> grok-4.3 none or low if needed
+free normal chat       -> configured default model none, strict token budget
+plus normal chat       -> configured default model none, larger memory budget
+ultra normal chat      -> configured default or complex model when needed
 memory extraction      -> local/Hermes/NouS cheap model where possible
 moderation classifier  -> small classifier + rules, escalate to stronger model
-summarization          -> cheap model first, grok low for high-value users
+summarization          -> cheap configured model first, complex route for high-value users
 image generation       -> separate credit meter
 ```
 
@@ -1541,7 +1544,7 @@ Pipeline:
 - Character CRUD.
 - Conversation CRUD.
 - Message streaming.
-- xAI provider.
+- Configured text model provider.
 - Model-call logging.
 - Basic quota.
 - Basic safety.

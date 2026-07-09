@@ -55,8 +55,9 @@ The web container overrides `API_GATEWAY_URL` to `http://api-gateway:4000` so we
 call the API over the private Docker network. Domain traffic uses `.hanachat.site` cookies; direct IP
 testing remains available but is not the canonical SEO/auth host.
 
-The Playground VPS env has xAI configured. Monetization uses Stellar payments when
-`MONETIZATION_ENABLED=true` and `STELLAR_PAYMENTS_ENABLED=true`; set
+The Playground VPS env supports `TEXT_MODEL_PROVIDER=agentrouter` for text routing, with xAI kept
+for image generation and optional `TEXT_MODEL_FALLBACK_PROVIDER=xai` resilience. Monetization uses
+Stellar payments when `MONETIZATION_ENABLED=true` and `STELLAR_PAYMENTS_ENABLED=true`; set
 `STELLAR_TREASURY_ADDRESS` before enabling paid checkout. SMTP is handled by the
 lightweight `smtp-relay` Postfix container on the private Docker network; keep DKIM keys under
 `/opt/hana-chat/shared/opendkim-keys` and do not commit private keys.
