@@ -195,7 +195,7 @@ interface UserEntitlements {
   creatorPaidCharactersEnabled: boolean;
 }
 
-type TextModelProvider = Extract<ModelProviderName, "xai" | "agentrouter">;
+type TextModelProvider = Extract<ModelProviderName, "xai" | "agentrouter" | "groq">;
 
 interface ChatTurnPlan {
   route: {
@@ -2305,14 +2305,8 @@ function fallbackChatTurnPlan(
         },
         {
           provider: config.TEXT_MODEL_PROVIDER,
-          defaultModel:
-            config.TEXT_MODEL_PROVIDER === "agentrouter"
-              ? config.AGENT_ROUTER_DEFAULT_MODEL
-              : config.XAI_DEFAULT_MODEL,
-          complexModel:
-            config.TEXT_MODEL_PROVIDER === "agentrouter"
-              ? config.AGENT_ROUTER_COMPLEX_MODEL
-              : config.XAI_DEFAULT_MODEL,
+          defaultModel: textProviderDefaultModel(config, config.TEXT_MODEL_PROVIDER),
+          complexModel: textProviderComplexModel(config, config.TEXT_MODEL_PROVIDER),
         },
       ),
     },
@@ -2924,7 +2918,7 @@ function isReasoningEffort(value: unknown): value is ChatTurnPlan["route"]["reas
 }
 
 function isTextModelProvider(value: unknown): value is TextModelProvider {
-  return value === "xai" || value === "agentrouter";
+  return value === "xai" || value === "agentrouter" || value === "groq";
 }
 
 async function fetchWithTimeout(
@@ -3432,6 +3426,51 @@ async function completeOpenAiCompatibleTextModel(input: {
   }
 }
 
+function textProviderDefaultModel(
+  config: ReturnType<typeof loadConfig>,
+  provider: TextModelProvider,
+): string {
+  if (provider === "agentrouter") {
+    return config.AGENT_ROUTER_DEFAULT_MODEL;
+  }
+
+  if (provider === "groq") {
+    return config.GROQ_DEFAULT_MODEL;
+  }
+
+  return config.XAI_DEFAULT_MODEL;
+}
+
+function textProviderComplexModel(
+  config: ReturnType<typeof loadConfig>,
+  provider: TextModelProvider,
+): string {
+  if (provider === "agentrouter") {
+    return config.AGENT_ROUTER_COMPLEX_MODEL;
+  }
+
+  if (provider === "groq") {
+    return config.GROQ_COMPLEX_MODEL;
+  }
+
+  return config.XAI_DEFAULT_MODEL;
+}
+
+function textProviderMemoryModel(
+  config: ReturnType<typeof loadConfig>,
+  provider: TextModelProvider,
+): string {
+  if (provider === "agentrouter") {
+    return config.AGENT_ROUTER_MEMORY_MODEL;
+  }
+
+  if (provider === "groq") {
+    return config.GROQ_MEMORY_MODEL;
+  }
+
+  return config.XAI_DEFAULT_MODEL;
+}
+
 function textModelEndpoint(
   config: ReturnType<typeof loadConfig>,
   provider: TextModelProvider,
@@ -3443,6 +3482,15 @@ function textModelEndpoint(
       model,
       baseUrl: config.AGENT_ROUTER_BASE_URL,
       apiKey: config.AGENT_ROUTER_API_KEY,
+    };
+  }
+
+  if (provider === "groq") {
+    return {
+      provider,
+      model,
+      baseUrl: config.GROQ_BASE_URL,
+      apiKey: config.GROQ_API_KEY,
     };
   }
 
@@ -3458,15 +3506,30 @@ function textModelFallbackEndpoint(
   config: ReturnType<typeof loadConfig>,
   primaryProvider: TextModelProvider,
 ): TextModelEndpoint | null {
-  if (config.TEXT_MODEL_FALLBACK_PROVIDER !== "xai" || primaryProvider === "xai") {
+  if (
+    config.TEXT_MODEL_FALLBACK_PROVIDER === "none" ||
+    config.TEXT_MODEL_FALLBACK_PROVIDER === primaryProvider
+  ) {
     return null;
   }
 
-  return textModelEndpoint(config, "xai", config.XAI_DEFAULT_MODEL);
+  return textModelEndpoint(
+    config,
+    config.TEXT_MODEL_FALLBACK_PROVIDER,
+    textProviderDefaultModel(config, config.TEXT_MODEL_FALLBACK_PROVIDER),
+  );
 }
 
 function textModelProviderLabel(provider: TextModelProvider): string {
-  return provider === "agentrouter" ? "AgentRouter" : "xAI";
+  if (provider === "agentrouter") {
+    return "AgentRouter";
+  }
+
+  if (provider === "groq") {
+    return "Groq";
+  }
+
+  return "xAI";
 }
 
 function fallbackCompletion(characterName: string, userText: string) {
@@ -3785,10 +3848,7 @@ async function reviewTurnMemoryCandidates(input: {
   }
 
   const provider = input.config.TEXT_MODEL_PROVIDER;
-  const model =
-    provider === "agentrouter"
-      ? input.config.AGENT_ROUTER_MEMORY_MODEL
-      : input.config.XAI_DEFAULT_MODEL;
+  const model = textProviderMemoryModel(input.config, provider);
   const endpoint = textModelEndpoint(input.config, provider, model);
 
   if (!endpoint.apiKey) {

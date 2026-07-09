@@ -55,12 +55,14 @@ The web container overrides `API_GATEWAY_URL` to `http://api-gateway:4000` so we
 call the API over the private Docker network. Domain traffic uses `.hanachat.site` cookies; direct IP
 testing remains available but is not the canonical SEO/auth host.
 
-The Playground VPS env supports `TEXT_MODEL_PROVIDER=agentrouter` for text routing, with xAI kept
-for image generation and optional `TEXT_MODEL_FALLBACK_PROVIDER=xai` resilience. Monetization uses
-Stellar payments when `MONETIZATION_ENABLED=true` and `STELLAR_PAYMENTS_ENABLED=true`; set
-`STELLAR_TREASURY_ADDRESS` before enabling paid checkout. SMTP is handled by the
-lightweight `smtp-relay` Postfix container on the private Docker network; keep DKIM keys under
-`/opt/hana-chat/shared/opendkim-keys` and do not commit private keys.
+The Playground VPS env supports `TEXT_MODEL_PROVIDER=groq` for low-cost text routing, with
+`GROQ_DEFAULT_MODEL=llama-3.1-8b-instant`, `GROQ_COMPLEX_MODEL=llama-3.3-70b-versatile`, and
+`GROQ_MEMORY_MODEL=llama-3.1-8b-instant`. Keep `TEXT_MODEL_FALLBACK_PROVIDER=none` when xAI text
+credits are unavailable. xAI is still the configured image-generation provider until a separate image
+provider is integrated. Monetization uses Stellar payments when `MONETIZATION_ENABLED=true` and
+`STELLAR_PAYMENTS_ENABLED=true`; set `STELLAR_TREASURY_ADDRESS` before enabling paid checkout. SMTP is
+handled by the lightweight `smtp-relay` Postfix container on the private Docker network; keep DKIM
+keys under `/opt/hana-chat/shared/opendkim-keys` and do not commit private keys.
 
 AgentRouter's OpenAI-compatible base URL is `https://agentrouter.org/v1`, so chat completions route
 to `https://agentrouter.org/v1/chat/completions`. If VPS probes return `text/html` with an Aliyun WAF

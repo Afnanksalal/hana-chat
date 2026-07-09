@@ -1,4 +1,5 @@
 import { loadConfig } from "@hana/config";
+import type { TextModelProviderName } from "@hana/model-router";
 import { routeChatModel } from "@hana/model-router";
 import { Body, Controller, Post } from "@nestjs/common";
 import { z } from "zod";
@@ -34,14 +35,8 @@ export class TurnsController {
         },
         {
           provider: this.config.TEXT_MODEL_PROVIDER,
-          defaultModel:
-            this.config.TEXT_MODEL_PROVIDER === "agentrouter"
-              ? this.config.AGENT_ROUTER_DEFAULT_MODEL
-              : this.config.XAI_DEFAULT_MODEL,
-          complexModel:
-            this.config.TEXT_MODEL_PROVIDER === "agentrouter"
-              ? this.config.AGENT_ROUTER_COMPLEX_MODEL
-              : this.config.XAI_DEFAULT_MODEL,
+          defaultModel: textProviderDefaultModel(this.config, this.config.TEXT_MODEL_PROVIDER),
+          complexModel: textProviderComplexModel(this.config, this.config.TEXT_MODEL_PROVIDER),
         },
       ),
       promptPlan: {
@@ -57,4 +52,34 @@ export class TurnsController {
       },
     };
   }
+}
+
+function textProviderDefaultModel(
+  config: ReturnType<typeof loadConfig>,
+  provider: TextModelProviderName,
+): string {
+  if (provider === "agentrouter") {
+    return config.AGENT_ROUTER_DEFAULT_MODEL;
+  }
+
+  if (provider === "groq") {
+    return config.GROQ_DEFAULT_MODEL;
+  }
+
+  return config.XAI_DEFAULT_MODEL;
+}
+
+function textProviderComplexModel(
+  config: ReturnType<typeof loadConfig>,
+  provider: TextModelProviderName,
+): string {
+  if (provider === "agentrouter") {
+    return config.AGENT_ROUTER_COMPLEX_MODEL;
+  }
+
+  if (provider === "groq") {
+    return config.GROQ_COMPLEX_MODEL;
+  }
+
+  return config.XAI_DEFAULT_MODEL;
 }

@@ -9,6 +9,11 @@
   Playground VPS probes to `/v1/models`, `/v1/chat/completions`, `/v1/responses`, and
   `/v1/messages` currently return an Aliyun WAF HTML challenge instead of JSON, so treat xAI fallback
   as required until AgentRouter allowlists/fixes backend API traffic.
+- 2026-07-10: Because xAI text credits are unavailable and AgentRouter is WAF-blocked from the VPS,
+  production text routing should use Groq via `TEXT_MODEL_PROVIDER=groq`, `GROQ_API_KEY`, and
+  `https://api.groq.com/openai/v1`. Use `llama-3.1-8b-instant` for default/memory turns and
+  `llama-3.3-70b-versatile` only for complex turns; keep xAI limited to image generation until a
+  separate image provider is integrated.
 - 2026-07-05: Stellar is the only blockchain settlement and memory-proof lane. Active checkout,
   paid character unlocks, creator payout profiles, payout settlement, and memory snapshot proof
   settings must use Stellar env/config/contracts; removed providers must not be reintroduced as
