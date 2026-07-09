@@ -4,6 +4,11 @@
   primary provider via `TEXT_MODEL_PROVIDER=agentrouter`, `AGENT_ROUTER_API_KEY`, and explicit
   AgentRouter model env vars. Keep xAI available for image generation and as an explicit text
   fallback only; do not hardcode provider keys or model choices into product copy.
+- 2026-07-09: AgentRouter's documented OpenAI-compatible route is
+  `https://agentrouter.org/v1/chat/completions`, with `https://agentrouter.org/v1` as the base URL.
+  Playground VPS probes to `/v1/models`, `/v1/chat/completions`, `/v1/responses`, and
+  `/v1/messages` currently return an Aliyun WAF HTML challenge instead of JSON, so treat xAI fallback
+  as required until AgentRouter allowlists/fixes backend API traffic.
 - 2026-07-05: Stellar is the only blockchain settlement and memory-proof lane. Active checkout,
   paid character unlocks, creator payout profiles, payout settlement, and memory snapshot proof
   settings must use Stellar env/config/contracts; removed providers must not be reintroduced as

@@ -26,6 +26,19 @@ const optionalEmailSchema = z.preprocess(
   (value) => (value === "" ? undefined : value),
   z.string().trim().toLowerCase().email().optional(),
 );
+const stellarAssetCodeSchema = z.preprocess(
+  (value) => (typeof value === "string" ? value.trim().toUpperCase() : value),
+  z
+    .string()
+    .regex(
+      /^[A-Z0-9]{1,12}$/,
+      "Stellar payment asset code must be 1-12 uppercase alphanumeric characters",
+    ),
+);
+const optionalStellarIssuerSchema = z.preprocess(
+  (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+  z.string().trim().optional(),
+);
 const localDevAesKeyBase64 = "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA=";
 let dotenvLoaded = false;
 
@@ -148,11 +161,8 @@ export const AppConfigSchema = z
     STELLAR_TREASURY_ADDRESS: z.string().optional(),
     STELLAR_NFT_CONTRACT_ID: z.string().optional(),
     STELLAR_SERVER_KEY_REF: z.string().optional(),
-    STELLAR_PAYMENT_ASSET_CODE: z.string().trim().min(1).max(12).default("XLM"),
-    STELLAR_PAYMENT_ASSET_ISSUER: z.preprocess(
-      (value) => (value === "" ? undefined : value),
-      z.string().optional(),
-    ),
+    STELLAR_PAYMENT_ASSET_CODE: stellarAssetCodeSchema.default("XLM"),
+    STELLAR_PAYMENT_ASSET_ISSUER: optionalStellarIssuerSchema,
     STELLAR_PAYMENT_TOKEN_USD_CENTS: z.coerce.number().int().min(1).max(1_000_000).default(10),
     STELLAR_PAYMENT_INTENT_TTL_MINUTES: z.coerce
       .number()
@@ -258,6 +268,30 @@ export const AppConfigSchema = z
         path: ["STELLAR_NFT_ENABLED"],
         message: "STELLAR_NFT_ENABLED requires STELLAR_PAYMENTS_ENABLED",
       });
+    }
+
+    if (config.STELLAR_PAYMENT_ASSET_CODE === "XLM" && config.STELLAR_PAYMENT_ASSET_ISSUER) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["STELLAR_PAYMENT_ASSET_ISSUER"],
+        message: "Native XLM payments must not configure STELLAR_PAYMENT_ASSET_ISSUER",
+      });
+    }
+
+    if (config.STELLAR_PAYMENT_ASSET_CODE !== "XLM") {
+      if (!config.STELLAR_PAYMENT_ASSET_ISSUER) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["STELLAR_PAYMENT_ASSET_ISSUER"],
+          message: "Non-native Stellar payment assets require STELLAR_PAYMENT_ASSET_ISSUER",
+        });
+      } else if (!isLikelyStellarIssuer(config.STELLAR_PAYMENT_ASSET_ISSUER)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["STELLAR_PAYMENT_ASSET_ISSUER"],
+          message: "STELLAR_PAYMENT_ASSET_ISSUER must be a Stellar public key",
+        });
+      }
     }
 
     if (config.NODE_ENV !== "production") {
@@ -457,6 +491,10 @@ function isValidAesKey(value: string): boolean {
 
 function isMissingOrPlaceholder(value: string | undefined): boolean {
   return !value || placeholderSecrets.has(value);
+}
+
+function isLikelyStellarIssuer(value: string): boolean {
+  return /^G[A-Z2-7]{55}$/.test(value);
 }
 
 function validateProductionUrl(

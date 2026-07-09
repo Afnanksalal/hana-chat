@@ -85,6 +85,12 @@ export interface StellarTransferVerification {
   network: string;
 }
 
+export interface StellarPaymentOperationAsset {
+  asset_type?: string | undefined;
+  asset_code?: string | undefined;
+  asset_issuer?: string | undefined;
+}
+
 export interface HanaNftMetadataInput {
   id: string;
   title: string;
@@ -589,11 +595,21 @@ function isMatchingAsset(
   assetCode: string,
   assetIssuer: string | null | undefined,
 ): boolean {
-  if (assetCode === "XLM") {
+  return isMatchingStellarPaymentAsset(op, assetCode, assetIssuer);
+}
+
+export function isMatchingStellarPaymentAsset(
+  op: StellarPaymentOperationAsset,
+  assetCode: string,
+  assetIssuer: string | null | undefined,
+): boolean {
+  const normalizedAssetCode = assetCode.trim().toUpperCase();
+
+  if (normalizedAssetCode === "XLM") {
     return op.asset_type === "native";
   }
 
-  return op.asset_code === assetCode && op.asset_issuer === (assetIssuer || null);
+  return op.asset_code === normalizedAssetCode && op.asset_issuer === (assetIssuer || null);
 }
 
 function isSufficientAmount(actual: string, minimum: string): boolean {

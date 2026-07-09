@@ -33,6 +33,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 2
+
+      - name: Verify protected branch merge commit
+        run: node scripts/verify-master-merge-commit.mjs
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v6.0.5
