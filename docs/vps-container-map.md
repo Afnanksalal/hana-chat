@@ -157,6 +157,11 @@ Set and keep secret:
 - `AGENT_ROUTER_DEFAULT_MODEL`
 - `AGENT_ROUTER_COMPLEX_MODEL`
 - `AGENT_ROUTER_MEMORY_MODEL`
+- `GROQ_API_KEY`
+- `GROQ_BASE_URL`
+- `GROQ_DEFAULT_MODEL`
+- `GROQ_COMPLEX_MODEL`
+- `GROQ_MEMORY_MODEL`
 - `EMAIL_HASH_SECRET`
 - `EMAIL_ENCRYPTION_KEY_BASE64`
 - `SMTP_HOST`
@@ -167,9 +172,10 @@ Set and keep secret:
 - `PAYOUT_ENCRYPTION_KEY_BASE64`
 - `STELLAR_ENABLED`, `STELLAR_PAYMENTS_ENABLED`, `STELLAR_HORIZON_URL`, `STELLAR_RPC_URL`, and `STELLAR_TREASURY_ADDRESS` when `MONETIZATION_ENABLED=true`
 
-The deployed Playground env supports AgentRouter for text routing with xAI retained for image
-generation and as an explicit text fallback. Monetization uses Stellar payments when the
-monetization and Stellar payment flags are enabled.
+The deployed Playground env supports Groq for text routing with `llama-3.1-8b-instant` as the
+economical default/memory reviewer and `llama-3.3-70b-versatile` for complex turns. xAI remains the
+image-generation provider only until a separate image provider is integrated. Monetization uses
+Stellar payments when the monetization and Stellar payment flags are enabled.
 
 `ADMIN_EMAIL` configures the owner/admin bootstrap. The configured owner signs in through the normal
 email OTP workflow and receives the same OTP delivery path as other users.

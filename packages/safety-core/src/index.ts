@@ -73,7 +73,7 @@ const credentialPatterns = [
 
 const architectureDisclosurePatterns = [
   /\b(what|which|show|tell|explain|describe)\b.{0,80}\b(model|provider|llm|backend|database|vector db|architecture|infra|infrastructure|orchestrator|gateway|source code|repo)\b/i,
-  /\b(xai|grok|agentrouter|agent router|deepseek|qdrant|neo4j|postgres|redis|redpanda|clickhouse|temporal|docker|kubernetes|nestjs|vercel)\b/i,
+  /\b(xai|grok|groq|agentrouter|agent router|deepseek|qdrant|neo4j|postgres|redis|redpanda|clickhouse|temporal|docker|kubernetes|nestjs|vercel)\b/i,
   /\b(system design|deployment topology|internal service|microservice|environment variable)\b/i,
 ];
 
@@ -95,7 +95,7 @@ const outputLeakagePatterns = [
   /\bno durable memories for this chat yet\b/i,
   /\b(system|developer|hidden|internal) prompt\b/i,
   /\bpersona_prompt\b|\braw prompt\b|\bhidden instructions\b/i,
-  /\b(xai|grok|agentrouter|agent router|deepseek|qdrant|neo4j|postgres|redis|redpanda|clickhouse|temporal|api gateway|docker compose|environment variable)\b/i,
+  /\b(xai|grok|groq|agentrouter|agent router|deepseek|qdrant|neo4j|postgres|redis|redpanda|clickhouse|temporal|api gateway|docker compose|environment variable)\b/i,
   /\bapi[_-]?key\b|\bbearer token\b|\bsession token\b|\bprivate key\b/i,
 ];
 

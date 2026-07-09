@@ -33,6 +33,8 @@ export function createLogger(options: CreateLoggerOptions) {
         "AGENT_ROUTER_API_KEY",
         "AGENT_ROUTER_TOKEN",
         "AGENTROUTER_API_KEY",
+        "GROQ_API_KEY",
+        "GROQ_TOKEN",
         "EMAIL_HASH_SECRET",
         "EMAIL_ENCRYPTION_KEY_BASE64",
         "PAYOUT_ENCRYPTION_KEY_BASE64",

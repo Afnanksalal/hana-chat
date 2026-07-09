@@ -482,6 +482,7 @@ export type ApiHealthResponse = z.infer<typeof ApiHealthResponseSchema>;
 export const ModelProviderSchema = z.enum([
   "xai",
   "agentrouter",
+  "groq",
   "nous",
   "openrouter",
   "local",

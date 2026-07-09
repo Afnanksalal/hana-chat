@@ -42,6 +42,19 @@ const agentRouterTextPricingByModel: Record<string, TextPricing> = {
   },
 };
 
+const groqTextPricingByModel: Record<string, TextPricing> = {
+  "llama-3.1-8b-instant": {
+    inputPerMillion: 0.05,
+    cachedInputPerMillion: 0.05,
+    outputPerMillion: 0.08,
+  },
+  "llama-3.3-70b-versatile": {
+    inputPerMillion: 0.59,
+    cachedInputPerMillion: 0.59,
+    outputPerMillion: 0.79,
+  },
+};
+
 const defaultImagePricing: ImagePricing = {
   output1k: 0.05,
   output2k: 0.07,
@@ -98,7 +111,9 @@ export function estimateTextModelCostUsd(input: {
       ? (textPricingByModel[input.model] ?? defaultTextPricing)
       : input.provider === "agentrouter"
         ? (agentRouterTextPricingByModel[input.model] ?? null)
-        : null;
+        : input.provider === "groq"
+          ? (groqTextPricingByModel[input.model] ?? null)
+          : null;
 
   if (!pricing) {
     return Math.max(0, input.storedCostUsd ?? 0);

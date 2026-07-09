@@ -1,7 +1,7 @@
 import type { ChatMessage, ModelProviderName, ModelReasoningEffort } from "@hana/contracts";
 import { DomainError } from "@hana/errors";
 
-export type TextModelProviderName = Extract<ModelProviderName, "xai" | "agentrouter">;
+export type TextModelProviderName = Extract<ModelProviderName, "xai" | "agentrouter" | "groq">;
 
 export interface ModelCompleteInput {
   messages: ChatMessage[];
@@ -54,6 +54,12 @@ export interface ModelRoutingOptions {
   complexModel?: string;
 }
 
+const defaultModelByProvider: Record<TextModelProviderName, string> = {
+  xai: "grok-4.3",
+  agentrouter: "deepseek-v3.2",
+  groq: "llama-3.1-8b-instant",
+};
+
 export function routeChatModel(
   context: ModelRoutingContext,
   options: ModelRoutingOptions = {},
@@ -61,7 +67,7 @@ export function routeChatModel(
   const reasoningEffort: ModelReasoningEffort =
     context.conversationComplexity === "complex" || context.safetyRisk === "high" ? "low" : "none";
   const provider = options.provider ?? "xai";
-  const fallbackModel = provider === "agentrouter" ? "deepseek-v3.2" : "grok-4.3";
+  const fallbackModel = defaultModelByProvider[provider];
   const model =
     reasoningEffort === "none"
       ? (options.defaultModel ?? fallbackModel)
