@@ -4,6 +4,19 @@ export interface MentionableGroupMember {
 }
 
 export type GroupResponseMode = "mentions" | "mentions_and_handoffs";
+export type GroupMessageAudience = "room" | "mentioned_bots";
+export type GroupMessageIntent =
+  | "public_greeting"
+  | "public_room_message"
+  | "directed_greeting"
+  | "directed_prompt";
+
+export interface GroupMessageRouting {
+  audience: GroupMessageAudience;
+  intent: GroupMessageIntent;
+  responseExpected: boolean;
+  memoryEligible: boolean;
+}
 
 export const GROUP_CHAT_MAX_USER_MENTIONED_BOTS = 10;
 export const GROUP_CHAT_MAX_BOT_HANDOFFS_PER_TURN = 3;
@@ -74,4 +87,59 @@ export function resolveMentionedMembers<TMember extends MentionableGroupMember>(
   }
 
   return mentioned;
+}
+
+export function classifyGroupMessageRouting(
+  content: string,
+  mentionedMembers: readonly MentionableGroupMember[],
+): GroupMessageRouting {
+  const mentionSlugs = mentionedMembers.map((member) => member.mentionSlug);
+  const messageWithoutMentions = removeKnownGroupMentions(content, mentionSlugs);
+  const lightweightGreeting = isLightweightGroupGreeting(messageWithoutMentions || content);
+
+  if (mentionedMembers.length === 0) {
+    return {
+      audience: "room",
+      intent: lightweightGreeting ? "public_greeting" : "public_room_message",
+      responseExpected: false,
+      memoryEligible: false,
+    };
+  }
+
+  return {
+    audience: "mentioned_bots",
+    intent: lightweightGreeting ? "directed_greeting" : "directed_prompt",
+    responseExpected: true,
+    memoryEligible: !lightweightGreeting,
+  };
+}
+
+export function removeKnownGroupMentions(content: string, mentionSlugs: readonly string[]): string {
+  let cleaned = content;
+
+  for (const slug of mentionSlugs) {
+    cleaned = cleaned.replace(new RegExp(`@${escapeRegExp(slug)}\\b`, "gi"), " ");
+  }
+
+  return cleaned.replace(/\s+/g, " ").trim();
+}
+
+function isLightweightGroupGreeting(content: string): boolean {
+  const normalized = content
+    .toLowerCase()
+    .replace(/['"`~!?.。,，:;()[\]{}<>]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!normalized) {
+    return false;
+  }
+
+  return /^(hi|hello|hey|yo|hiya|heya|sup|gm|gn|good morning|good evening|good night|namaste|hai)(\s+(there|all|everyone|everybody|guys|yall|room|bot|bots|friend|friends))?$/.test(
+    normalized,
+  );
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

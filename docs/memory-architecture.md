@@ -25,6 +25,12 @@ extraction writes facts for that bot and the current `conversation_id`, and
 for a group evolution profile count shared user messages in the room, while assistant-side
 relationship evidence is limited to that bot's own replies.
 
+Unmentioned group user messages are public room speech. They stay in the shared transcript and can
+help later turns understand room flow, but they do not queue bot responses and they are not treated as
+direct requests to any bot. Lightweight greetings such as "hi" are marked as greeting context; if a
+bot is explicitly mentioned, the bot may answer briefly, but the greeting itself is not written as a
+durable memory fact.
+
 Group orchestration now uses `response_mode = mentions_and_handoffs` for group rooms. The user still
 starts a round by mentioning one or more bots, but an active bot may invite another active room member
 by writing that member's canonical `@mention_slug`. The gateway, not the model, decides whether that

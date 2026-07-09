@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  classifyGroupMessageRouting,
   groupResponseModeAllowsBotHandoffs,
   mentionSlugForName,
+  removeKnownGroupMentions,
   resolveMentionedMembers,
   uniqueMentionSlug,
 } from "./group-chat";
@@ -50,5 +52,43 @@ describe("group chat mention routing", () => {
   it("enables bot handoffs only for the handoff response mode", () => {
     expect(groupResponseModeAllowsBotHandoffs("mentions")).toBe(false);
     expect(groupResponseModeAllowsBotHandoffs("mentions_and_handoffs")).toBe(true);
+  });
+
+  it("classifies unmentioned lightweight greetings as public room speech", () => {
+    expect(classifyGroupMessageRouting("Hi", []).intent).toBe("public_greeting");
+    expect(classifyGroupMessageRouting("hello everyone!", []).audience).toBe("room");
+    expect(classifyGroupMessageRouting("hello everyone!", []).responseExpected).toBe(false);
+    expect(classifyGroupMessageRouting("hello everyone!", []).memoryEligible).toBe(false);
+  });
+
+  it("classifies mentioned greetings as lightweight directed turns", () => {
+    const mentioned = [members[1]];
+
+    expect(classifyGroupMessageRouting("@blake hi", mentioned)).toEqual({
+      audience: "mentioned_bots",
+      intent: "directed_greeting",
+      responseExpected: true,
+      memoryEligible: false,
+    });
+  });
+
+  it("keeps substantive mentioned prompts memory eligible", () => {
+    const mentioned = [members[0], members[2]];
+
+    expect(
+      classifyGroupMessageRouting(
+        "@aria @casey_2 what do you both remember about the plan?",
+        mentioned,
+      ),
+    ).toMatchObject({
+      audience: "mentioned_bots",
+      intent: "directed_prompt",
+      responseExpected: true,
+      memoryEligible: true,
+    });
+  });
+
+  it("removes only canonical group mentions from transcript text", () => {
+    expect(removeKnownGroupMentions("@Blake hi @missing", ["blake"])).toBe("hi @missing");
   });
 });

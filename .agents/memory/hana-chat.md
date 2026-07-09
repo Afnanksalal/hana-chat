@@ -47,6 +47,10 @@
   user mentions start the turn, bots may invite another active bot by canonical `@mention_slug`,
   the server enforces membership/dedupe/depth/turn caps, and memory/evolution remains per
   `user_id + character_id + conversation_id` inside the shared group conversation.
+- 2026-07-10: Unmentioned group user messages are public room speech. Persist them in the shared
+  transcript, render them as quieter room bubbles, do not queue bot responses, and do not write them
+  as bot memory. Mentioned lightweight greetings can get concise bot replies but should not generate
+  durable memory facts or scene resets.
 - 2026-07-04: Active checkout/unlock flows must be real provider flows. Do not add or expose mock
   checkout, mock character purchase, or mock payout activation paths in runtime API/UI/contracts;
   historical database values may remain readable only for compatibility.
