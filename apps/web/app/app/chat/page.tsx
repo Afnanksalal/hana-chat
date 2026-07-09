@@ -1212,14 +1212,16 @@ function ChatExperience() {
               });
             }
           } else if (payload.group) {
-            noResponseQueued = true;
+            const publicRoomPost =
+              payload.group.messageAudience === "room" && payload.group.botResponseQueued === false;
             setTypingMessageId(null);
             resetAssistantTyping(false);
-            setStatus(
-              payload.group.messageAudience === "room" && payload.group.botResponseQueued === false
-                ? "Posted to room."
-                : "No bot answered.",
-            );
+            if (publicRoomPost) {
+              setStatus("");
+            } else {
+              noResponseQueued = true;
+              setStatus("No bot answered.");
+            }
           } else if (payload.assistantMessage) {
             assistantId = assistantId ?? payload.assistantMessage.id;
             completeAssistantText(assistantId, payload.assistantMessage.content, {
@@ -1966,7 +1968,6 @@ function ChatExperience() {
                       setDraft(event.target.value);
                       if (
                         status === "Write a message before sending." ||
-                        status === "Posted to room." ||
                         status === "No bot answered."
                       ) {
                         setStatus("");
