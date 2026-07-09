@@ -38,10 +38,15 @@ import {
 import {
   GROUP_CHAT_MAX_BOT_HANDOFF_DEPTH,
   GROUP_CHAT_MAX_BOT_HANDOFFS_PER_TURN,
+  classifyGroupMessageRouting,
   groupResponseModeAllowsBotHandoffs,
   isGroupResponseMode,
+  removeKnownGroupMentions,
   resolveMentionedMembers,
   uniqueMentionSlug,
+  type GroupMessageAudience,
+  type GroupMessageIntent,
+  type GroupMessageRouting,
   type GroupResponseMode,
 } from "./group-chat";
 import { hasPaidCharacterAccess, paidCharacterTrialStatus } from "./monetization.controller";
@@ -121,6 +126,7 @@ interface PromptConversationMessage {
   role: "user" | "assistant" | "system";
   content: string;
   character_id: string;
+  metadata_json: unknown;
   created_at: Date;
 }
 
@@ -1047,6 +1053,9 @@ export class ChatController {
     const mentionedMembers = isGroupConversation
       ? resolveMentionedMembers(input.content, groupMembers)
       : [];
+    const groupMessageRouting = isGroupConversation
+      ? classifyGroupMessageRouting(input.content, mentionedMembers)
+      : null;
     const responseCharacters = isGroupConversation
       ? await loadChatCharacters(
           this.db,
@@ -1114,6 +1123,10 @@ export class ChatController {
             ? {
                 mentionedCharacterIds: mentionedMembers.map((member) => member.characterId),
                 mentionedSlugs: mentionedMembers.map((member) => member.mentionSlug),
+                groupMessageAudience: groupMessageRouting?.audience ?? "room",
+                groupMessageIntent: groupMessageRouting?.intent ?? "public_room_message",
+                groupResponseExpected: Boolean(groupMessageRouting?.responseExpected),
+                groupMemoryEligible: Boolean(groupMessageRouting?.memoryEligible),
               }
             : {}),
         },
@@ -1255,6 +1268,7 @@ export class ChatController {
               activeSpeaker: speaker,
               mentionedMembers,
               responseMode: groupResponseMode,
+              messageRouting: groupMessageRouting,
               handoff:
                 groupTarget?.source === "bot_handoff" && groupTarget.triggeredBy
                   ? {
@@ -1454,7 +1468,10 @@ export class ChatController {
         },
       });
 
-      if (settings?.memory_enabled) {
+      if (
+        settings?.memory_enabled &&
+        (!isGroupConversation || groupMessageRouting?.memoryEligible)
+      ) {
         await maybeExtractTurnMemories({
           db: this.db,
           config: this.config,
@@ -1503,6 +1520,9 @@ export class ChatController {
       group: isGroupConversation
         ? {
             responseMode: groupResponseMode,
+            messageAudience: groupMessageRouting?.audience ?? "room",
+            messageIntent: groupMessageRouting?.intent ?? "public_room_message",
+            botResponseQueued: groupResponseQueue.length > 0,
             mentioned: mentionedMembers.map((member) => ({
               characterId: member.characterId,
               mentionSlug: member.mentionSlug,
@@ -1843,6 +1863,7 @@ function formatGroupPromptContext(input: {
   activeSpeaker: ConversationMember | null;
   mentionedMembers: ConversationMember[];
   responseMode: GroupResponseMode;
+  messageRouting: GroupMessageRouting | null;
   handoff: {
     from: ConversationMember;
     triggerText: string;
@@ -1860,6 +1881,7 @@ function formatGroupPromptContext(input: {
   return [
     "Group chat routing:",
     "This is a shared room with multiple AI characters. A room turn starts from explicit @mentions.",
+    "Unmentioned user messages are public room speech. Treat them as shared transcript context, not as a direct request to you.",
     active
       ? `You are replying as ${active.name} (@${active.mentionSlug}).`
       : "You are the active mentioned character.",
@@ -1869,6 +1891,7 @@ function formatGroupPromptContext(input: {
       ? "You may @mention one other active bot only when naturally inviting that bot to answer next. Do not use @mentions as decoration."
       : "Do not @mention other bots to continue the round.",
     "If another bot was also mentioned, respond only with your own turn and leave room for the next bot.",
+    groupMessageRoutingInstruction(input.messageRouting),
     ...handoffLines,
     `Mentioned this turn: ${
       input.mentionedMembers.length
@@ -1880,12 +1903,45 @@ function formatGroupPromptContext(input: {
   ].join("\n");
 }
 
+function groupMessageRoutingInstruction(routing: GroupMessageRouting | null): string {
+  if (!routing) {
+    return "Current turn audience: direct chat.";
+  }
+
+  if (routing.audience === "room") {
+    return routing.intent === "public_greeting"
+      ? "Current user message is a lightweight public room greeting. It is not addressed to the active bot unless that bot was explicitly mentioned."
+      : "Current user message is public room speech. Use it only as shared context unless the active bot was explicitly mentioned.";
+  }
+
+  if (routing.intent === "directed_greeting") {
+    return "Current user message is a lightweight greeting to the mentioned bot. Reply briefly and naturally; do not reset the scene, over-explain, or manufacture new memory from the greeting.";
+  }
+
+  return "Current user message explicitly targets the mentioned bot. Answer as the active speaker only.";
+}
+
 function formatGroupTranscriptMessage(
   message: PromptConversationMessage,
   members: ConversationMember[],
 ): string {
   if (message.role === "user") {
-    return `User: ${message.content}`;
+    const metadata = groupMessagePromptMetadata(message.metadata_json);
+
+    if (metadata.audience === "room" || metadata.mentionedSlugs.length === 0) {
+      const suffix = metadata.intent === "public_greeting" ? " (greeting)" : "";
+      return `User to room${suffix}: ${message.content}`;
+    }
+
+    const activeMentionSlugs = metadata.mentionedSlugs.filter((slug) =>
+      members.some((member) => member.mentionSlug.toLowerCase() === slug.toLowerCase()),
+    );
+    const targetList = activeMentionSlugs.map((slug) => `@${slug}`).join(", ");
+    const cleanedContent =
+      removeKnownGroupMentions(message.content, activeMentionSlugs) || message.content;
+    const suffix = metadata.intent === "directed_greeting" ? " (greeting)" : "";
+
+    return `User to ${targetList || "mentioned bots"}${suffix}: ${cleanedContent}`;
   }
 
   if (message.role === "system") {
@@ -1895,6 +1951,51 @@ function formatGroupTranscriptMessage(
   const speaker = members.find((member) => member.characterId === message.character_id);
 
   return `${speaker?.name ?? "Another bot"}: ${message.content}`;
+}
+
+function groupMessagePromptMetadata(value: unknown): {
+  audience: GroupMessageAudience;
+  intent: GroupMessageIntent;
+  mentionedSlugs: string[];
+} {
+  const metadata = recordValue(value);
+  const mentionedSlugs = arrayOfStrings(metadata["mentionedSlugs"]);
+  const audience =
+    metadata["groupMessageAudience"] === "mentioned_bots" ||
+    (metadata["groupMessageAudience"] !== "room" && mentionedSlugs.length > 0)
+      ? "mentioned_bots"
+      : "room";
+  const intent = groupMessageIntentValue(metadata["groupMessageIntent"], audience);
+
+  return { audience, intent, mentionedSlugs };
+}
+
+function groupMessageIntentValue(
+  value: unknown,
+  audience: GroupMessageAudience,
+): GroupMessageIntent {
+  if (
+    value === "public_greeting" ||
+    value === "public_room_message" ||
+    value === "directed_greeting" ||
+    value === "directed_prompt"
+  ) {
+    return value;
+  }
+
+  return audience === "room" ? "public_room_message" : "directed_prompt";
+}
+
+function recordValue(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function arrayOfStrings(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : [];
 }
 
 function isCharacterRating(value: unknown): value is "general" | "teen" | "mature" | "adult" {
@@ -1960,14 +2061,14 @@ async function loadPromptMessages(
   const [openingMessages, recentMessages] = await Promise.all([
     db
       .selectFrom("chat.messages")
-      .select(["id", "role", "character_id", "content", "created_at"])
+      .select(["id", "role", "character_id", "content", "metadata_json", "created_at"])
       .where("conversation_id", "=", conversationId)
       .orderBy("created_at", "asc")
       .limit(8)
       .execute(),
     db
       .selectFrom("chat.messages")
-      .select(["id", "role", "character_id", "content", "created_at"])
+      .select(["id", "role", "character_id", "content", "metadata_json", "created_at"])
       .where("conversation_id", "=", conversationId)
       .orderBy("created_at", "desc")
       .limit(recentLimit)
@@ -1991,7 +2092,7 @@ async function resolveDuplicateTurn(input: {
 }) {
   const userMessage = await input.db
     .selectFrom("chat.messages")
-    .select(["id", "conversation_id", "character_id", "created_at"])
+    .select(["id", "conversation_id", "character_id", "metadata_json", "created_at"])
     .where("user_id", "=", input.userId)
     .where("client_message_id", "=", input.clientMessageId)
     .where("role", "=", "user")
@@ -2010,11 +2111,6 @@ async function resolveDuplicateTurn(input: {
     .orderBy("created_at", "asc")
     .execute();
 
-  if (assistantMessages.length === 0) {
-    throw new DomainError("CONFLICT", "Message is already being processed", {
-      clientMessageId: input.clientMessageId,
-    });
-  }
   const members =
     (await loadConversationMembers(input.db, [userMessage.conversation_id])).get(
       userMessage.conversation_id,
@@ -2025,6 +2121,42 @@ async function resolveDuplicateTurn(input: {
     .where("id", "=", userMessage.conversation_id)
     .executeTakeFirst();
   const responseMode = normalizeGroupResponseMode(conversation?.response_mode);
+  const metadata = groupMessagePromptMetadata(userMessage.metadata_json);
+
+  if (
+    assistantMessages.length === 0 &&
+    members.length > 1 &&
+    metadata.audience === "room" &&
+    metadata.mentionedSlugs.length === 0
+  ) {
+    return {
+      accepted: true,
+      duplicate: true,
+      conversationId: userMessage.conversation_id,
+      userMessageId: userMessage.id,
+      assistantMessage: undefined,
+      assistantMessages: [],
+      group: {
+        responseMode,
+        messageAudience: metadata.audience,
+        messageIntent: metadata.intent,
+        botResponseQueued: false,
+        mentioned: [],
+        handoffs: [],
+      },
+      modelRoute: null,
+      safety: null,
+      outputSafety: null,
+      usage: null,
+    };
+  }
+
+  if (assistantMessages.length === 0) {
+    throw new DomainError("CONFLICT", "Message is already being processed", {
+      clientMessageId: input.clientMessageId,
+    });
+  }
+
   const replayedAssistantMessages = assistantMessages.map((message) => ({
     id: message.id,
     role: "assistant" as const,
@@ -2041,7 +2173,25 @@ async function resolveDuplicateTurn(input: {
     userMessageId: userMessage.id,
     assistantMessage: firstAssistantMessage,
     assistantMessages: replayedAssistantMessages,
-    group: members.length > 1 ? { responseMode, mentioned: [], handoffs: [] } : null,
+    group:
+      members.length > 1
+        ? {
+            responseMode,
+            messageAudience: metadata.audience,
+            messageIntent: metadata.intent,
+            botResponseQueued: true,
+            mentioned: metadata.mentionedSlugs.flatMap((mentionSlug) => {
+              const member = members.find(
+                (item) => item.mentionSlug.toLowerCase() === mentionSlug.toLowerCase(),
+              );
+
+              return member
+                ? [{ characterId: member.characterId, mentionSlug, name: member.name }]
+                : [];
+            }),
+            handoffs: [],
+          }
+        : null,
     modelRoute: null,
     safety: null,
     outputSafety: null,

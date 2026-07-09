@@ -158,6 +158,13 @@ interface ChatResponse {
   }>;
   group?: {
     responseMode: GroupResponseMode;
+    messageAudience?: "room" | "mentioned_bots";
+    messageIntent?:
+      | "public_greeting"
+      | "public_room_message"
+      | "directed_greeting"
+      | "directed_prompt";
+    botResponseQueued?: boolean;
     mentioned: Array<{ characterId: string; mentionSlug: string; name: string }>;
     handoffs?: Array<{
       fromCharacterId: string;
@@ -1208,7 +1215,11 @@ function ChatExperience() {
             noResponseQueued = true;
             setTypingMessageId(null);
             resetAssistantTyping(false);
-            setStatus("No response queued.");
+            setStatus(
+              payload.group.messageAudience === "room" && payload.group.botResponseQueued === false
+                ? "Posted to room."
+                : "No bot answered.",
+            );
           } else if (payload.assistantMessage) {
             assistantId = assistantId ?? payload.assistantMessage.id;
             completeAssistantText(assistantId, payload.assistantMessage.content, {
@@ -1852,7 +1863,20 @@ function ChatExperience() {
 
             <div className="message-stream premium-scroll" ref={streamRef}>
               {messages.map((message) => (
-                <div className={`message-row ${message.role}`} key={message.id}>
+                <div
+                  className={[
+                    "message-row",
+                    message.role,
+                    activeIsGroup &&
+                    message.role === "user" &&
+                    !messageMentionsGroupMember(message.content, activeGroupMembers)
+                      ? "room-message"
+                      : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" ")}
+                  key={message.id}
+                >
                   {activeIsGroup && message.role === "assistant" && message.speaker ? (
                     <div className="message-speaker">
                       <Avatar character={characterFromMember(message.speaker)} small />
@@ -1933,12 +1957,18 @@ function ChatExperience() {
                     }
                     maxLength={maxChatMessageChars}
                     placeholder={
-                      activeIsGroup ? "Mention @bot..." : `Message ${selectedCharacter.name}...`
+                      activeIsGroup
+                        ? "Message room or @bot..."
+                        : `Message ${selectedCharacter.name}...`
                     }
                     value={draft}
                     onChange={(event) => {
                       setDraft(event.target.value);
-                      if (status === "Write a message before sending.") {
+                      if (
+                        status === "Write a message before sending." ||
+                        status === "Posted to room." ||
+                        status === "No bot answered."
+                      ) {
                         setStatus("");
                       }
                     }}
@@ -2462,6 +2492,16 @@ function numberDetail(details: Record<string, unknown>, key: string): number {
   const value = details[key];
 
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function messageMentionsGroupMember(content: string, members: ConversationMember[]): boolean {
+  return members.some((member) =>
+    new RegExp(`@${escapeRegExp(member.mentionSlug)}\\b`, "i").test(content),
+  );
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 export default function ChatPage() {

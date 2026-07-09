@@ -8814,6 +8814,13 @@ textarea {
   margin-left: auto;
 }
 
+.message-row.user.room-message .message-bubble {
+  background: rgba(255, 255, 255, 0.055);
+  border-color: rgba(255, 255, 255, 0.16);
+  color: #f7f7fb;
+  box-shadow: none;
+}
+
 .message-speaker {
   min-width: 0;
   width: fit-content;
