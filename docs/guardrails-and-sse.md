@@ -17,7 +17,7 @@ sequenceDiagram
   participant A as API Gateway
   participant S as Safety Core
   participant M as Memory Retrieval
-  participant X as xAI
+  participant X as Text Model
   participant D as Database
 
   U->>W: Send chat message

@@ -5,6 +5,7 @@ import {
   SendChatMessageRequestSchema,
   type ChatMessage,
   type MemoryScope,
+  type ModelProviderName,
 } from "@hana/contracts";
 import { createDatabase } from "@hana/database";
 import { DomainError } from "@hana/errors";
@@ -194,9 +195,11 @@ interface UserEntitlements {
   creatorPaidCharactersEnabled: boolean;
 }
 
+type TextModelProvider = Extract<ModelProviderName, "xai" | "agentrouter">;
+
 interface ChatTurnPlan {
   route: {
-    provider: "xai";
+    provider: TextModelProvider;
     model: string;
     reasoningEffort: "none" | "low" | "medium" | "high";
     maxOutputTokens: number;
@@ -1269,9 +1272,9 @@ export class ChatController {
         })),
       });
       const modelStartedAt = Date.now();
-      const rawModelResult = await completeWithXaiOrFallback({
-        apiKey: this.config.XAI_API_KEY,
-        baseUrl: this.config.XAI_BASE_URL,
+      const rawModelResult = await completeWithTextModelOrFallback({
+        config: this.config,
+        provider: route.provider,
         model: route.model,
         maxOutputTokens: route.maxOutputTokens,
         messages: modelMessages,
@@ -1406,7 +1409,7 @@ export class ChatController {
         .values({
           user_id: session.userId,
           provider: modelResult.provider,
-          model: route.model,
+          model: modelResult.model,
           reasoning_effort: route.reasoningEffort,
           input_tokens: modelResult.inputTokens,
           cached_input_tokens: modelResult.cachedInputTokens,
@@ -2274,29 +2277,44 @@ async function planChatTurnWithBoundary(
     // The orchestrator boundary can restart without blocking the core chat path.
   }
 
-  return fallbackChatTurnPlan(input);
+  return fallbackChatTurnPlan(config, input);
 }
 
-function fallbackChatTurnPlan(input: {
-  userTier: UserEntitlements["planId"];
-  adultMode: boolean;
-  safetyRisk: "low" | "medium" | "high";
-  memoryCount: number;
-  recentMessageCount: number;
-  characterRating: "general" | "teen" | "mature" | "adult";
-}): ChatTurnPlan {
+function fallbackChatTurnPlan(
+  config: ReturnType<typeof loadConfig>,
+  input: {
+    userTier: UserEntitlements["planId"];
+    adultMode: boolean;
+    safetyRisk: "low" | "medium" | "high";
+    memoryCount: number;
+    recentMessageCount: number;
+    characterRating: "general" | "teen" | "mature" | "adult";
+  },
+): ChatTurnPlan {
   const complexConversation =
     input.memoryCount >= 5 || input.recentMessageCount >= 18 || input.characterRating === "adult";
 
   return {
     route: {
-      ...routeChatModel({
-        userTier: input.userTier,
-        adultMode: input.adultMode,
-        safetyRisk: input.safetyRisk,
-        conversationComplexity: complexConversation ? "complex" : "normal",
-      }),
-      provider: "xai",
+      ...routeChatModel(
+        {
+          userTier: input.userTier,
+          adultMode: input.adultMode,
+          safetyRisk: input.safetyRisk,
+          conversationComplexity: complexConversation ? "complex" : "normal",
+        },
+        {
+          provider: config.TEXT_MODEL_PROVIDER,
+          defaultModel:
+            config.TEXT_MODEL_PROVIDER === "agentrouter"
+              ? config.AGENT_ROUTER_DEFAULT_MODEL
+              : config.XAI_DEFAULT_MODEL,
+          complexModel:
+            config.TEXT_MODEL_PROVIDER === "agentrouter"
+              ? config.AGENT_ROUTER_COMPLEX_MODEL
+              : config.XAI_DEFAULT_MODEL,
+        },
+      ),
     },
     promptPlan: {
       includeRecentTurns: input.userTier === "ultra" ? 56 : input.userTier === "plus" ? 44 : 32,
@@ -2324,7 +2342,7 @@ function parseChatTurnPlan(payload: unknown): ChatTurnPlan {
   const reasoningEffort = route["reasoningEffort"];
 
   if (
-    provider !== "xai" ||
+    !isTextModelProvider(provider) ||
     typeof route["model"] !== "string" ||
     !isReasoningEffort(reasoningEffort)
   ) {
@@ -2905,6 +2923,10 @@ function isReasoningEffort(value: unknown): value is ChatTurnPlan["route"]["reas
   return value === "none" || value === "low" || value === "medium" || value === "high";
 }
 
+function isTextModelProvider(value: unknown): value is TextModelProvider {
+  return value === "xai" || value === "agentrouter";
+}
+
 async function fetchWithTimeout(
   url: string,
   init: RequestInit,
@@ -3193,9 +3215,28 @@ function safeGuardrailReply(characterName: string): string {
   return `${characterName} stays close to the scene. I cannot help with that request, but I can keep the story moving if you give me the next beat.`;
 }
 
-async function completeWithXaiOrFallback(input: {
-  apiKey: string | undefined;
+interface TextModelEndpoint {
+  provider: TextModelProvider;
   baseUrl: string;
+  apiKey: string | undefined;
+  model: string;
+}
+
+interface TextModelCompletionResult {
+  content: string;
+  provider: TextModelProvider;
+  model: string;
+  inputTokens: number;
+  cachedInputTokens: number;
+  outputTokens: number;
+  costTicks: number | null;
+  estimatedCostUsd: number;
+  fallback: boolean;
+}
+
+async function completeWithTextModelOrFallback(input: {
+  config: ReturnType<typeof loadConfig>;
+  provider: TextModelProvider;
   model: string;
   maxOutputTokens: number;
   messages: ChatMessage[];
@@ -3204,7 +3245,8 @@ async function completeWithXaiOrFallback(input: {
   allowLocalFallback: boolean;
 }): Promise<{
   content: string;
-  provider: "xai" | "local";
+  provider: TextModelProvider | "local";
+  model: string;
   inputTokens: number;
   cachedInputTokens: number;
   outputTokens: number;
@@ -3212,44 +3254,127 @@ async function completeWithXaiOrFallback(input: {
   estimatedCostUsd: number;
   fallback: boolean;
 }> {
-  if (!input.apiKey) {
+  try {
+    return await completeTextModelWithConfiguredFallback({
+      config: input.config,
+      provider: input.provider,
+      model: input.model,
+      messages: input.messages,
+      maxOutputTokens: input.maxOutputTokens,
+      temperature: 0.85,
+      timeoutMs: 45_000,
+    });
+  } catch (error) {
     if (!input.allowLocalFallback) {
-      throw new DomainError("MODEL_PROVIDER_FAILED", "xAI API key is not configured");
+      if (error instanceof DomainError) {
+        throw error;
+      }
+
+      throw new DomainError("MODEL_PROVIDER_FAILED", "Text model completion failed", {
+        message: error instanceof Error ? error.message : "unknown error",
+      });
     }
 
     return fallbackCompletion(input.fallbackCharacterName, input.fallbackUserText);
   }
+}
+
+async function completeTextModelWithConfiguredFallback(input: {
+  config: ReturnType<typeof loadConfig>;
+  provider: TextModelProvider;
+  model: string;
+  messages: ChatMessage[];
+  maxOutputTokens: number;
+  temperature: number;
+  timeoutMs: number;
+}): Promise<TextModelCompletionResult> {
+  const endpoints = [
+    textModelEndpoint(input.config, input.provider, input.model),
+    textModelFallbackEndpoint(input.config, input.provider),
+  ].filter((endpoint): endpoint is TextModelEndpoint => Boolean(endpoint));
+  let lastError: unknown = null;
+
+  for (const endpoint of endpoints) {
+    try {
+      const result = await completeOpenAiCompatibleTextModel({
+        endpoint,
+        messages: input.messages,
+        maxOutputTokens: input.maxOutputTokens,
+        temperature: input.temperature,
+        timeoutMs: input.timeoutMs,
+      });
+
+      return {
+        ...result,
+        fallback: endpoint.provider !== input.provider || endpoint.model !== input.model,
+      };
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  if (lastError instanceof DomainError) {
+    throw lastError;
+  }
+
+  throw new DomainError("MODEL_PROVIDER_FAILED", "Text model completion failed", {
+    message: lastError instanceof Error ? lastError.message : "unknown error",
+  });
+}
+
+async function completeOpenAiCompatibleTextModel(input: {
+  endpoint: TextModelEndpoint;
+  messages: ChatMessage[];
+  maxOutputTokens: number;
+  temperature: number;
+  timeoutMs: number;
+}): Promise<Omit<TextModelCompletionResult, "fallback">> {
+  if (!input.endpoint.apiKey) {
+    throw new DomainError(
+      "MODEL_PROVIDER_FAILED",
+      `${textModelProviderLabel(input.endpoint.provider)} API key is not configured`,
+    );
+  }
+
+  const abortController = new AbortController();
+  const timeout = setTimeout(() => abortController.abort(), input.timeoutMs);
 
   try {
-    const abortController = new AbortController();
-    const timeout = setTimeout(() => abortController.abort(), 45_000);
-    const response = await fetch(`${input.baseUrl}/chat/completions`, {
+    const response = await fetch(`${input.endpoint.baseUrl.replace(/\/+$/, "")}/chat/completions`, {
       method: "POST",
       signal: abortController.signal,
       headers: {
-        Authorization: `Bearer ${input.apiKey}`,
+        Authorization: `Bearer ${input.endpoint.apiKey}`,
         "Content-Type": "application/json",
+        Accept: "application/json",
       },
       body: JSON.stringify({
-        model: input.model,
+        model: input.endpoint.model,
         messages: input.messages.map((message) => ({
           role: message.role,
           content: message.content,
         })),
         stream: false,
         max_tokens: input.maxOutputTokens,
-        temperature: 0.85,
+        temperature: input.temperature,
       }),
-    }).finally(() => clearTimeout(timeout));
+    });
+    const contentType = response.headers.get("content-type") ?? "";
 
     if (!response.ok) {
-      if (!input.allowLocalFallback) {
-        throw new DomainError("MODEL_PROVIDER_FAILED", "xAI completion request failed", {
-          status: response.status,
-        });
-      }
+      throw new DomainError(
+        "MODEL_PROVIDER_FAILED",
+        `${textModelProviderLabel(input.endpoint.provider)} completion request failed`,
+        { status: response.status },
+      );
+    }
 
-      return fallbackCompletion(input.fallbackCharacterName, input.fallbackUserText);
+    if (!contentType.toLowerCase().includes("application/json")) {
+      throw new DomainError(
+        "MODEL_PROVIDER_FAILED",
+        `${textModelProviderLabel(input.endpoint.provider)} completion response was not JSON`,
+        { contentType },
+      );
     }
 
     const payload = (await response.json()) as {
@@ -3264,11 +3389,10 @@ async function completeWithXaiOrFallback(input: {
     const content = payload.choices?.[0]?.message?.content?.trim();
 
     if (!content) {
-      if (!input.allowLocalFallback) {
-        throw new DomainError("MODEL_PROVIDER_FAILED", "xAI returned an empty completion");
-      }
-
-      return fallbackCompletion(input.fallbackCharacterName, input.fallbackUserText);
+      throw new DomainError(
+        "MODEL_PROVIDER_FAILED",
+        `${textModelProviderLabel(input.endpoint.provider)} returned an empty completion`,
+      );
     }
 
     const inputTokens = payload.usage?.prompt_tokens ?? 0;
@@ -3278,34 +3402,71 @@ async function completeWithXaiOrFallback(input: {
 
     return {
       content,
-      provider: "xai",
+      provider: input.endpoint.provider,
+      model: input.endpoint.model,
       inputTokens,
       cachedInputTokens,
       outputTokens,
       costTicks,
       estimatedCostUsd: estimateTextModelCostUsd({
-        provider: "xai",
-        model: input.model,
+        provider: input.endpoint.provider,
+        model: input.endpoint.model,
         inputTokens,
         cachedInputTokens,
         outputTokens,
         costTicks,
       }),
-      fallback: false,
     };
   } catch (error) {
-    if (!input.allowLocalFallback) {
-      if (error instanceof DomainError) {
-        throw error;
-      }
-
-      throw new DomainError("MODEL_PROVIDER_FAILED", "xAI completion failed", {
-        message: error instanceof Error ? error.message : "unknown error",
-      });
+    if (error instanceof DomainError) {
+      throw error;
     }
 
-    return fallbackCompletion(input.fallbackCharacterName, input.fallbackUserText);
+    throw new DomainError(
+      "MODEL_PROVIDER_FAILED",
+      `${textModelProviderLabel(input.endpoint.provider)} completion failed`,
+      { message: error instanceof Error ? error.message : "unknown error" },
+    );
+  } finally {
+    clearTimeout(timeout);
   }
+}
+
+function textModelEndpoint(
+  config: ReturnType<typeof loadConfig>,
+  provider: TextModelProvider,
+  model: string,
+): TextModelEndpoint {
+  if (provider === "agentrouter") {
+    return {
+      provider,
+      model,
+      baseUrl: config.AGENT_ROUTER_BASE_URL,
+      apiKey: config.AGENT_ROUTER_API_KEY,
+    };
+  }
+
+  return {
+    provider,
+    model,
+    baseUrl: config.XAI_BASE_URL,
+    apiKey: config.XAI_API_KEY,
+  };
+}
+
+function textModelFallbackEndpoint(
+  config: ReturnType<typeof loadConfig>,
+  primaryProvider: TextModelProvider,
+): TextModelEndpoint | null {
+  if (config.TEXT_MODEL_FALLBACK_PROVIDER !== "xai" || primaryProvider === "xai") {
+    return null;
+  }
+
+  return textModelEndpoint(config, "xai", config.XAI_DEFAULT_MODEL);
+}
+
+function textModelProviderLabel(provider: TextModelProvider): string {
+  return provider === "agentrouter" ? "AgentRouter" : "xAI";
 }
 
 function fallbackCompletion(characterName: string, userText: string) {
@@ -3330,6 +3491,7 @@ function fallbackCompletion(characterName: string, userText: string) {
   return {
     content: `*${characterName} ${action}* ${line}`,
     provider: "local" as const,
+    model: "local-fallback",
     inputTokens: 0,
     cachedInputTokens: 0,
     outputTokens: 0,
@@ -3622,17 +3784,23 @@ async function reviewTurnMemoryCandidates(input: {
     return input.candidates;
   }
 
-  if (!input.config.XAI_API_KEY) {
+  const provider = input.config.TEXT_MODEL_PROVIDER;
+  const model =
+    provider === "agentrouter"
+      ? input.config.AGENT_ROUTER_MEMORY_MODEL
+      : input.config.XAI_DEFAULT_MODEL;
+  const endpoint = textModelEndpoint(input.config, provider, model);
+
+  if (!endpoint.apiKey) {
     return selectConservativeTurnMemoryFallback(input.candidates);
   }
 
-  const model = input.config.XAI_DEFAULT_MODEL;
   const startedAt = Date.now();
 
   try {
-    const result = await completeMemoryFeedbackWithXai({
-      apiKey: input.config.XAI_API_KEY,
-      baseUrl: input.config.XAI_BASE_URL,
+    const result = await completeTextModelWithConfiguredFallback({
+      config: input.config,
+      provider,
       model,
       messages: buildTurnMemoryFeedbackMessages({
         userContent: input.userContent,
@@ -3640,14 +3808,17 @@ async function reviewTurnMemoryCandidates(input: {
         candidates: input.candidates,
         existingMemories: input.existingMemories,
       }),
+      maxOutputTokens: 900,
+      temperature: 0.1,
+      timeoutMs: 15_000,
     });
     const latencyMs = Date.now() - startedAt;
 
     await recordAuxiliaryModelCall({
       db: input.db,
       userId: input.userId,
-      provider: "xai",
-      model,
+      provider: result.provider,
+      model: result.model,
       inputTokens: result.inputTokens,
       cachedInputTokens: result.cachedInputTokens,
       outputTokens: result.outputTokens,
@@ -3668,90 +3839,10 @@ async function reviewTurnMemoryCandidates(input: {
   }
 }
 
-async function completeMemoryFeedbackWithXai(input: {
-  apiKey: string;
-  baseUrl: string;
-  model: string;
-  messages: ChatMessage[];
-}): Promise<{
-  content: string;
-  inputTokens: number;
-  cachedInputTokens: number;
-  outputTokens: number;
-  costTicks: number | null;
-  estimatedCostUsd: number;
-}> {
-  const abortController = new AbortController();
-  const timeout = setTimeout(() => abortController.abort(), 15_000);
-
-  try {
-    const response = await fetch(`${input.baseUrl}/chat/completions`, {
-      method: "POST",
-      signal: abortController.signal,
-      headers: {
-        Authorization: `Bearer ${input.apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: input.model,
-        messages: input.messages.map((message) => ({
-          role: message.role,
-          content: message.content,
-        })),
-        stream: false,
-        max_tokens: 900,
-        temperature: 0.1,
-      }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`memory feedback request failed with ${response.status}`);
-    }
-
-    const payload = (await response.json()) as {
-      choices?: Array<{ message?: { content?: string } }>;
-      usage?: {
-        prompt_tokens?: number;
-        completion_tokens?: number;
-        prompt_tokens_details?: { cached_tokens?: number };
-        cost_in_usd_ticks?: number;
-      };
-    };
-    const content = payload.choices?.[0]?.message?.content?.trim();
-
-    if (!content) {
-      throw new Error("memory feedback response was empty");
-    }
-
-    const inputTokens = payload.usage?.prompt_tokens ?? 0;
-    const cachedInputTokens = payload.usage?.prompt_tokens_details?.cached_tokens ?? 0;
-    const outputTokens = payload.usage?.completion_tokens ?? 0;
-    const costTicks = payload.usage?.cost_in_usd_ticks ?? null;
-
-    return {
-      content,
-      inputTokens,
-      cachedInputTokens,
-      outputTokens,
-      costTicks,
-      estimatedCostUsd: estimateTextModelCostUsd({
-        provider: "xai",
-        model: input.model,
-        inputTokens,
-        cachedInputTokens,
-        outputTokens,
-        costTicks,
-      }),
-    };
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
 async function recordAuxiliaryModelCall(input: {
   db: ReturnType<typeof createDatabase>;
   userId: string;
-  provider: "xai";
+  provider: TextModelProvider;
   model: string;
   inputTokens: number;
   cachedInputTokens: number;

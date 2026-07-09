@@ -57,7 +57,7 @@ pnpm web:smoke
 - Creator collectibles studio for character art: generate collectible images, create ownership,
   set royalties and offer floors, list assets, fund offers, buy listings, cancel listings, and
   settle transfers through verified payment intents.
-- Chat orchestration through xAI with private identity, risk, chat-planning, billing, moderation, memory-policy, retrieval, graph, and batch boundaries, strict input/output guardrails, entitlement checks, usage limits, SSE streaming, durable memory injection, and an evolving per-chat relationship profile.
+- Chat orchestration through the configured text model provider with private identity, risk, chat-planning, billing, moderation, memory-policy, retrieval, graph, and batch boundaries, strict input/output guardrails, entitlement checks, usage limits, SSE streaming, durable memory injection, and an evolving per-chat relationship profile.
 - Memory scoped by `user_id + character_id + conversation_id`; no global user memories are injected into chat context.
 - Billing plans, Stellar checkout flow, creator wallet ledger, 7-day creator earning hold, Stellar payout profiles, and admin payout operations are preserved behind `MONETIZATION_ENABLED`; current public billing and creator monetization copy shows "coming soon."
 - Batch-orchestrator outbox leasing, Qdrant replay, and Neo4j chat-turn plus memory projection.

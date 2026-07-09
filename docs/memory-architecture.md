@@ -51,9 +51,9 @@ flowchart TD
   Anchors --> Evolve["Read prior conversation evolution profile"]
   Graph --> Evolve
   Evolve --> Prompt["Inject scoped facts + evolution + graph context into prompt"]
-  Prompt --> Model["xAI model call"]
+  Prompt --> Model["Configured text model call"]
   Model --> Extract["Extract turn memory candidates from user + assistant messages"]
-  Extract --> Review["xAI memory feedback reviewer approves, revises, or drops candidates"]
+  Extract --> Review["Configured memory feedback reviewer approves, revises, or drops candidates"]
   Review --> Policy["Memory service scores salience and write policy"]
   Policy --> Store["Store fact with same character + conversation"]
   Store --> Refresh["Refresh evolution profile"]
@@ -75,17 +75,18 @@ counts, so retries are idempotent. Memory facts continue to project through
 ## Memory Write Policy
 
 Automatic memory writes use a two-stage curation path. The deterministic extractor proposes bounded
-candidates, then an xAI feedback reviewer judges each candidate as `remember`, `revise`, or `drop`
-before any fact is written. The reviewer sees the current turn plus recent existing room memories and
-is instructed to drop one-off hypotheticals, tests, temporary commands, business/world trivia, and
-overly granular fragments that would not improve future personal, relationship, or scene continuity.
+candidates, then the configured text feedback reviewer judges each candidate as `remember`, `revise`,
+or `drop` before any fact is written. The reviewer sees the current turn plus recent existing room
+memories and is instructed to drop one-off hypotheticals, tests, temporary commands, business/world
+trivia, and overly granular fragments that would not improve future personal, relationship, or scene
+continuity.
 
 `memory-service` owns `/internal/memory/score-salience`. After LLM feedback, the gateway calls this
 private boundary before saving reviewed conversation facts, then falls back to `memory-core` if the
-private service is restarting. If xAI feedback is unavailable, the gateway uses a conservative outage
-fallback that only keeps high-importance anchors such as aliases, relationship state, scene state, and
-very high-salience facts. Saved facts remain exact-scoped to the current user, character, and
-conversation.
+private service is restarting. If model feedback is unavailable, the gateway uses a conservative
+outage fallback that only keeps high-importance anchors such as aliases, relationship state, scene
+state, and very high-salience facts. Saved facts remain exact-scoped to the current user, character,
+and conversation.
 
 Automatic extraction runs every accepted chat turn. It now writes bounded, deduplicated candidates
 for user aliases, preferences, boundaries, relationship state, shared events/canon, style requests,

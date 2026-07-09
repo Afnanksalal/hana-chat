@@ -29,6 +29,19 @@ const textPricingByModel: Record<string, TextPricing> = {
   "grok-4.20-0309-non-reasoning": defaultTextPricing,
 };
 
+const agentRouterTextPricingByModel: Record<string, TextPricing> = {
+  "deepseek-v3.2": {
+    inputPerMillion: 0.3,
+    cachedInputPerMillion: 0.3,
+    outputPerMillion: 0.04,
+  },
+  "gpt-5.1": {
+    inputPerMillion: 2,
+    cachedInputPerMillion: 2,
+    outputPerMillion: 2,
+  },
+};
+
 const defaultImagePricing: ImagePricing = {
   output1k: 0.05,
   output2k: 0.07,
@@ -80,11 +93,17 @@ export function estimateTextModelCostUsd(input: {
     return input.storedCostUsd;
   }
 
-  if (input.provider !== "xai") {
+  const pricing =
+    input.provider === "xai"
+      ? (textPricingByModel[input.model] ?? defaultTextPricing)
+      : input.provider === "agentrouter"
+        ? (agentRouterTextPricingByModel[input.model] ?? null)
+        : null;
+
+  if (!pricing) {
     return Math.max(0, input.storedCostUsd ?? 0);
   }
 
-  const pricing = textPricingByModel[input.model] ?? defaultTextPricing;
   const cachedInputTokens = Math.max(0, input.cachedInputTokens);
   const uncachedInputTokens = Math.max(0, input.inputTokens - cachedInputTokens);
   const outputTokens = Math.max(0, input.outputTokens);

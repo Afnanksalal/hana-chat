@@ -1,3 +1,4 @@
+import { loadConfig } from "@hana/config";
 import { routeChatModel } from "@hana/model-router";
 import { Body, Controller, Post } from "@nestjs/common";
 import { z } from "zod";
@@ -13,6 +14,8 @@ const ChatTurnPlanRequestSchema = z.object({
 
 @Controller("/internal/chat")
 export class TurnsController {
+  private readonly config = loadConfig();
+
   @Post("/plan-turn")
   public planTurn(@Body() body: unknown) {
     const input = ChatTurnPlanRequestSchema.parse(body);
@@ -22,12 +25,25 @@ export class TurnsController {
       input.userTier === "ultra" ? 56 : input.userTier === "plus" ? 44 : 32;
 
     return {
-      route: routeChatModel({
-        userTier: input.userTier,
-        adultMode: input.adultMode,
-        safetyRisk: input.safetyRisk,
-        conversationComplexity: complexConversation ? "complex" : "normal",
-      }),
+      route: routeChatModel(
+        {
+          userTier: input.userTier,
+          adultMode: input.adultMode,
+          safetyRisk: input.safetyRisk,
+          conversationComplexity: complexConversation ? "complex" : "normal",
+        },
+        {
+          provider: this.config.TEXT_MODEL_PROVIDER,
+          defaultModel:
+            this.config.TEXT_MODEL_PROVIDER === "agentrouter"
+              ? this.config.AGENT_ROUTER_DEFAULT_MODEL
+              : this.config.XAI_DEFAULT_MODEL,
+          complexModel:
+            this.config.TEXT_MODEL_PROVIDER === "agentrouter"
+              ? this.config.AGENT_ROUTER_COMPLEX_MODEL
+              : this.config.XAI_DEFAULT_MODEL,
+        },
+      ),
       promptPlan: {
         includeRecentTurns,
         includeRelationshipMemory: input.memoryCount > 0,

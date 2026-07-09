@@ -21,7 +21,8 @@ flowchart LR
   Api --> Redpanda["redpanda event log"]
   Api --> ClickHouse["clickhouse analytics"]
   Api --> Temporal["temporal workflows"]
-  Api --> Xai["xAI API"]
+  Api --> TextProvider["Configured text model provider"]
+  Api --> Xai["xAI image API"]
   Api --> Mail["SMTP email"]
   Api --> Payments["Payments provider gated off"]
   Redpanda --> Workers["worker and domain services"]
@@ -149,6 +150,13 @@ Set and keep secret:
 - `XAI_API_KEY`
 - `XAI_BASE_URL`
 - `XAI_DEFAULT_MODEL`
+- `TEXT_MODEL_PROVIDER`
+- `TEXT_MODEL_FALLBACK_PROVIDER`
+- `AGENT_ROUTER_API_KEY`
+- `AGENT_ROUTER_BASE_URL`
+- `AGENT_ROUTER_DEFAULT_MODEL`
+- `AGENT_ROUTER_COMPLEX_MODEL`
+- `AGENT_ROUTER_MEMORY_MODEL`
 - `EMAIL_HASH_SECRET`
 - `EMAIL_ENCRYPTION_KEY_BASE64`
 - `SMTP_HOST`
@@ -159,8 +167,9 @@ Set and keep secret:
 - `PAYOUT_ENCRYPTION_KEY_BASE64`
 - `STELLAR_ENABLED`, `STELLAR_PAYMENTS_ENABLED`, `STELLAR_HORIZON_URL`, `STELLAR_RPC_URL`, and `STELLAR_TREASURY_ADDRESS` when `MONETIZATION_ENABLED=true`
 
-The deployed Playground env currently has xAI configured. Monetization uses Stellar payments
-when the monetization and Stellar payment flags are enabled.
+The deployed Playground env supports AgentRouter for text routing with xAI retained for image
+generation and as an explicit text fallback. Monetization uses Stellar payments when the
+monetization and Stellar payment flags are enabled.
 
 `ADMIN_EMAIL` configures the owner/admin bootstrap. The configured owner signs in through the normal
 email OTP workflow and receives the same OTP delivery path as other users.
