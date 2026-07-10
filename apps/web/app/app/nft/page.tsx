@@ -15,11 +15,9 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { apiJson, money } from "../api";
-import {
-  completeStellarPayment,
-  readStellarAddressFromUser,
-  type StellarPaymentIntent,
-} from "../stellar-payments";
+import { type StellarPaymentIntent } from "../stellar-payments";
+import { StellarCheckoutModal } from "../components/stellar-checkout-modal";
+import { StellarWalletModal } from "../components/stellar-wallet-modal";
 
 interface CharacterSummary {
   id: string;
@@ -321,9 +319,36 @@ export default function NftStudioPage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [status, setStatus] = useState("Loading collectibles market...");
 
+  const [connectedAddress, setConnectedAddress] = useState("");
+  const [isWalletOpen, setIsWalletOpen] = useState(false);
+  const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
+  const [activePayment, setActivePayment] = useState<StellarPaymentIntent | null>(null);
+  const [activeVerifyPath, setActiveVerifyPath] = useState("");
+  const [activeVerifyBody, setActiveVerifyBody] = useState<Record<string, unknown>>({});
+  const [pendingWalletAction, setPendingWalletAction] = useState<{
+    type: "buy" | "offer" | "mint";
+    target: any;
+  } | null>(null);
+
   useEffect(() => {
     void loadAll();
   }, []);
+
+  const handleAddressResolved = (address: string) => {
+    setConnectedAddress(address);
+    if (pendingWalletAction) {
+      const action = pendingWalletAction;
+      setPendingWalletAction(null);
+
+      if (action.type === "buy") {
+        void executeBuyListing(action.target, address);
+      } else if (action.type === "offer") {
+        void executeMakeOffer(action.target.listing, action.target.amountCents, address);
+      } else if (action.type === "mint") {
+        setMintWallet(address);
+      }
+    }
+  };
 
   const selectedCharacter = useMemo(
     () => characters.find((character) => character.id === selectedCharacterId) ?? characters[0],
@@ -500,10 +525,19 @@ export default function NftStudioPage() {
   }
 
   async function buyListing(listing: NftListing) {
+    if (connectedAddress) {
+      void executeBuyListing(listing, connectedAddress);
+    } else {
+      setPendingWalletAction({ type: "buy", target: listing });
+      setIsWalletOpen(true);
+    }
+  }
+
+  async function executeBuyListing(listing: NftListing, buyerWalletAddress: string) {
     setBusy(`buy:${listing.id}`);
+    setStatus("Preparing payment...");
 
     try {
-      const buyerWalletAddress = readStellarAddressFromUser();
       const checkout = await apiJson<CreateNftPaymentResponse>(
         `/api/v1/nft/listings/${encodeURIComponent(listing.id)}/purchase`,
         {
@@ -516,18 +550,14 @@ export default function NftStudioPage() {
         throw new Error("Collectible sale did not start.");
       }
 
-      await completeStellarPayment({
-        payment: checkout.payment,
-        verifyPath: "/api/v1/nft/purchases/verify",
-        verifyBody: {
-          saleId: checkout.saleId,
-          paymentId: checkout.payment.id,
-          buyerWalletAddress,
-        },
-        onStatus: setStatus,
+      setActivePayment(checkout.payment);
+      setActiveVerifyPath("/api/v1/nft/purchases/verify");
+      setActiveVerifyBody({
+        saleId: checkout.saleId,
+        paymentId: checkout.payment.id,
+        buyerWalletAddress,
       });
-      setStatus("Collectible transferred.");
-      await loadAll();
+      setIsCheckoutOpen(true);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Collectible purchase failed.");
     } finally {
@@ -548,10 +578,22 @@ export default function NftStudioPage() {
       return;
     }
 
+    if (connectedAddress) {
+      void executeMakeOffer(listing, amountCents, connectedAddress);
+    } else {
+      setPendingWalletAction({
+        type: "offer",
+        target: { listing, amountCents },
+      });
+      setIsWalletOpen(true);
+    }
+  }
+
+  async function executeMakeOffer(listing: NftListing, amountCents: number, buyerWalletAddress: string) {
     setBusy(`offer:${listing.asset.id}`);
+    setStatus("Preparing payment...");
 
     try {
-      const buyerWalletAddress = readStellarAddressFromUser();
       const offer = await apiJson<CreateNftPaymentResponse>(
         `/api/v1/nft/assets/${encodeURIComponent(listing.asset.id)}/offers`,
         {
@@ -569,18 +611,14 @@ export default function NftStudioPage() {
         throw new Error("Collectible offer did not start.");
       }
 
-      await completeStellarPayment({
-        payment: offer.payment,
-        verifyPath: "/api/v1/nft/offers/verify",
-        verifyBody: {
-          offerId: offer.offerId,
-          paymentId: offer.payment.id,
-          buyerWalletAddress,
-        },
-        onStatus: setStatus,
+      setActivePayment(offer.payment);
+      setActiveVerifyPath("/api/v1/nft/offers/verify");
+      setActiveVerifyBody({
+        offerId: offer.offerId,
+        paymentId: offer.payment.id,
+        buyerWalletAddress,
       });
-      setStatus("Offer funded.");
-      await loadAll();
+      setIsCheckoutOpen(true);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Offer failed.");
     } finally {
@@ -805,11 +843,23 @@ export default function NftStudioPage() {
                   </label>
                   <label>
                     Recipient wallet
-                    <input
-                      value={mintWallet}
-                      onChange={(event) => setMintWallet(event.target.value.trim())}
-                      placeholder="G..."
-                    />
+                    <div className="input-with-button">
+                      <input
+                        value={mintWallet}
+                        onChange={(event) => setMintWallet(event.target.value.trim())}
+                        placeholder="G..."
+                      />
+                      <button
+                        type="button"
+                        className="secondary-action compact"
+                        onClick={() => {
+                          setPendingWalletAction({ type: "mint", target: null });
+                          setIsWalletOpen(true);
+                        }}
+                      >
+                        Connect
+                      </button>
+                    </div>
                   </label>
                   <label className="wide">
                     Description
@@ -997,6 +1047,24 @@ export default function NftStudioPage() {
             </div>
           </article>
         </section>
+      )}
+      <StellarWalletModal
+        isOpen={isWalletOpen}
+        onClose={() => setIsWalletOpen(false)}
+        onAddressResolved={handleAddressResolved}
+      />
+      {activePayment && (
+        <StellarCheckoutModal
+          isOpen={isCheckoutOpen}
+          onClose={() => setIsCheckoutOpen(false)}
+          payment={activePayment}
+          verifyPath={activeVerifyPath}
+          verifyBody={activeVerifyBody}
+          onSuccess={() => {
+            setStatus("Transaction verified and action completed.");
+            void loadAll();
+          }}
+        />
       )}
     </div>
   );

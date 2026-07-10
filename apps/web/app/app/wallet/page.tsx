@@ -20,7 +20,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import { apiJson, money } from "../api";
-import { readStellarAddressFromUser } from "../stellar-payments";
+import { StellarWalletModal } from "../components/stellar-wallet-modal";
 
 interface WalletResponse {
   monetizationEnabled: boolean;
@@ -112,6 +112,7 @@ export default function CreatorWalletPage() {
   const [walletAddress, setWalletAddress] = useState("");
   const [payoutAmount, setPayoutAmount] = useState("");
   const [status, setStatus] = useState("Loading wallet...");
+  const [isWalletOpen, setIsWalletOpen] = useState(false);
 
   useEffect(() => {
     void loadWallet();
@@ -163,14 +164,7 @@ export default function CreatorWalletPage() {
   }
 
   function fillConnectedWallet() {
-    setStatus("Reading Stellar address...");
-
-    try {
-      setWalletAddress(readStellarAddressFromUser());
-      setStatus("");
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Could not read wallet address.");
-    }
+    setIsWalletOpen(true);
   }
 
   async function requestPayout(event: FormEvent<HTMLFormElement>) {
@@ -582,6 +576,14 @@ export default function CreatorWalletPage() {
           {status}
         </p>
       ) : null}
+      <StellarWalletModal
+        isOpen={isWalletOpen}
+        onClose={() => setIsWalletOpen(false)}
+        onAddressResolved={(addr) => {
+          setWalletAddress(addr);
+          setStatus("Wallet address loaded. Don't forget to save your profile!");
+        }}
+      />
     </div>
   );
 }
