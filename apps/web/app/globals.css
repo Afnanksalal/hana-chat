@@ -9077,3 +9077,659 @@ textarea {
     grid-template-columns: 1fr;
   }
 }
+
+/* ==========================================
+   Stellar Modals & Super Memory Extensions
+   ========================================== */
+
+/* Modal Overlays */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  padding: 16px;
+}
+
+/* Dark Glassmorphism Modal Containers */
+.modal-container {
+  width: 100%;
+  max-width: 520px;
+  background: #08080a;
+  border: 1px solid rgba(255, 105, 180, 0.25);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5), 0 0 15px rgba(255, 105, 180, 0.05);
+  border-radius: var(--radius);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.modal-container.wallet-connect-modal {
+  max-width: 440px;
+}
+
+/* Modal Headers */
+.modal-header {
+  padding: 16px 20px;
+  border-bottom: 1px solid #1a171e;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.modal-header .header-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.modal-header h2 {
+  font-size: 18px;
+  font-weight: 900;
+  color: #fff;
+  margin: 0;
+}
+
+.modal-header .close-btn {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.modal-header .close-btn:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* Modal Body */
+.modal-body {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  overflow-y: auto;
+  max-height: calc(100vh - 180px);
+}
+
+.modal-description {
+  font-size: 14px;
+  color: var(--muted);
+  margin: 0;
+  line-height: 1.5;
+}
+
+/* Checkout Summary Card */
+.checkout-summary-card {
+  background: #0d0c10;
+  border: 1px solid #1f1b26;
+  border-radius: calc(var(--radius) - 2px);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.checkout-summary-card .amount-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.checkout-summary-card .label {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 900;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+
+.checkout-summary-card .amount-display {
+  font-size: 22px;
+  color: #fff;
+  font-weight: 900;
+}
+
+.checkout-summary-card .cents-display {
+  font-size: 18px;
+  color: #ff69b4;
+  font-weight: 900;
+}
+
+.checkout-summary-card .rate-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 105, 180, 0.1);
+  border: 1px solid rgba(255, 105, 180, 0.2);
+  color: #ff69b4;
+  padding: 6px 10px;
+  border-radius: 4px;
+  font-size: 12.5px;
+  align-self: flex-start;
+}
+
+.checkout-summary-card .network-info {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--muted);
+  border-top: 1px solid #1f1b26;
+  padding-top: 10px;
+  margin-top: 4px;
+}
+
+.checkout-summary-card .network-type {
+  color: #9bf0bd;
+  text-transform: uppercase;
+}
+
+/* Modal Sections */
+.connect-wallet-section h3,
+.directions-section h3,
+.verification-section h3 {
+  font-size: 14px;
+  font-weight: 900;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0 0 10px;
+}
+
+/* Connect Wallet Badge & Options */
+.connected-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(55, 214, 122, 0.1);
+  border: 1px solid rgba(55, 214, 122, 0.2);
+  color: #9bf0bd;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 13.5px;
+  font-family: ui-monospace, monospace;
+}
+
+.wallet-options {
+  display: flex;
+  gap: 8px;
+}
+
+.wallet-options-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.wallet-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  height: 84px;
+  background: #0d0c10;
+  border: 1px solid #1f1b26;
+  border-radius: calc(var(--radius) - 2px);
+  color: #fff;
+  font-weight: 900;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.wallet-btn:hover:not(:disabled) {
+  border-color: #ff69b4;
+  background: rgba(255, 105, 180, 0.04);
+}
+
+.wallet-btn svg {
+  color: #ff69b4;
+}
+
+/* Transfer details cards */
+.transfer-details {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.detail-item {
+  background: #060508;
+  border: 1px solid #18151f;
+  border-radius: 6px;
+  padding: 10px 12px;
+}
+
+.detail-header {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11.5px;
+  color: var(--muted);
+  font-weight: 900;
+  margin-bottom: 6px;
+}
+
+.detail-item code {
+  display: block;
+  font-family: ui-monospace, monospace;
+  font-size: 12.5px;
+  color: #f7f2f5;
+  overflow-wrap: anywhere;
+}
+
+.detail-item .memo-code {
+  color: #ff69b4;
+  font-weight: 900;
+}
+
+.copy-btn {
+  background: transparent;
+  border: none;
+  color: #ff69b4;
+  font-size: 11px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 900;
+}
+
+.copy-btn:hover {
+  text-decoration: underline;
+}
+
+/* Custom inputs inside modals */
+.manual-address-entry,
+.verification-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.manual-address-entry label,
+.verification-section label {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.modal-body input[type="text"] {
+  width: 100%;
+  min-height: 40px;
+  background: #0d0c10;
+  border: 1px solid #1f1b26;
+  border-radius: 6px;
+  padding: 8px 12px;
+  color: #fff;
+  font-family: ui-monospace, monospace;
+  font-size: 13px;
+  outline: none;
+}
+
+.modal-body input[type="text"]:focus {
+  border-color: #ff69b4;
+}
+
+.input-row {
+  display: flex;
+  gap: 8px;
+}
+
+.input-row input {
+  flex: 1;
+}
+
+/* Modal Footers */
+.modal-footer {
+  padding: 14px 20px;
+  background: #070709;
+  border-top: 1px solid #1a171e;
+}
+
+.status-msg {
+  font-size: 13.5px;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.error-msg {
+  font-size: 13px;
+  color: #ff4a4a !important;
+  margin: 0;
+}
+
+/* Miscellaneous Modal Utilities */
+.or-separator,
+.or-divider {
+  display: flex;
+  align-items: center;
+  text-align: center;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.or-separator::before,
+.or-separator::after {
+  content: "";
+  flex: 1;
+  border-bottom: 1px solid #1f1b26;
+}
+
+.or-separator::before { margin-right: .75em; }
+.or-separator::after { margin-left: .75em; }
+
+.or-divider {
+  justify-content: center;
+  margin: 8px 0;
+}
+
+.simulate-btn {
+  width: 100%;
+  min-height: 38px;
+  color: #9bf0bd !important;
+  border-color: rgba(55, 214, 122, 0.25) !important;
+}
+
+.simulate-btn:hover {
+  background: rgba(55, 214, 122, 0.04) !important;
+}
+
+.input-with-button {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+}
+
+.input-with-button input {
+  flex: 1;
+}
+
+/* Dynamic Colors */
+.icon-hotpink {
+  color: #ff69b4 !important;
+}
+.icon-green {
+  color: #37d67a !important;
+}
+
+/* ==========================================
+   Super Memory Explorer Interface Styles
+   ========================================== */
+.memory-explorer-section {
+  background: #040405;
+  border: 1px solid #2b2730;
+  border-radius: var(--radius);
+  padding: 16px;
+  margin-bottom: 24px;
+}
+
+.explorer-filters {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 220px;
+  gap: 12px;
+  margin: 16px 0 20px;
+}
+
+.search-input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.search-input-wrapper svg {
+  position: absolute;
+  left: 14px;
+  color: var(--muted);
+}
+
+.search-input-wrapper input {
+  width: 100%;
+  min-height: 42px;
+  background: #0b090e;
+  border: 1px solid #231f2b;
+  border-radius: calc(var(--radius) - 2px);
+  padding-left: 42px;
+  padding-right: 14px;
+  color: #fff;
+  outline: none;
+  font-size: 14px;
+}
+
+.search-input-wrapper input:focus {
+  border-color: #ff69b4;
+}
+
+.explorer-filters select {
+  min-height: 42px;
+  background: #0b090e;
+  border: 1px solid #231f2b;
+  border-radius: calc(var(--radius) - 2px);
+  color: #fff;
+  padding: 0 12px;
+  outline: none;
+  font-size: 14px;
+}
+
+.explorer-filters select:focus {
+  border-color: #ff69b4;
+}
+
+.memory-facts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(310px, 1fr));
+  gap: 12px;
+}
+
+.memory-fact-card {
+  background: #08080a;
+  border: 1px solid #231f2b;
+  border-radius: calc(var(--radius) - 2px);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 144px;
+  transition: all 0.2s;
+}
+
+.memory-fact-card.inactive {
+  opacity: 0.55;
+  border-color: #17151c;
+}
+
+.memory-fact-card:hover {
+  border-color: rgba(255, 105, 180, 0.3);
+}
+
+.memory-fact-card .fact-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.memory-fact-card .char-badge {
+  background: rgba(255, 255, 255, 0.05);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 900;
+  padding: 4px 8px;
+  border-radius: 99px;
+  text-transform: uppercase;
+}
+
+.memory-fact-card .kind-badge {
+  font-size: 10.5px;
+  font-weight: 900;
+  text-transform: uppercase;
+  padding: 3px 7px;
+  border-radius: 4px;
+  border: 1px solid transparent;
+}
+
+.kind-badge.preference {
+  background: rgba(55, 214, 122, 0.08);
+  border-color: rgba(55, 214, 122, 0.25);
+  color: #9bf0bd;
+}
+
+.kind-badge.boundary {
+  background: rgba(255, 74, 74, 0.08);
+  border-color: rgba(255, 74, 74, 0.25);
+  color: #ff8888;
+}
+
+.kind-badge.relationship {
+  background: rgba(255, 105, 180, 0.08);
+  border-color: rgba(255, 105, 180, 0.25);
+  color: #ff69b4;
+}
+
+.kind-badge.canon {
+  background: rgba(54, 162, 235, 0.08);
+  border-color: rgba(54, 162, 235, 0.25);
+  color: #8ed0ff;
+}
+
+.kind-badge.style {
+  background: rgba(255, 159, 64, 0.08);
+  border-color: rgba(255, 159, 64, 0.25);
+  color: #ffd29b;
+}
+
+.kind-badge.event {
+  background: rgba(153, 102, 255, 0.08);
+  border-color: rgba(153, 102, 255, 0.25);
+  color: #d1b5ff;
+}
+
+.memory-fact-card .fact-text {
+  font-size: 13.5px;
+  color: #f7f2f5;
+  line-height: 1.45;
+  margin: 0 0 14px;
+  flex: 1;
+}
+
+.memory-fact-card .fact-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-top: 1px solid #1a171e;
+  padding-top: 10px;
+}
+
+.memory-fact-card .fact-stats {
+  display: flex;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.memory-fact-card .fact-stats strong {
+  color: #fff;
+}
+
+.memory-fact-card .fact-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.memory-fact-card .fact-actions button {
+  background: transparent;
+  border: 1px solid #231f2b;
+  color: var(--muted);
+  cursor: pointer;
+  width: 30px;
+  height: 30px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.memory-fact-card .fact-actions button:hover {
+  color: #fff;
+  border-color: #ff69b4;
+  background: rgba(255, 105, 180, 0.04);
+}
+
+.memory-fact-card .fact-actions button.delete-btn:hover {
+  color: #ff4a4a;
+  border-color: rgba(255, 74, 74, 0.5);
+  background: rgba(255, 74, 74, 0.04);
+}
+
+.explorer-empty-card {
+  grid-column: 1 / -1;
+  min-height: 220px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: #08080a;
+  border: 1px dashed #231f2b;
+  border-radius: var(--radius);
+  color: var(--muted);
+  text-align: center;
+  padding: 20px;
+}
+
+.explorer-empty-card h3 {
+  color: #fff;
+  margin: 0;
+}
+
+.explorer-empty-card p {
+  margin: 0;
+  max-width: 320px;
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+
+.explorer-empty-card svg {
+  opacity: 0.35;
+}
+
+.memory-features-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 14px;
+  border-top: 1px solid #25312f;
+  padding-top: 12px;
+}
+
+.memory-features-summary .feature-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #f8f4f7;
+}
+
+@media (max-width: 640px) {
+  .explorer-filters {
+    grid-template-columns: 1fr;
+  }
+  .wallet-options-grid {
+    grid-template-columns: 1fr;
+  }
+}

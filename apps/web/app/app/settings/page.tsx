@@ -15,7 +15,8 @@ import {
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { apiJson, money } from "../api";
-import { completeStellarPayment, type StellarPaymentIntent } from "../stellar-payments";
+import { type StellarPaymentIntent } from "../stellar-payments";
+import { StellarCheckoutModal } from "../components/stellar-checkout-modal";
 
 type PlanId = "free" | "plus" | "ultra";
 
@@ -25,26 +26,26 @@ interface SettingsResponse {
   adultModeEnabled: boolean;
   memoryEnabled: boolean;
   marketingOptIn: boolean;
-}
-
-interface BillingPlan {
-  id: PlanId;
-  name: string;
-  monthlyPriceCents: number;
-  currency: string;
+  activePlanId: PlanId;
+  planName: string;
   monthlyMessageLimit: number;
-  adultModeEnabled: boolean;
-  deepMemoryEnabled: boolean;
-  creatorPaidCharactersEnabled: boolean;
-  comingSoon?: boolean;
 }
 
 interface BillingResponse {
   monetizationEnabled: boolean;
   comingSoon: boolean;
-  plans: BillingPlan[];
+  plans: Array<{
+    id: string;
+    name: string;
+    monthlyPriceCents: number;
+    monthlyMessageLimit: number;
+    deepMemoryEnabled: boolean;
+    adultModeEnabled: boolean;
+    comingSoon: boolean;
+    currency: string;
+  }>;
   subscription: {
-    planId: PlanId;
+    planId: string;
     status: string;
     currentPeriodEnd: string | null;
   };
@@ -79,6 +80,8 @@ export default function SettingsPage() {
   const [profileAvatarUrl, setProfileAvatarUrl] = useState<string | null>(null);
   const [avatarUploadStatus, setAvatarUploadStatus] = useState("PNG, JPG, or WebP up to 5MB.");
   const [status, setStatus] = useState("Loading settings...");
+  const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
+  const [activePayment, setActivePayment] = useState<StellarPaymentIntent | null>(null);
 
   useEffect(() => {
     void load();
@@ -126,24 +129,37 @@ export default function SettingsPage() {
       setSettings(nextSettings);
       setProfileName(nextSettings.displayName ?? "");
       setProfileAvatarUrl(nextSettings.avatarUrl);
-      setStatus("Saved.");
+      setStatus("Settings saved.");
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Could not update setting.");
+      setStatus(error instanceof Error ? error.message : "Could not save settings.");
     }
   }
 
+  async function toggleAdultMode() {
+    if (!settings) return;
+    await patchSettings({ adultModeEnabled: !settings.adultModeEnabled });
+  }
+
+  async function toggleMemoryEnabled() {
+    if (!settings) return;
+    await patchSettings({ memoryEnabled: !settings.memoryEnabled });
+  }
+
+  async function toggleMarketingOptIn() {
+    if (!settings) return;
+    await patchSettings({ marketingOptIn: !settings.marketingOptIn });
+  }
+
   async function uploadProfileImage(file: File | undefined) {
-    if (!file) {
-      return;
-    }
+    if (!file) return;
 
     if (!acceptedImageTypes.includes(file.type)) {
-      setAvatarUploadStatus("Use a PNG, JPG, or WebP image.");
+      setAvatarUploadStatus("Supported formats: PNG, JPG, or WebP.");
       return;
     }
 
     if (file.size > maxClientUploadBytes) {
-      setAvatarUploadStatus("Image must be 5MB or smaller.");
+      setAvatarUploadStatus("Image file size exceeds 5MB limit.");
       return;
     }
 
@@ -188,17 +204,9 @@ export default function SettingsPage() {
         return;
       }
 
-      setStatus(
-        `Confirm ${checkoutPayload.payment.amountDisplay} ${checkoutPayload.payment.assetCode} in your Stellar wallet.`,
-      );
-      await completeStellarPayment({
-        payment: checkoutPayload.payment,
-        verifyPath: "/api/v1/billing/stellar/verify",
-        verifyBody: { paymentId: checkoutPayload.payment.id },
-        onStatus: setStatus,
-      });
-      await load();
-      setStatus("Plan activated.");
+      setActivePayment(checkoutPayload.payment);
+      setIsCheckoutOpen(true);
+      setStatus("");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Checkout failed.");
     }
@@ -468,11 +476,34 @@ export default function SettingsPage() {
           );
         })}
       </section>
+      {activePayment && (
+        <StellarCheckoutModal
+          isOpen={isCheckoutOpen}
+          onClose={() => setIsCheckoutOpen(false)}
+          payment={activePayment}
+          verifyPath="/api/v1/billing/stellar/verify"
+          verifyBody={{ paymentId: activePayment.id }}
+          onSuccess={() => {
+            void load();
+            setStatus("Plan activated.");
+          }}
+        />
+      )}
     </div>
   );
 }
 
 function normalizeSettings(payload: Partial<SettingsResponse>): SettingsResponse {
+  if (!payload.activePlanId) {
+    throw new Error("Invalid settings.activePlanId");
+  }
+  if (typeof payload.planName !== "string") {
+    throw new Error("Invalid settings.planName");
+  }
+  if (typeof payload.monthlyMessageLimit !== "number") {
+    throw new Error("Invalid settings.monthlyMessageLimit");
+  }
+
   return {
     displayName:
       payload.displayName === null || typeof payload.displayName === "string"
@@ -485,6 +516,9 @@ function normalizeSettings(payload: Partial<SettingsResponse>): SettingsResponse
     adultModeEnabled: requiredBoolean(payload.adultModeEnabled, "settings.adultModeEnabled"),
     memoryEnabled: requiredBoolean(payload.memoryEnabled, "settings.memoryEnabled"),
     marketingOptIn: requiredBoolean(payload.marketingOptIn, "settings.marketingOptIn"),
+    activePlanId: payload.activePlanId,
+    planName: payload.planName,
+    monthlyMessageLimit: payload.monthlyMessageLimit,
   };
 }
 

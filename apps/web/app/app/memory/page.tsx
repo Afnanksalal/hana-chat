@@ -4,21 +4,38 @@ import {
   Archive,
   Brain,
   CheckCircle2,
-  Clock3,
+  Clock,
   Database,
   Download,
+  Eye,
+  EyeOff,
   FileJson,
-  HardDriveUpload,
-  KeyRound,
   Layers3,
   MessageSquareText,
   RefreshCw,
+  Search,
   ShieldCheck,
   Sparkles,
+  Trash2,
 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { apiJson } from "../api";
+
+interface MemoryFact {
+  id: string;
+  characterId: string;
+  conversationId: string | null;
+  scope: string;
+  kind: string;
+  text: string;
+  confidence: number;
+  importance: number;
+  emotionalWeight: number;
+  createdAt: string;
+  updatedAt: string;
+  isActive: boolean;
+}
 
 interface MemoryVaultResponse {
   settings: {
@@ -42,24 +59,6 @@ interface MemoryVaultResponse {
     characterAvatarUrl: string | null;
     memoryCount: number;
     latestMemoryAt: string | null;
-  }>;
-  snapshots: Array<{
-    id: string;
-    kind: string;
-    network: string;
-    rootHash: string;
-    txHash: string | null;
-    manifestHash: string;
-    encryptionMode: string;
-    status: string;
-    sourceMemoryCount: number;
-    failureReason: string | null;
-    characterId: string | null;
-    conversationId: string | null;
-    characterName: string | null;
-    createdAt: string;
-    updatedAt: string;
-    confirmedAt: string | null;
   }>;
 }
 
@@ -88,14 +87,16 @@ const emptyVault: MemoryVaultResponse = {
     roomsWithMemory: 0,
   },
   rooms: [],
-  snapshots: [],
 };
 
-export default function MemoryVaultPage() {
+export default function SuperMemoryPage() {
   const [vault, setVault] = useState<MemoryVaultResponse>(emptyVault);
   const [characters, setCharacters] = useState<CreatorCharacterSummary[]>([]);
+  const [memories, setMemories] = useState<MemoryFact[]>([]);
   const [busyAction, setBusyAction] = useState<string | null>(null);
-  const [status, setStatus] = useState("Loading memory vault...");
+  const [status, setStatus] = useState("Loading super memory...");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedCharacterFilter, setSelectedCharacterFilter] = useState("");
 
   useEffect(() => {
     void loadVault();
@@ -103,32 +104,51 @@ export default function MemoryVaultPage() {
 
   async function loadVault() {
     try {
-      const [vaultPayload, characterPayload] = await Promise.all([
+      const [vaultPayload, characterPayload, memoriesPayload] = await Promise.all([
         apiJson<MemoryVaultResponse>("/api/v1/stellar/memory/vault"),
         apiJson<{ characters: CreatorCharacterSummary[] }>("/api/v1/characters/mine"),
+        apiJson<{ memories: MemoryFact[] }>("/api/v1/memories"),
       ]);
 
       setVault(normalizeVault(vaultPayload));
       setCharacters(Array.isArray(characterPayload.characters) ? characterPayload.characters : []);
+      setMemories(Array.isArray(memoriesPayload.memories) ? memoriesPayload.memories : []);
       setStatus("");
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Memory vault unavailable.");
+      setStatus(error instanceof Error ? error.message : "Super memory vault unavailable.");
     }
   }
 
-  async function queueRoomSnapshot(conversationId: string) {
-    setBusyAction(`room:${conversationId}`);
-    setStatus("Queueing room snapshot...");
+  async function deleteMemoryFact(memoryId: string) {
+    setBusyAction(`delete:${memoryId}`);
+    setStatus("Deleting memory fact...");
 
     try {
-      await apiJson("/api/v1/stellar/memory/snapshots", {
-        method: "POST",
-        body: JSON.stringify({ conversationId }),
+      await apiJson(`/api/v1/memories/${encodeURIComponent(memoryId)}`, {
+        method: "DELETE",
       });
+      setStatus("Memory fact deleted.");
       await loadVault();
-      setStatus("Room snapshot queued.");
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Could not queue snapshot.");
+      setStatus(error instanceof Error ? error.message : "Could not delete memory fact.");
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function toggleMemoryActive(memoryId: string, currentActive: boolean) {
+    setBusyAction(`toggle:${memoryId}`);
+    setStatus(currentActive ? "Deactivating memory fact..." : "Activating memory fact...");
+
+    try {
+      await apiJson(`/api/v1/memories/${encodeURIComponent(memoryId)}`, {
+        method: "PATCH",
+        body: JSON.stringify({ isActive: !currentActive }),
+      });
+      setStatus(currentActive ? "Memory fact deactivated." : "Memory fact activated.");
+      await loadVault();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Could not update memory fact.");
     } finally {
       setBusyAction(null);
     }
@@ -169,56 +189,48 @@ export default function MemoryVaultPage() {
     }
   }
 
-  const storageLabel = vault.settings.nftEnabled
-    ? "Sealed records"
-    : vault.settings.storageEnabled
-      ? "Records queued"
-      : vault.settings.stellarEnabled
-        ? "Vault ready"
-        : "Local only";
-  const newestSnapshot = vault.snapshots[0] ?? null;
   const creatorArchiveReady = characters.length > 0;
-  const uploadedTotal = vault.summary.uploadedSnapshots + vault.summary.confirmedSnapshots;
-  const uploadRate =
-    vault.summary.snapshots > 0 ? Math.round((uploadedTotal / vault.summary.snapshots) * 100) : 0;
-  const vaultHealth =
-    vault.summary.failedSnapshots > 0
-      ? `${vault.summary.failedSnapshots} failed`
-      : vault.summary.pendingSnapshots > 0
-        ? `${vault.summary.pendingSnapshots} pending`
-        : "Healthy";
-  const latestProof = newestSnapshot?.txHash ?? newestSnapshot?.rootHash ?? null;
-  const proofRows = [
-    ["Archive", storageLabel],
-    ["Status", vaultHealth],
-    ["Root", formatHash(newestSnapshot?.rootHash ?? null)],
-    ["Manifest", formatHash(newestSnapshot?.manifestHash ?? null)],
-  ];
   const groupedRooms = useMemo(() => groupMemoryRooms(vault.rooms), [vault.rooms]);
-  const metricCards = useMemo(
-    () => [
+
+  // Filter memories based on search query and selected character filter
+  const filteredMemories = useMemo(() => {
+    return memories.filter((mem) => {
+      const matchesSearch = mem.text.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchesCharacter = selectedCharacterFilter
+        ? mem.characterId === selectedCharacterFilter
+        : true;
+      return matchesSearch && matchesCharacter;
+    });
+  }, [memories, searchQuery, selectedCharacterFilter]);
+
+  const metricCards = useMemo(() => {
+    return [
       {
-        label: "Snapshots",
-        value: vault.summary.snapshots.toLocaleString(),
-        detail: `${uploadRate}% uploaded or confirmed`,
-        icon: Database,
+        label: "Memory Facts",
+        value: memories.filter(m => m.isActive).length.toLocaleString(),
+        detail: `${memories.filter(m => !m.isActive).length} inactive triggers`,
+        icon: Brain,
       },
       {
-        label: "Rooms",
+        label: "Remembered Rooms",
         value: vault.summary.roomsWithMemory.toLocaleString(),
-        detail: "with active memory",
+        detail: "with active history",
         icon: MessageSquareText,
       },
       {
-        label: "Pending",
-        value: vault.summary.pendingSnapshots.toLocaleString(),
-        detail: "waiting for upload",
-        icon: Clock3,
+        label: "Archive Packages",
+        value: characters.length.toLocaleString(),
+        detail: "portable soul-packs",
+        icon: Archive,
       },
-      { label: "Integrity", value: storageLabel, detail: vaultHealth, icon: ShieldCheck },
-    ],
-    [uploadRate, vault, vaultHealth],
-  );
+      {
+        label: "Database Integrity",
+        value: "Healthy",
+        detail: "Neo4j + Qdrant sync",
+        icon: ShieldCheck,
+      },
+    ];
+  }, [memories, vault, characters]);
 
   return (
     <div className="app-page wallet-page memory-page">
@@ -226,7 +238,7 @@ export default function MemoryVaultPage() {
         <div className="memory-hero-copy">
           <div className="memory-titlebar">
             <span className="section-label">
-              <Brain size={15} /> Memory Vault
+              <Brain size={15} /> Super Memory
             </span>
             <button
               className="secondary-action compact"
@@ -236,39 +248,36 @@ export default function MemoryVaultPage() {
               <RefreshCw size={15} /> Refresh
             </button>
           </div>
-          <h1>Memory vault</h1>
-          <p>Review saved memories, prepare private archives, and manage room snapshots.</p>
-          <div className="memory-integrity-meter">
-            <div>
-              <span>Upload coverage</span>
-              <strong>{uploadRate}%</strong>
-            </div>
-            <i aria-hidden="true">
-              <span style={{ width: `${uploadRate}%` }} />
-            </i>
-          </div>
+          <h1>Super memory</h1>
+          <p>
+            Explore and curate cognitive facts, relationships, and context models retained by your companions.
+          </p>
         </div>
-        <div className="memory-proof-card memory-proof-terminal" aria-label="Latest memory record">
+
+        {/* Feature Highlights of Super Memory */}
+        <div className="memory-proof-card memory-proof-terminal" aria-label="Super memory status">
           <div className="memory-terminal-header">
             <span>
-              <KeyRound size={15} /> Record stream
+              <Sparkles size={15} /> Cognitive Stack
             </span>
-            <b>{vaultHealth}</b>
+            <b>Active</b>
           </div>
-          <strong>{formatHash(latestProof)}</strong>
-          <small>
-            {newestSnapshot
-              ? `${formatSnapshotKind(newestSnapshot.kind)} - ${formatDate(newestSnapshot.createdAt)}`
-              : "Create a snapshot to start your private archive."}
-          </small>
-          <dl className="memory-proof-list">
-            {proofRows.map(([label, value]) => (
-              <div key={label}>
-                <dt>{label}</dt>
-                <dd>{value}</dd>
-              </div>
-            ))}
-          </dl>
+          <strong>Vector + Graph projections</strong>
+          <small>Memory remains local, private, and exact-scoped per user, per companion, and per room.</small>
+          <div className="memory-features-summary">
+            <div className="feature-item">
+              <CheckCircle2 size={14} className="icon-hotpink" />
+              <span>Neo4j Graph Context</span>
+            </div>
+            <div className="feature-item">
+              <CheckCircle2 size={14} className="icon-hotpink" />
+              <span>Qdrant Vector Retrieval</span>
+            </div>
+            <div className="feature-item">
+              <CheckCircle2 size={14} className="icon-hotpink" />
+              <span>Two-Stage LLM Curation</span>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -281,6 +290,89 @@ export default function MemoryVaultPage() {
             <small>{card.detail}</small>
           </article>
         ))}
+      </section>
+
+      {/* SEARCH AND EXPLORER SECTION */}
+      <section className="memory-explorer-section">
+        <div className="panel-heading split">
+          <div>
+            <h2>Explore Active Facts</h2>
+            <p>Directly search and manage cognitive blocks saved in your database.</p>
+          </div>
+        </div>
+
+        <div className="explorer-filters">
+          <div className="search-input-wrapper">
+            <Search size={18} />
+            <input
+              type="text"
+              placeholder="Search memories by keyword..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+          </div>
+
+          <select
+            value={selectedCharacterFilter}
+            onChange={(e) => setSelectedCharacterFilter(e.target.value)}
+            aria-label="Filter by companion"
+          >
+            <option value="">All Companions</option>
+            {characters.map((char) => (
+              <option key={char.id} value={char.id}>
+                {char.name}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="memory-facts-grid">
+          {filteredMemories.map((memory) => {
+            const charName = characters.find((c) => c.id === memory.characterId)?.name || "Companion";
+            return (
+              <article key={memory.id} className={`memory-fact-card ${memory.isActive ? "active" : "inactive"}`}>
+                <div className="fact-header">
+                  <span className="char-badge">{charName}</span>
+                  <span className={`kind-badge ${memory.kind}`}>{memory.kind}</span>
+                </div>
+                <p className="fact-text">{memory.text}</p>
+                <div className="fact-footer">
+                  <div className="fact-stats">
+                    <span>Salience: <strong>{Math.round(memory.importance * 100)}%</strong></span>
+                    <span>Confidence: <strong>{Math.round(memory.confidence * 100)}%</strong></span>
+                  </div>
+                  <div className="fact-actions">
+                    <button
+                      type="button"
+                      title={memory.isActive ? "Deactivate Fact" : "Activate Fact"}
+                      disabled={busyAction !== null}
+                      onClick={() => void toggleMemoryActive(memory.id, memory.isActive)}
+                    >
+                      {memory.isActive ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                    <button
+                      type="button"
+                      title="Delete Fact"
+                      className="delete-btn"
+                      disabled={busyAction !== null}
+                      onClick={() => void deleteMemoryFact(memory.id)}
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                </div>
+              </article>
+            );
+          })}
+
+          {filteredMemories.length === 0 && (
+            <div className="explorer-empty-card">
+              <Brain size={40} className="icon-muted" />
+              <h3>No memory facts found</h3>
+              <p>Type a different search term or select another companion filter.</p>
+            </div>
+          )}
+        </div>
       </section>
 
       <section className="memory-bento-grid">
@@ -306,18 +398,18 @@ export default function MemoryVaultPage() {
             <span>
               <b>{vault.summary.roomsWithMemory.toLocaleString()}</b>
               <strong>rooms ready</strong>
-              <small>{vault.summary.snapshots.toLocaleString()} private records prepared</small>
+              <small>{memories.length.toLocaleString()} cognitive records prepared</small>
             </span>
           </div>
           <div className="memory-process-list" aria-label="Export process">
             <span>
-              <CheckCircle2 size={15} /> Encrypt memory facts
+              <CheckCircle2 size={15} /> Format JSON Facts
             </span>
             <span>
-              <Layers3 size={15} /> Write manifest hash
+              <Layers3 size={15} /> Pack Room Continuity
             </span>
             <span>
-              <ShieldCheck size={15} /> Seal archive
+              <ShieldCheck size={15} /> Seal Export Zip
             </span>
           </div>
         </article>
@@ -371,13 +463,14 @@ export default function MemoryVaultPage() {
             ) : null}
           </div>
         </article>
+
         <article className="wallet-table-panel memory-rooms-panel">
           <div className="panel-heading split">
             <div>
               <span className="section-label">
                 <MessageSquareText size={15} /> Remembered rooms
               </span>
-              <h2>Conversation snapshots</h2>
+              <h2>Conversation contexts</h2>
             </div>
           </div>
           <div className="memory-character-list">
@@ -416,14 +509,6 @@ export default function MemoryVaultPage() {
                   >
                     Open
                   </Link>
-                  <button
-                    className="secondary-action compact"
-                    type="button"
-                    disabled={busyAction !== null}
-                    onClick={() => void queueRoomSnapshot(group.latestConversationId)}
-                  >
-                    <HardDriveUpload size={15} /> Snapshot
-                  </button>
                 </div>
               </article>
             ))}
@@ -435,45 +520,6 @@ export default function MemoryVaultPage() {
                 <Link className="secondary-action compact" href="/app/chat">
                   Open chat
                 </Link>
-              </div>
-            ) : null}
-          </div>
-        </article>
-
-        <article className="wallet-table-panel memory-snapshot-panel">
-          <div className="panel-heading split">
-            <div>
-              <span className="section-label">
-                <FileJson size={15} /> Private records
-              </span>
-              <h2>Snapshot ledger</h2>
-            </div>
-          </div>
-          <div className="wallet-table">
-            {vault.snapshots.map((snapshot) => (
-              <div className="wallet-table-row memory-snapshot-row" key={snapshot.id}>
-                <span>
-                  <strong>{formatSnapshotKind(snapshot.kind)}</strong>
-                  <small>
-                    {snapshot.characterName ?? snapshot.network} - {snapshot.sourceMemoryCount}{" "}
-                    sources - {formatDate(snapshot.createdAt)}
-                  </small>
-                  <small className="memory-hash">root {formatHash(snapshot.rootHash)}</small>
-                  {snapshot.txHash ? (
-                    <small className="memory-hash">tx {formatHash(snapshot.txHash)}</small>
-                  ) : null}
-                  {snapshot.failureReason ? <small>{snapshot.failureReason}</small> : null}
-                </span>
-                <b className={`memory-status ${statusClass(snapshot.status)}`}>
-                  {formatStatus(snapshot.status)}
-                </b>
-              </div>
-            ))}
-            {vault.snapshots.length === 0 ? (
-              <div className="dashboard-empty-card compact-empty">
-                <FileJson size={20} />
-                <h3>No private records</h3>
-                <p>Queued snapshots will create sealed archive records.</p>
               </div>
             ) : null}
           </div>
@@ -506,36 +552,79 @@ function normalizeVault(payload: Partial<MemoryVaultResponse>): MemoryVaultRespo
       roomsWithMemory: payload.summary?.roomsWithMemory ?? 0,
     },
     rooms: Array.isArray(payload.rooms) ? payload.rooms : [],
-    snapshots: Array.isArray(payload.snapshots) ? payload.snapshots : [],
   };
 }
 
-function formatSnapshotKind(value: string): string {
-  if (value === "conversation_memory") {
-    return "Conversation memory";
+function groupMemoryRooms(rooms: MemoryVaultResponse["rooms"]) {
+  const groups: Record<
+    string,
+    {
+      characterId: string;
+      characterName: string;
+      characterAvatarUrl: string | null;
+      roomCount: number;
+      totalMemoryCount: number;
+      latestMemoryAt: string | null;
+      latestConversationId: string;
+      recentRooms: Array<{ conversationId: string; latestMemoryAt: string | null; memoryCount: number }>;
+    }
+  > = {};
+
+  for (const room of rooms) {
+    const existing = groups[room.characterId];
+    if (existing) {
+      existing.roomCount += 1;
+      existing.totalMemoryCount += room.memoryCount;
+      if (
+        room.latestMemoryAt &&
+        (!existing.latestMemoryAt || room.latestMemoryAt > existing.latestMemoryAt)
+      ) {
+        existing.latestMemoryAt = room.latestMemoryAt;
+        existing.latestConversationId = room.conversationId;
+      }
+      existing.recentRooms.push({
+        conversationId: room.conversationId,
+        latestMemoryAt: room.latestMemoryAt,
+        memoryCount: room.memoryCount,
+      });
+    } else {
+      groups[room.characterId] = {
+        characterId: room.characterId,
+        characterName: room.characterName,
+        characterAvatarUrl: room.characterAvatarUrl,
+        roomCount: 1,
+        totalMemoryCount: room.memoryCount,
+        latestMemoryAt: room.latestMemoryAt,
+        latestConversationId: room.conversationId,
+        recentRooms: [
+          {
+            conversationId: room.conversationId,
+            latestMemoryAt: room.latestMemoryAt,
+            memoryCount: room.memoryCount,
+          },
+        ],
+      };
+    }
   }
 
-  if (value === "user_export") {
-    return "User export";
-  }
-
-  if (value === "creator_soul_pack") {
-    return "Creator soul-pack";
-  }
-
-  return formatStatus(value);
-}
-
-function statusClass(value: string): string {
-  if (value === "uploaded" || value === "confirmed") {
-    return "positive";
-  }
-
-  if (value === "failed" || value === "unrecoverable") {
-    return "negative";
-  }
-
-  return "pending";
+  return Object.values(groups)
+    .map((group) => {
+      const sortedRooms = [...group.recentRooms].sort((a, b) => {
+        const timeA = a.latestMemoryAt ? new Date(a.latestMemoryAt).getTime() : 0;
+        const timeB = b.latestMemoryAt ? new Date(b.latestMemoryAt).getTime() : 0;
+        return timeB - timeA;
+      });
+      return {
+        ...group,
+        recentRooms: sortedRooms.slice(0, 3),
+        extraRoomCount: Math.max(0, group.roomCount - 3),
+      };
+    })
+    .sort((a, b) => {
+      const timeA = a.latestMemoryAt ? new Date(a.latestMemoryAt).getTime() : 0;
+      const timeB = b.latestMemoryAt ? new Date(b.latestMemoryAt).getTime() : 0;
+      return timeB - timeA;
+    });
 }
 
 function formatStatus(value: string): string {
@@ -548,86 +637,6 @@ function formatStatus(value: string): string {
   return label.replace(/\b[a-z]/g, (letter) => letter.toUpperCase());
 }
 
-function formatHash(value: string | null): string {
-  if (!value) {
-    return "pending";
-  }
-
-  if (value.length <= 18) {
-    return value;
-  }
-
-  return `${value.slice(0, 10)}...${value.slice(-6)}`;
-}
-
-function groupMemoryRooms(rooms: MemoryVaultResponse["rooms"]) {
-  const groups = new Map<
-    string,
-    {
-      characterId: string;
-      characterName: string;
-      characterAvatarUrl: string | null;
-      totalMemoryCount: number;
-      latestMemoryAt: string | null;
-      latestConversationId: string;
-      rooms: MemoryVaultResponse["rooms"];
-    }
-  >();
-
-  for (const room of rooms) {
-    const group = groups.get(room.characterId);
-
-    if (!group) {
-      groups.set(room.characterId, {
-        characterId: room.characterId,
-        characterName: room.characterName,
-        characterAvatarUrl: room.characterAvatarUrl,
-        totalMemoryCount: room.memoryCount,
-        latestMemoryAt: room.latestMemoryAt,
-        latestConversationId: room.conversationId,
-        rooms: [room],
-      });
-      continue;
-    }
-
-    group.totalMemoryCount += room.memoryCount;
-    group.rooms.push(room);
-
-    if (memoryTimestamp(room.latestMemoryAt) > memoryTimestamp(group.latestMemoryAt)) {
-      group.latestMemoryAt = room.latestMemoryAt;
-      group.latestConversationId = room.conversationId;
-    }
-  }
-
-  return Array.from(groups.values())
-    .map((group) => {
-      const recentRooms = [...group.rooms]
-        .sort(
-          (left, right) =>
-            memoryTimestamp(right.latestMemoryAt) - memoryTimestamp(left.latestMemoryAt),
-        )
-        .slice(0, 3);
-
-      return {
-        ...group,
-        roomCount: group.rooms.length,
-        recentRooms,
-        extraRoomCount: Math.max(0, group.rooms.length - recentRooms.length),
-      };
-    })
-    .sort(
-      (left, right) => memoryTimestamp(right.latestMemoryAt) - memoryTimestamp(left.latestMemoryAt),
-    );
-}
-
-function memoryTimestamp(value: string | null): number {
-  if (!value) {
-    return 0;
-  }
-
-  return new Date(value).getTime();
-}
-
 function formatDate(value: string | null): string {
   if (!value) {
     return "No date";
@@ -636,7 +645,5 @@ function formatDate(value: string | null): string {
   return new Intl.DateTimeFormat("en", {
     month: "short",
     day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
   }).format(new Date(value));
 }
