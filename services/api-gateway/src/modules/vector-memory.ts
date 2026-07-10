@@ -68,6 +68,37 @@ export async function upsertMemoryVector(
       `Qdrant memory upsert failed: HTTP ${response.status} ${await response.text()}`,
     );
   }
+
+  if (config.SUPERMEMORY_API_KEY) {
+    const superResponse = await fetchWithTimeout(
+      "https://api.supermemory.ai/v3/documents",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${config.SUPERMEMORY_API_KEY}`,
+        },
+        body: JSON.stringify({
+          content: memory.text,
+          containerTag: `user_${memory.userId}`,
+          metadata: {
+            id: memory.id,
+            characterId: memory.characterId,
+            conversationId: memory.conversationId,
+            scope: memory.scope,
+            kind: memory.kind,
+            importance: memory.importance,
+          },
+        }),
+      },
+    );
+
+    if (!superResponse.ok) {
+      throw new Error(
+        `Supermemory document create failed: HTTP ${superResponse.status} ${await superResponse.text()}`,
+      );
+    }
+  }
 }
 
 export async function deleteMemoryVector(config: AppConfig, memoryId: string): Promise<void> {
@@ -87,6 +118,24 @@ export async function deleteMemoryVector(config: AppConfig, memoryId: string): P
       `Qdrant memory delete failed: HTTP ${response.status} ${await response.text()}`,
     );
   }
+
+  if (config.SUPERMEMORY_API_KEY) {
+    const superResponse = await fetchWithTimeout(
+      `https://api.supermemory.ai/v3/documents/${memoryId}`,
+      {
+        method: "DELETE",
+        headers: {
+          "Authorization": `Bearer ${config.SUPERMEMORY_API_KEY}`,
+        },
+      },
+    );
+
+    if (!superResponse.ok) {
+      throw new Error(
+        `Supermemory document delete failed: HTTP ${superResponse.status} ${await superResponse.text()}`,
+      );
+    }
+  }
 }
 
 export async function searchMemoryVectors(
@@ -99,6 +148,48 @@ export async function searchMemoryVectors(
     limit: number;
   },
 ): Promise<MemoryVectorHit[]> {
+  if (config.SUPERMEMORY_API_KEY) {
+    const response = await fetchWithTimeout(
+      "https://api.supermemory.ai/v3/search",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${config.SUPERMEMORY_API_KEY}`,
+        },
+        body: JSON.stringify({
+          q: input.query,
+          limit: Math.max(input.limit * 3, input.limit),
+          containerTag: `user_${input.userId}`,
+          rerank: true,
+        }),
+      },
+    );
+
+    if (!response.ok) {
+      throw new Error(
+        `Supermemory search failed: HTTP ${response.status} ${await response.text()}`,
+      );
+    }
+
+    const payload: any = await response.json();
+    const results = Array.isArray(payload.results) ? payload.results : [];
+
+    return results
+      .filter((hit: any) => {
+        const meta = hit.metadata || {};
+        return (
+          meta.characterId === input.characterId &&
+          meta.conversationId === input.conversationId
+        );
+      })
+      .slice(0, input.limit)
+      .map((hit: any) => ({
+        memoryId: hit.metadata?.id || hit.id,
+        score: hit.similarity || 0,
+      }));
+  }
+
   const response = await fetchWithTimeout(
     `${qdrantBaseUrl(config)}/collections/${config.QDRANT_MEMORY_COLLECTION}/points/search`,
     {
