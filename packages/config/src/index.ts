@@ -125,6 +125,7 @@ export const AppConfigSchema = z
     TEMPORAL_ADDRESS: z.string().default("localhost:7233"),
 
     XAI_API_KEY: z.string().optional(),
+    SUPERMEMORY_API_KEY: z.string().optional(),
     XAI_BASE_URL: z.string().url().default("https://api.x.ai/v1"),
     XAI_DEFAULT_MODEL: z.string().default("grok-4.3"),
     XAI_IMAGE_MODEL: z.string().default("grok-imagine-image-quality"),
