@@ -18,17 +18,12 @@ import { apiJson, money } from "../api";
 import { type StellarPaymentIntent } from "../stellar-payments";
 import { StellarCheckoutModal } from "../components/stellar-checkout-modal";
 
-type PlanId = "free" | "plus" | "ultra";
-
 interface SettingsResponse {
   displayName: string | null;
   avatarUrl: string | null;
   adultModeEnabled: boolean;
   memoryEnabled: boolean;
   marketingOptIn: boolean;
-  activePlanId: PlanId;
-  planName: string;
-  monthlyMessageLimit: number;
 }
 
 interface BillingResponse {
@@ -145,11 +140,6 @@ export default function SettingsPage() {
     await patchSettings({ memoryEnabled: !settings.memoryEnabled });
   }
 
-  async function toggleMarketingOptIn() {
-    if (!settings) return;
-    await patchSettings({ marketingOptIn: !settings.marketingOptIn });
-  }
-
   async function uploadProfileImage(file: File | undefined) {
     if (!file) return;
 
@@ -259,14 +249,14 @@ export default function SettingsPage() {
       value: settings.adultModeEnabled,
       icon: LockKeyhole,
       detail: "Unlock age-gated chats on this account.",
-      action: () => patchSettings({ adultModeEnabled: !settings.adultModeEnabled }),
+      action: () => void toggleAdultMode(),
     },
     {
       label: "Memory",
       value: settings.memoryEnabled,
       icon: Moon,
       detail: "Let characters keep private context inside each chat.",
-      action: () => patchSettings({ memoryEnabled: !settings.memoryEnabled }),
+      action: () => void toggleMemoryEnabled(),
     },
   ];
 
@@ -494,16 +484,6 @@ export default function SettingsPage() {
 }
 
 function normalizeSettings(payload: Partial<SettingsResponse>): SettingsResponse {
-  if (!payload.activePlanId) {
-    throw new Error("Invalid settings.activePlanId");
-  }
-  if (typeof payload.planName !== "string") {
-    throw new Error("Invalid settings.planName");
-  }
-  if (typeof payload.monthlyMessageLimit !== "number") {
-    throw new Error("Invalid settings.monthlyMessageLimit");
-  }
-
   return {
     displayName:
       payload.displayName === null || typeof payload.displayName === "string"
@@ -516,9 +496,6 @@ function normalizeSettings(payload: Partial<SettingsResponse>): SettingsResponse
     adultModeEnabled: requiredBoolean(payload.adultModeEnabled, "settings.adultModeEnabled"),
     memoryEnabled: requiredBoolean(payload.memoryEnabled, "settings.memoryEnabled"),
     marketingOptIn: requiredBoolean(payload.marketingOptIn, "settings.marketingOptIn"),
-    activePlanId: payload.activePlanId,
-    planName: payload.planName,
-    monthlyMessageLimit: payload.monthlyMessageLimit,
   };
 }
 
