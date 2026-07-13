@@ -98,6 +98,9 @@ try {
     await expectVisible(
       page.getByRole("heading", { name: "Chat with characters who remember you." }),
     );
+    await expectVisible(page.getByText("6,000 monthly credits"));
+    await expectVisible(page.getByText("20,000 monthly credits"));
+    await expectVisible(page.getByText("18+ spaces after age confirmation"));
     await assertLandingCtasUseCurrentOrigin(page);
     await assertNoBrokenImages(page);
     await assertNoHorizontalOverflow(page);
@@ -138,9 +141,14 @@ try {
     return "public legal pages show sign-in CTA before auth";
   });
 
-  await addSessionCookie(desktopContext, globalThis.adminSessionToken);
+  await check("install admin browser session", async () => {
+    await addSessionCookie(desktopContext, requireAdminSession());
+
+    return "admin session cookie installed";
+  });
 
   await check("landing CTA switches for signed-in users", async () => {
+    requireAdminSession();
     await page.goto(`${WEB_BASE_URL}/`, { waitUntil: "load" });
     await expectVisible(page.getByRole("link", { name: "Dashboard", exact: true }));
     await expectVisible(page.getByRole("link", { name: "Go to dashboard" }).first());
@@ -150,6 +158,7 @@ try {
   });
 
   await check("app dashboard", async () => {
+    requireAdminSession();
     await page.goto(`${WEB_BASE_URL}/app`, { waitUntil: "load" });
     await expectVisible(page.getByRole("heading", { name: dashboardHeadingPattern }));
     await expectVisible(page.getByLabel("App navigation").getByRole("link", { name: "Discover" }));
@@ -162,6 +171,7 @@ try {
   });
 
   await check("search stays page-scoped", async () => {
+    requireAdminSession();
     await page.goto(`${WEB_BASE_URL}/app`, { waitUntil: "load" });
     assert(
       (await page.getByLabel("Search Hana Chat").count()) === 0,
@@ -189,9 +199,8 @@ try {
     return "app shell has no duplicate search; marketplace owns search";
   });
 
-  const characterName = globalThis.seedCharacterName;
-
   await check("creator studio media and form controls", async () => {
+    requireAdminSession();
     await page.goto(`${WEB_BASE_URL}/app/create`, { waitUntil: "load" });
     await page.getByLabel("Character name").fill("Preview Only");
     await page
@@ -225,6 +234,7 @@ try {
   });
 
   await check("marketplace shows seeded character", async () => {
+    const { characterName } = requireSeedCharacter();
     await page.goto(`${WEB_BASE_URL}/app/discover?query=${encodeURIComponent(characterName)}`, {
       waitUntil: "load",
     });
@@ -235,8 +245,9 @@ try {
   });
 
   await check("chat sends and receives", async () => {
+    const { characterId, characterName } = requireSeedCharacter();
     await page.goto(
-      `${WEB_BASE_URL}/app/chat?characterId=${encodeURIComponent(globalThis.createdCharacterId)}&new=1`,
+      `${WEB_BASE_URL}/app/chat?characterId=${encodeURIComponent(characterId)}&new=1`,
       { waitUntil: "load" },
     );
     await expectVisible(page.getByRole("heading", { name: characterName }));
@@ -254,8 +265,9 @@ try {
   });
 
   await check("same character supports multiple rooms", async () => {
+    const { characterId, characterName } = requireSeedCharacter();
     await page.goto(
-      `${WEB_BASE_URL}/app/chat?characterId=${encodeURIComponent(globalThis.createdCharacterId)}&new=1`,
+      `${WEB_BASE_URL}/app/chat?characterId=${encodeURIComponent(characterId)}&new=1`,
       { waitUntil: "load" },
     );
     await expectVisible(page.getByRole("heading", { name: characterName }));
@@ -276,8 +288,9 @@ try {
   });
 
   await check("chat room delete removes selected room", async () => {
+    const { characterId, characterName } = requireSeedCharacter();
     await page.goto(
-      `${WEB_BASE_URL}/app/chat?characterId=${encodeURIComponent(globalThis.createdCharacterId)}&new=1`,
+      `${WEB_BASE_URL}/app/chat?characterId=${encodeURIComponent(characterId)}&new=1`,
       { waitUntil: "load" },
     );
     await expectVisible(page.getByRole("heading", { name: characterName }));
@@ -299,9 +312,10 @@ try {
   });
 
   await check("chat settings add and remove memory", async () => {
+    const { characterId, characterName } = requireSeedCharacter();
     const memoryText = `Browser smoke memory ${Date.now().toString().slice(-6)}`;
     await page.goto(
-      `${WEB_BASE_URL}/app/chat?characterId=${encodeURIComponent(globalThis.createdCharacterId)}`,
+      `${WEB_BASE_URL}/app/chat?characterId=${encodeURIComponent(characterId)}`,
       { waitUntil: "load" },
     );
     await waitForChatCharacterReady(page, characterName);
@@ -326,6 +340,7 @@ try {
   });
 
   await check("settings profile, plan, and safety controls", async () => {
+    requireAdminSession();
     const displayName = `Web Tester ${Date.now().toString().slice(-5)}`;
     await page.goto(`${WEB_BASE_URL}/app/settings`, { waitUntil: "load" });
     await page.getByLabel("Display name").fill(displayName);
@@ -352,6 +367,7 @@ try {
   });
 
   await check("legal pages", async () => {
+    requireAdminSession();
     const pages = [
       ["/legal/terms", "Terms of Service"],
       ["/legal/privacy", "Privacy Policy"],
@@ -384,11 +400,16 @@ try {
     viewport: { width: 390, height: 844 },
     isMobile: true,
   });
-  await addSessionCookie(mobileContext, globalThis.adminSessionToken);
+  await check("install mobile admin browser session", async () => {
+    await addSessionCookie(mobileContext, requireAdminSession());
+
+    return "mobile admin session cookie installed";
+  });
   const mobilePage = await mobileContext.newPage();
   wireConsoleCapture(mobilePage);
 
   await check("mobile landing and app layout", async () => {
+    const { characterId, characterName } = requireSeedCharacter();
     await mobilePage.goto(`${WEB_BASE_URL}/`, { waitUntil: "load" });
     await expectVisible(
       mobilePage.getByRole("heading", { name: "Chat with characters who remember you." }),
@@ -415,7 +436,7 @@ try {
     await screenshot(mobilePage, "chat-mobile.png");
 
     await mobilePage.goto(
-      `${WEB_BASE_URL}/app/chat?characterId=${encodeURIComponent(globalThis.createdCharacterId)}&new=1`,
+      `${WEB_BASE_URL}/app/chat?characterId=${encodeURIComponent(characterId)}&new=1`,
       { waitUntil: "load" },
     );
     await expectVisible(mobilePage.getByRole("heading", { name: characterName }));
@@ -466,13 +487,18 @@ try {
     viewport: { width: 820, height: 1180 },
     isMobile: true,
   });
-  await addSessionCookie(tabletContext, globalThis.adminSessionToken);
+  await check("install tablet admin browser session", async () => {
+    await addSessionCookie(tabletContext, requireAdminSession());
+
+    return "tablet admin session cookie installed";
+  });
   const tabletPage = await tabletContext.newPage();
   wireConsoleCapture(tabletPage);
 
   await check("tablet chat settings and admin metrics layout", async () => {
+    const { characterId, characterName } = requireSeedCharacter();
     await tabletPage.goto(
-      `${WEB_BASE_URL}/app/chat?characterId=${encodeURIComponent(globalThis.createdCharacterId)}&new=1`,
+      `${WEB_BASE_URL}/app/chat?characterId=${encodeURIComponent(characterId)}&new=1`,
       { waitUntil: "load" },
     );
     await expectVisible(tabletPage.getByRole("heading", { name: characterName }));
@@ -825,6 +851,33 @@ function assert(condition, message) {
   if (!condition) {
     throw new Error(message);
   }
+}
+
+function requireAdminSession() {
+  assert(
+    typeof globalThis.adminSessionToken === "string" &&
+      globalThis.adminSessionToken.length > 0,
+    "admin session token was not available",
+  );
+
+  return globalThis.adminSessionToken;
+}
+
+function requireSeedCharacter() {
+  const characterId = globalThis.createdCharacterId;
+  const characterName = globalThis.seedCharacterName;
+
+  requireAdminSession();
+  assert(
+    typeof characterId === "string" && characterId.length > 0,
+    "seeded web test character was not available",
+  );
+  assert(
+    typeof characterName === "string" && characterName.length > 0,
+    "seeded web test character name was not available",
+  );
+
+  return { characterId, characterName };
 }
 
 function stripTrailingSlash(value) {

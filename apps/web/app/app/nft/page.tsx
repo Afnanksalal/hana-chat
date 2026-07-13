@@ -325,10 +325,12 @@ export default function NftStudioPage() {
   const [activePayment, setActivePayment] = useState<StellarPaymentIntent | null>(null);
   const [activeVerifyPath, setActiveVerifyPath] = useState("");
   const [activeVerifyBody, setActiveVerifyBody] = useState<Record<string, unknown>>({});
-  const [pendingWalletAction, setPendingWalletAction] = useState<{
-    type: "buy" | "offer" | "mint";
-    target: any;
-  } | null>(null);
+  const [pendingWalletAction, setPendingWalletAction] = useState<
+    | { type: "buy"; target: NftListing }
+    | { type: "offer"; target: { listing: NftListing; amountCents: number } }
+    | { type: "mint"; target: null }
+    | null
+  >(null);
 
   useEffect(() => {
     void loadAll();
@@ -524,7 +526,7 @@ export default function NftStudioPage() {
     }
   }
 
-  async function buyListing(listing: NftListing) {
+  function buyListing(listing: NftListing) {
     if (connectedAddress) {
       void executeBuyListing(listing, connectedAddress);
     } else {
@@ -565,7 +567,7 @@ export default function NftStudioPage() {
     }
   }
 
-  async function makeOffer(listing: NftListing) {
+  function makeOffer(listing: NftListing) {
     const amountCents = parseMoneyInput(offerDrafts[listing.asset.id] ?? "");
 
     if (!amountCents) {

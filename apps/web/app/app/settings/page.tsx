@@ -33,6 +33,7 @@ interface BillingResponse {
     id: string;
     name: string;
     monthlyPriceCents: number;
+    monthlyCredits?: number;
     monthlyMessageLimit: number;
     deepMemoryEnabled: boolean;
     adultModeEnabled: boolean;
@@ -390,7 +391,7 @@ export default function SettingsPage() {
             {activePlan ? money(activePlan.monthlyPriceCents, activePlan.currency) : "$0"}
           </strong>
           <div className="billing-plan-status">
-            <span>{activePlan?.monthlyMessageLimit.toLocaleString() ?? "30"} monthly messages</span>
+            <span>{activePlan ? planCredits(activePlan).toLocaleString() : "900"} monthly credits</span>
             <span>{activePlan?.deepMemoryEnabled ? "Deep memory" : "Basic memory"}</span>
             <span>{monetizationComingSoon ? "Checkout paused" : "Wallet checkout ready"}</span>
           </div>
@@ -461,7 +462,7 @@ export default function SettingsPage() {
               </div>
               <ul>
                 <li>
-                  <Check size={15} /> {plan.monthlyMessageLimit.toLocaleString()} monthly messages
+                  <Check size={15} /> {planCredits(plan).toLocaleString()} monthly credits
                 </li>
                 <li>
                   <Check size={15} /> {plan.deepMemoryEnabled ? "Deep memory" : "Basic memory"}
@@ -554,6 +555,10 @@ function normalizeBilling(payload: Partial<BillingResponse>): BillingResponse {
       currentPeriodEnd: subscription.currentPeriodEnd ?? null,
     },
   };
+}
+
+function planCredits(plan: BillingResponse["plans"][number]): number {
+  return plan.monthlyCredits ?? plan.monthlyMessageLimit;
 }
 
 function requiredBoolean(value: unknown, field: string): boolean {

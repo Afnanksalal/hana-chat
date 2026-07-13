@@ -1,8 +1,12 @@
 import { loadConfig } from "@hana/config";
-import { CheckoutPlanRequestSchema, VerifyStellarPaymentRequestSchema } from "@hana/contracts";
+import {
+  CheckoutPlanRequestSchema,
+  StellarWalletAddressSchema,
+  VerifyStellarPaymentRequestSchema,
+} from "@hana/contracts";
 import { createDatabase } from "@hana/database";
 import { DomainError } from "@hana/errors";
-import { Body, Controller, Get, Headers, Post } from "@nestjs/common";
+import { Body, Controller, Get, Headers, Param, Post } from "@nestjs/common";
 import { createStellarPaymentIntent, verifyStellarPaymentIntent } from "./stellar-payments";
 import { auditEvent, requireSession } from "./session";
 
@@ -33,6 +37,7 @@ export class BillingController {
         name: plan.name,
         monthlyPriceCents: plan.monthly_price_cents,
         currency: plan.currency,
+        monthlyCredits: plan.monthly_message_limit,
         monthlyMessageLimit: plan.monthly_message_limit,
         deepMemoryEnabled: plan.deep_memory_enabled,
         adultModeEnabled: plan.adult_mode_enabled,
@@ -126,6 +131,60 @@ export class BillingController {
         monthlyPriceCents: plan.monthly_price_cents,
         currency: plan.currency,
       },
+    };
+  }
+
+  @Get("/stellar/wallet/:address")
+  public async stellarWallet(
+    @Param("address") address: string,
+    @Headers("authorization") authorization?: string,
+  ) {
+    await requireSession(this.db, this.config, authorization);
+    const walletAddress = StellarWalletAddressSchema.parse(address);
+    const account = await loadStellarAccount(this.config.STELLAR_HORIZON_URL, walletAddress);
+    const checkoutAssetCode = this.config.STELLAR_PAYMENT_ASSET_CODE;
+    const checkoutAssetIssuer = this.config.STELLAR_PAYMENT_ASSET_ISSUER ?? null;
+
+    return {
+      address: walletAddress,
+      network: this.config.STELLAR_NETWORK,
+      funded: account.funded,
+      checkoutAsset: {
+        assetCode: checkoutAssetCode,
+        assetIssuer: checkoutAssetIssuer,
+        unitPriceCents: this.config.STELLAR_PAYMENT_TOKEN_USD_CENTS,
+        quoteCurrency: "USD" as const,
+      },
+      assets: account.balances
+        .map((balance) => {
+          const assetCode = balance.asset_type === "native" ? "XLM" : balance.asset_code;
+          const assetIssuer = balance.asset_type === "native" ? null : balance.asset_issuer;
+
+          if (!assetCode || assetIssuer === undefined) {
+            return null;
+          }
+
+          return {
+            assetCode,
+            assetIssuer,
+            assetType: balance.asset_type,
+            balance: balance.balance,
+            availableBalance: availableStellarBalance(
+              balance.balance,
+              balance.selling_liabilities,
+            ),
+            checkoutSupported:
+              assetCode === checkoutAssetCode && assetIssuer === checkoutAssetIssuer,
+          };
+        })
+        .filter(isPresent)
+        .sort((left, right) => {
+          if (left.checkoutSupported !== right.checkoutSupported) {
+            return left.checkoutSupported ? -1 : 1;
+          }
+
+          return left.assetCode.localeCompare(right.assetCode);
+        }),
     };
   }
 
@@ -291,4 +350,65 @@ function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : {};
+}
+
+interface HorizonAccountBalance {
+  asset_type: string;
+  asset_code?: string;
+  asset_issuer?: string;
+  balance: string;
+  selling_liabilities?: string;
+}
+
+interface HorizonAccountResponse {
+  balances?: HorizonAccountBalance[];
+}
+
+async function loadStellarAccount(
+  horizonUrl: string,
+  address: string,
+): Promise<{ funded: boolean; balances: HorizonAccountBalance[] }> {
+  const abortController = new AbortController();
+  const timeout = setTimeout(() => abortController.abort(), 5_000);
+
+  try {
+    const response = await fetch(
+      `${horizonUrl.replace(/\/+$/, "")}/accounts/${encodeURIComponent(address)}`,
+      { signal: abortController.signal },
+    );
+
+    if (response.status === 404) {
+      return { funded: false, balances: [] };
+    }
+
+    if (!response.ok) {
+      throw new DomainError(
+        "INTERNAL",
+        `Stellar wallet lookup failed with HTTP ${response.status}`,
+      );
+    }
+
+    const payload = (await response.json()) as HorizonAccountResponse;
+    return {
+      funded: true,
+      balances: Array.isArray(payload.balances) ? payload.balances : [],
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function availableStellarBalance(balance: string, sellingLiabilities?: string): string {
+  const total = Number(balance);
+  const reserved = Number(sellingLiabilities ?? "0");
+
+  if (!Number.isFinite(total) || !Number.isFinite(reserved)) {
+    return balance;
+  }
+
+  return Math.max(0, total - reserved).toFixed(7);
+}
+
+function isPresent<T>(value: T | null): value is T {
+  return value !== null;
 }

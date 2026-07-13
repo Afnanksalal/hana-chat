@@ -1,5 +1,22 @@
 # Hana Chat Agent Memory
 
+- 2026-07-13: Paid subscriptions are two credit-based tiers: Hana Plus at $9.99/mo with 6,000
+  monthly credits, deep memory, and creator tools; Hana Ultra at $19.99/mo with 20,000 monthly
+  credits, deep memory, creator tools, and 18+ spaces after account eligibility checks.
+- 2026-07-13: Stellar subscription checkout should prefer the in-app Freighter payment path:
+  build the exact payment transaction from the server-issued intent, sign with Freighter on the
+  intent network, submit to Horizon, then call the existing API verifier with the returned hash.
+  Keep manual transfer details and transaction-hash verification as a fallback.
+- 2026-07-13: The signed-in dashboard shows every live billing plan and price. Selecting a paid
+  plan creates a server-issued Stellar intent, then opens the Freighter wallet on that intent's
+  configured network; dashboard pricing must continue to respect the monetization gate.
+- 2026-07-11: Wallet connection and checkout must show real Stellar account balances from the
+  configured Horizon network. Mark only the server-issued payment intent asset as checkout-ready,
+  show its locked fiat rate, and never generate mock wallet addresses or simulated payment hashes.
+- 2026-07-11: Do not use Supermemory in the Hana memory path. Keep Postgres canonical, Qdrant for
+  exact-scoped vector retrieval, Neo4j for graph projection, and Stellar for the existing memory
+  snapshot commitment/proof lane.
+
 - 2026-07-09: Text chat and memory-review routing should support AgentRouter as the configured
   primary provider via `TEXT_MODEL_PROVIDER=agentrouter`, `AGENT_ROUTER_API_KEY`, and explicit
   AgentRouter model env vars. Keep xAI available for image generation and as an explicit text

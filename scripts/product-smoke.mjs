@@ -287,9 +287,21 @@ await check("memory write and Qdrant projection", async () => {
   return "memory stored and projected";
 });
 
-await check("billing plans are coming soon", async () => {
+await check("billing exposes Plus and Ultra credit plans", async () => {
   const billing = await getJson("/v1/billing/plans", context.freeToken);
-  assert(billing.comingSoon === true, "billing did not report coming soon");
+  const plusPlan = billing.plans?.find((plan) => plan.id === "plus");
+  const ultraPlan = billing.plans?.find((plan) => plan.id === "ultra");
+
+  assert(plusPlan, "Plus plan was not returned");
+  assert(ultraPlan, "Ultra plan was not returned");
+  assert(planCredits(plusPlan) === 6_000, "Plus plan did not include 6,000 credits");
+  assert(planCredits(ultraPlan) === 20_000, "Ultra plan did not include 20,000 credits");
+  assert(plusPlan.monthlyPriceCents === 999, "Plus price changed unexpectedly");
+  assert(ultraPlan.monthlyPriceCents === 1_999, "Ultra price changed unexpectedly");
+  assert(plusPlan.deepMemoryEnabled === true, "Plus should include deep memory");
+  assert(ultraPlan.deepMemoryEnabled === true, "Ultra should include deep memory");
+  assert(plusPlan.adultModeEnabled === false, "Plus should not include 18+ mode");
+  assert(ultraPlan.adultModeEnabled === true, "Ultra should include 18+ mode");
 
   const checkout = await postJson(
     "/v1/billing/checkout",
@@ -298,13 +310,20 @@ await check("billing plans are coming soon", async () => {
     { allowError: true },
   );
 
-  assert(checkout.status === 402, `checkout returned HTTP ${checkout.status}`);
-  assert(
-    checkout.body?.error?.message === "Paid plans are coming soon.",
-    "checkout was not gated by the monetization flag",
-  );
+  if (billing.comingSoon === true) {
+    assert(checkout.status === 402, `checkout returned HTTP ${checkout.status}`);
+    assert(
+      checkout.body?.error?.message === "Paid plans are coming soon.",
+      "checkout was not gated by the monetization flag",
+    );
 
-  return "paid plans gated";
+    return "Plus and Ultra ready; checkout gated";
+  }
+
+  assert(checkout.status < 400, `checkout returned HTTP ${checkout.status}`);
+  assert(checkout.body?.payment?.id, "checkout did not create a Stellar payment intent");
+
+  return "Plus and Ultra ready; checkout creates Stellar intent";
 });
 
 await check("credential safety hard block", async () => {
@@ -684,6 +703,10 @@ function summarize(value) {
   }
 
   return JSON.stringify(value).slice(0, 400);
+}
+
+function planCredits(plan) {
+  return plan.monthlyCredits ?? plan.monthlyMessageLimit;
 }
 
 function stripTrailingSlash(value) {

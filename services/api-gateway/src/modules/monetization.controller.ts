@@ -115,6 +115,7 @@ export class MonetizationController {
     return {
       monetizationEnabled: this.config.MONETIZATION_ENABLED,
       comingSoon: !this.config.MONETIZATION_ENABLED,
+      network: this.config.STELLAR_NETWORK,
       wallet: toWalletSummary(wallet),
       payoutProfile: profile
         ? {

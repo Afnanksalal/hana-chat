@@ -73,6 +73,9 @@ const topicHighlights = [
   },
 ];
 
+const plusMonthlyCredits = 6_000;
+const ultraMonthlyCredits = 20_000;
+
 const faqItems = [
   {
     question: "What is Hana Chat?",
@@ -108,7 +111,12 @@ const pricingPlans = [
     name: "Hana Plus",
     price: "$9.99",
     note: "For daily roleplay",
-    perks: ["More messages", "Deeper memory", "Private character drafts", "Creator tools"],
+    perks: [
+      `${plusMonthlyCredits.toLocaleString()} monthly credits`,
+      "Deep memory",
+      "Private character drafts",
+      "Creator tools",
+    ],
     cta: "Go Plus",
     featured: true,
   },
@@ -117,10 +125,10 @@ const pricingPlans = [
     price: "$19.99",
     note: "For power users",
     perks: [
+      `${ultraMonthlyCredits.toLocaleString()} monthly credits`,
       "Priority replies",
       "18+ spaces after age confirmation",
       "Advanced memory controls",
-      "Higher monthly message limits",
     ],
     cta: "Unlock Ultra",
   },

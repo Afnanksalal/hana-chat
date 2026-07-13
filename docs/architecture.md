@@ -119,6 +119,12 @@ sequenceDiagram
   API->>DB: Mark paid, processing, or failed and reconcile wallet
 ```
 
+The wallet handoff reads a connected account through the configured Stellar Horizon network and
+shows every balance returned for that account. Only the asset named by the server-issued payment
+intent is marked checkout-ready; its fiat conversion is locked by that intent and all other assets
+remain informational. Subscription activation still requires verification of the exact Stellar
+transaction hash, asset, issuer, amount, recipient, and memo.
+
 ## NFT Marketplace Flow
 
 ```mermaid

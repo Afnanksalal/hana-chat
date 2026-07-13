@@ -239,6 +239,8 @@ export const StellarWalletAddressSchema = z
   .trim()
   .regex(/^G[A-Z2-7]{55}$/, "Enter a valid Stellar address");
 
+export type StellarWalletAddress = z.infer<typeof StellarWalletAddressSchema>;
+
 export const CreateNftAssetRequestSchema = z.object({
   characterId: z.string().uuid(),
   mediaAssetId: z.string().uuid(),
@@ -401,11 +403,7 @@ export const VerifyCharacterPurchaseRequestSchema = z.object({
     .trim()
     .toLowerCase()
     .regex(/^[a-f0-9]{64}$/, "Enter a valid Stellar transaction hash"),
-  walletAddress: z
-    .string()
-    .trim()
-    .regex(/^G[A-Z2-7]{55}$/, "Enter a valid Stellar address")
-    .optional(),
+  walletAddress: StellarWalletAddressSchema.optional(),
 });
 
 export type VerifyCharacterPurchaseRequest = z.infer<typeof VerifyCharacterPurchaseRequestSchema>;
@@ -414,10 +412,7 @@ export const UpsertPayoutProfileRequestSchema = z.object({
   displayName: z.string().min(2).max(120),
   legalName: z.string().min(2).max(160).optional().default(""),
   payoutMode: z.literal("stellar").default("stellar"),
-  walletAddress: z
-    .string()
-    .trim()
-    .regex(/^G[A-Z2-7]{55}$/, "Enter a valid Stellar address"),
+  walletAddress: StellarWalletAddressSchema,
 });
 
 export type UpsertPayoutProfileRequest = z.infer<typeof UpsertPayoutProfileRequestSchema>;
@@ -461,11 +456,7 @@ export const VerifyStellarPaymentRequestSchema = z.object({
     .trim()
     .toLowerCase()
     .regex(/^[a-f0-9]{64}$/, "Enter a valid Stellar transaction hash"),
-  walletAddress: z
-    .string()
-    .trim()
-    .regex(/^G[A-Z2-7]{55}$/, "Enter a valid Stellar address")
-    .optional(),
+  walletAddress: StellarWalletAddressSchema.optional(),
 });
 
 export type VerifyStellarPaymentRequest = z.infer<typeof VerifyStellarPaymentRequestSchema>;

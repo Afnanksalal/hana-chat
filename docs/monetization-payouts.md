@@ -8,6 +8,9 @@ configured `STELLAR_TREASURY_ADDRESS`.
 
 - Paid plans and paid character unlocks create `billing.crypto_payments` intents on the `stellar`
   settlement lane.
+- Hana has two paid subscription plans: Hana Plus includes 6,000 monthly credits with deep memory,
+  and Hana Ultra includes 20,000 monthly credits, deep memory, and 18+ spaces after account
+  eligibility checks.
 - The browser guides the user to send XLM or the configured Stellar asset to Hana's treasury address.
 - The API verifies the submitted Stellar transaction hash before activating access.
 - Creator payout destinations are Stellar addresses stored in `billing.crypto_payout_accounts`.

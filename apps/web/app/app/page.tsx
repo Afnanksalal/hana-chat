@@ -5,7 +5,9 @@ import {
   ArrowRight,
   BookHeart,
   Brain,
+  Check,
   Compass,
+  CreditCard,
   Crown,
   Flame,
   MessageSquareText,
@@ -17,8 +19,10 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { apiJson } from "./api";
+import { apiJson, money } from "./api";
+import { StellarCheckoutModal } from "./components/stellar-checkout-modal";
 import { renderRoleplayPreview } from "./roleplay-preview";
+import type { StellarPaymentIntent } from "./stellar-payments";
 
 interface DashboardResponse {
   user: {
@@ -66,10 +70,38 @@ interface ConversationSummary {
   } | null;
 }
 
+interface BillingPlan {
+  id: string;
+  name: string;
+  monthlyPriceCents: number;
+  monthlyCredits?: number;
+  monthlyMessageLimit: number;
+  deepMemoryEnabled: boolean;
+  adultModeEnabled: boolean;
+  comingSoon: boolean;
+  currency: string;
+}
+
+interface BillingResponse {
+  comingSoon: boolean;
+  plans: BillingPlan[];
+  subscription: {
+    planId: string;
+  };
+}
+
+interface CheckoutResponse {
+  payment?: StellarPaymentIntent;
+}
+
 export default function AppHomePage() {
   const [dashboard, setDashboard] = useState<DashboardResponse | null>(null);
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [characters, setCharacters] = useState<CharacterSummary[]>([]);
+  const [billing, setBilling] = useState<BillingResponse | null>(null);
+  const [activePayment, setActivePayment] = useState<StellarPaymentIntent | null>(null);
+  const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
+  const [preparingPlanId, setPreparingPlanId] = useState<string | null>(null);
   const [status, setStatus] = useState("");
 
   useEffect(() => {
@@ -79,8 +111,9 @@ export default function AppHomePage() {
       apiJson<DashboardResponse>("/api/v1/dashboard"),
       apiJson<{ conversations: ConversationSummary[] }>("/api/v1/chat/conversations"),
       apiJson<{ characters: CharacterSummary[] }>("/api/v1/characters/recommended"),
+      apiJson<BillingResponse>("/api/v1/billing/plans"),
     ])
-      .then(([dashboardPayload, conversationPayload, characterPayload]) => {
+      .then(([dashboardPayload, conversationPayload, characterPayload, billingPayload]) => {
         if (mounted) {
           setDashboard(normalizeDashboard(dashboardPayload));
           setConversations(
@@ -91,6 +124,7 @@ export default function AppHomePage() {
           setCharacters(
             Array.isArray(characterPayload.characters) ? characterPayload.characters : [],
           );
+          setBilling(normalizeBilling(billingPayload));
           setStatus("");
         }
       })
@@ -141,9 +175,12 @@ export default function AppHomePage() {
     .slice(0, 3);
   const recentConversations = conversations.slice(0, 4);
   const isAdmin = dashboard.user.roles?.includes("admin") ?? false;
+  const plans = billing?.plans ?? [];
+  const activePlanId = billing?.subscription.planId ?? dashboard.plan.id;
+  const monetizationComingSoon = billing?.comingSoon ?? true;
   const healthItems = [
     {
-      label: "Messages left",
+      label: "Credits left",
       value: dashboard.usage.messagesRemaining.toLocaleString(),
       icon: MessageSquareText,
     },
@@ -155,6 +192,33 @@ export default function AppHomePage() {
     { label: "Saved memories", value: String(dashboard.counts.savedMemories), icon: Brain },
     { label: "Plan", value: dashboard.plan.name, icon: WalletCards },
   ];
+
+  async function openPlanWallet(plan: BillingPlan) {
+    if (plan.id === "free" || plan.id === activePlanId || monetizationComingSoon) {
+      return;
+    }
+
+    setPreparingPlanId(plan.id);
+    setStatus("");
+
+    try {
+      const checkout = await apiJson<CheckoutResponse>("/api/v1/billing/checkout", {
+        method: "POST",
+        body: JSON.stringify({ planId: plan.id, provider: "stellar" }),
+      });
+
+      if (!checkout.payment) {
+        throw new Error("Wallet checkout could not start.");
+      }
+
+      setActivePayment(checkout.payment);
+      setIsCheckoutOpen(true);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Could not open wallet checkout.");
+    } finally {
+      setPreparingPlanId(null);
+    }
+  }
 
   return (
     <div className="app-page dashboard-page">
@@ -183,7 +247,7 @@ export default function AppHomePage() {
           <div>
             <span>Monthly energy</span>
             <strong>{dashboard.usage.messagesRemaining.toLocaleString()}</strong>
-            <p>messages left on {dashboard.plan.name}</p>
+            <p>credits left on {dashboard.plan.name}</p>
           </div>
           <div className="usage-meter" aria-label={`${usagePercent}% monthly usage used`}>
             <span style={{ width: `${usagePercent}%` }} />
@@ -199,6 +263,102 @@ export default function AppHomePage() {
             <strong>{item.value}</strong>
           </article>
         ))}
+      </section>
+
+      <section
+        className="dashboard-panel dashboard-pricing-panel"
+        aria-labelledby="dashboard-pricing-title"
+      >
+        <div className="panel-heading split">
+          <div>
+            <span className="section-label">
+              <WalletCards size={15} /> Plans and pricing
+            </span>
+            <h2 id="dashboard-pricing-title">Choose your Hana plan</h2>
+          </div>
+          <span className="dashboard-pricing-network">
+            <CreditCard size={15} /> Freighter {activePayment?.network ?? "testnet"}
+          </span>
+        </div>
+
+        <div className="pricing-grid app-pricing premium-plan-grid" aria-label="Hana plans">
+          {plans.map((plan) => {
+            const isCurrentPlan = plan.id === activePlanId;
+            const isPaidPlan = plan.id !== "free";
+            const isPreparing = preparingPlanId === plan.id;
+            const checkoutPaused = monetizationComingSoon || plan.comingSoon;
+
+            return (
+              <article
+                className={
+                  isCurrentPlan || plan.id === "plus" ? "pricing-card featured" : "pricing-card"
+                }
+                key={plan.id}
+              >
+                <div className="pricing-card-head">
+                  <WalletCards size={22} />
+                  <span>{isPaidPlan ? "Freighter Testnet" : "Starter"}</span>
+                </div>
+                <div>
+                  <h3>{plan.name}</h3>
+                  {isPaidPlan ? (
+                    <button
+                      className="dashboard-price-button"
+                      type="button"
+                      disabled={checkoutPaused || isCurrentPlan || Boolean(preparingPlanId)}
+                      onClick={() => void openPlanWallet(plan)}
+                    >
+                      <strong>
+                        {money(plan.monthlyPriceCents, plan.currency)}
+                        <span>/mo</span>
+                      </strong>
+                      <small>Click price to open Freighter</small>
+                    </button>
+                  ) : (
+                    <strong>
+                      {money(plan.monthlyPriceCents, plan.currency)}
+                      <span>/mo</span>
+                    </strong>
+                  )}
+                </div>
+                <div className="plan-payment-note">
+                  <CreditCard size={15} />
+                  <span>{isPaidPlan ? "Open wallet to continue" : "Free access"}</span>
+                </div>
+                <ul>
+                  <li>
+                    <Check size={15} /> {planCredits(plan).toLocaleString()} monthly credits
+                  </li>
+                  <li>
+                    <Check size={15} /> {plan.deepMemoryEnabled ? "Deep memory" : "Basic memory"}
+                  </li>
+                  <li>
+                    <Check size={15} /> {plan.adultModeEnabled ? "18+ spaces" : "Default spaces"}
+                  </li>
+                </ul>
+                {isPaidPlan ? (
+                  <button
+                    className="primary-action"
+                    type="button"
+                    disabled={checkoutPaused || isCurrentPlan || Boolean(preparingPlanId)}
+                    onClick={() => void openPlanWallet(plan)}
+                  >
+                    {checkoutPaused
+                      ? "Checkout paused"
+                      : isCurrentPlan
+                        ? "Current plan"
+                        : isPreparing
+                          ? "Opening wallet..."
+                          : "Choose plan"}
+                    {!checkoutPaused && !isCurrentPlan ? <WalletCards size={16} /> : null}
+                  </button>
+                ) : (
+                  <span className="dashboard-plan-included">Included with your account</span>
+                )}
+              </article>
+            );
+          })}
+        </div>
       </section>
 
       <section className="dashboard-grid">
@@ -339,9 +499,32 @@ export default function AppHomePage() {
         </article>
       </section>
 
+      {activePayment ? (
+        <StellarCheckoutModal
+          isOpen={isCheckoutOpen}
+          onClose={() => setIsCheckoutOpen(false)}
+          payment={activePayment}
+          openWalletOnStart
+          verifyPath="/api/v1/billing/stellar/verify"
+          verifyBody={{ paymentId: activePayment.id }}
+          onSuccess={() => {
+            setStatus("Plan activated.");
+            void refreshBilling();
+          }}
+        />
+      ) : null}
+
       {status ? <p className="floating-status">{status}</p> : null}
     </div>
   );
+
+  async function refreshBilling() {
+    try {
+      setBilling(normalizeBilling(await apiJson<BillingResponse>("/api/v1/billing/plans")));
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Could not refresh your plan.");
+    }
+  }
 }
 
 function greetingFor(displayName: string): string {
@@ -390,6 +573,49 @@ function normalizeDashboard(payload: Partial<DashboardResponse>): DashboardRespo
     },
     nextAction: requiredString(payload.nextAction, "dashboard.nextAction"),
   };
+}
+
+function normalizeBilling(payload: Partial<BillingResponse>): BillingResponse {
+  if (!Array.isArray(payload.plans) || payload.plans.length === 0) {
+    throw new Error("Invalid billing.plans");
+  }
+
+  if (!payload.subscription || typeof payload.subscription.planId !== "string") {
+    throw new Error("Invalid billing.subscription");
+  }
+
+  const plans = payload.plans.filter(isBillingPlan);
+
+  if (plans.length === 0) {
+    throw new Error("Invalid billing.plans");
+  }
+
+  return {
+    comingSoon: payload.comingSoon === true,
+    plans,
+    subscription: { planId: payload.subscription.planId },
+  };
+}
+
+function isBillingPlan(value: unknown): value is BillingPlan {
+  if (!value || typeof value !== "object") return false;
+
+  const plan = value as Partial<BillingPlan>;
+  return (
+    typeof plan.id === "string" &&
+    typeof plan.name === "string" &&
+    typeof plan.monthlyPriceCents === "number" &&
+    typeof plan.monthlyMessageLimit === "number" &&
+    (plan.monthlyCredits === undefined || typeof plan.monthlyCredits === "number") &&
+    typeof plan.deepMemoryEnabled === "boolean" &&
+    typeof plan.adultModeEnabled === "boolean" &&
+    typeof plan.comingSoon === "boolean" &&
+    typeof plan.currency === "string"
+  );
+}
+
+function planCredits(plan: BillingPlan): number {
+  return plan.monthlyCredits ?? plan.monthlyMessageLimit;
 }
 
 function requiredString(value: unknown, field: string): string {

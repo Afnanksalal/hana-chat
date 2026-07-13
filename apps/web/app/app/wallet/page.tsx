@@ -25,6 +25,7 @@ import { StellarWalletModal } from "../components/stellar-wallet-modal";
 interface WalletResponse {
   monetizationEnabled: boolean;
   comingSoon: boolean;
+  network: "mainnet" | "testnet";
   wallet: {
     currency: string;
     pendingCents: number;
@@ -85,6 +86,7 @@ interface WalletResponse {
 const emptyWallet: WalletResponse = {
   monetizationEnabled: false,
   comingSoon: true,
+  network: "testnet",
   wallet: {
     currency: "USD",
     pendingCents: 0,
@@ -173,6 +175,16 @@ export default function CreatorWalletPage() {
 
     if (!Number.isFinite(amountCents) || amountCents <= 0) {
       setStatus("Enter a valid payout amount.");
+      return;
+    }
+
+    if (amountCents > wallet.wallet.availableCents) {
+      setStatus("Payout amount exceeds available balance.");
+      return;
+    }
+
+    if (amountCents < wallet.policy.minimumPayoutCents) {
+      setStatus(`Payout amount must be at least ${money(wallet.policy.minimumPayoutCents, wallet.wallet.currency)}.`);
       return;
     }
 
@@ -273,7 +285,11 @@ export default function CreatorWalletPage() {
             </i>
           </div>
           <div className="payment-hero-chips" aria-label="Wallet status">
-            {monetizationComingSoon ? <span>Coming soon</span> : <span>Stellar live</span>}
+            {monetizationComingSoon ? (
+              <span>Coming soon</span>
+            ) : (
+              <span>Stellar {wallet.network}</span>
+            )}
             <span>{formatStatus(profileStatus)}</span>
             <span>{walletDisplay}</span>
           </div>
@@ -578,6 +594,7 @@ export default function CreatorWalletPage() {
       ) : null}
       <StellarWalletModal
         isOpen={isWalletOpen}
+        network={wallet.network}
         onClose={() => setIsWalletOpen(false)}
         onAddressResolved={(addr) => {
           setWalletAddress(addr);
