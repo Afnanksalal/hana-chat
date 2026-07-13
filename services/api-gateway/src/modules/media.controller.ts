@@ -106,16 +106,16 @@ export class MediaController {
     const session = await requireSession(this.db, this.config, authorization);
     const input = GenerateMediaAssetRequestSchema.parse(body);
 
-    if (!this.config.XAI_API_KEY) {
-      throw new DomainError("MODEL_PROVIDER_FAILED", "xAI image generation is not configured");
-    }
+    const useXai = Boolean(this.config.XAI_API_KEY);
 
     const recentGenerations = await this.db
       .selectFrom("creator.media_assets")
       .select((eb) => eb.fn.countAll<number>().as("count"))
       .where("owner_user_id", "=", session.userId)
       .where("created_at", ">=", new Date(Date.now() - 60 * 60 * 1_000))
-      .where("metadata_json", "@>", { source: "xai-image-generation" })
+      .where("metadata_json", "@>", {
+        source: useXai ? "xai-image-generation" : "pollinations-image-generation",
+      })
       .executeTakeFirst();
 
     if (Number(recentGenerations?.count ?? 0) >= 12) {
@@ -124,26 +124,45 @@ export class MediaController {
       });
     }
 
-    const referenceImage = input.referenceImageUrl
-      ? await this.resolveReferenceImage(input.referenceImageUrl, session.userId)
-      : null;
+    const referenceImage =
+      useXai && input.referenceImageUrl
+        ? await this.resolveReferenceImage(input.referenceImageUrl, session.userId)
+        : null;
     const prompt = buildGeneratedImagePrompt({
       ...input,
       hasReferenceImage: Boolean(referenceImage),
     });
-    const xaiImageInput: XaiImageInput = {
-      apiKey: this.config.XAI_API_KEY,
-      baseUrl: this.config.XAI_BASE_URL,
-      model: this.config.XAI_IMAGE_MODEL,
-      prompt,
-      aspectRatio: input.aspectRatio,
+
+    let generated: {
+      buffer: Buffer;
+      mimeType: keyof typeof mimeExtensions;
+      revisedPrompt: string;
+      costTicks: number | null;
     };
+    let provider: string;
+    let model: string;
 
-    if (referenceImage) {
-      xaiImageInput.referenceImage = referenceImage;
+    if (useXai) {
+      const xaiImageInput: XaiImageInput = {
+        apiKey: this.config.XAI_API_KEY!,
+        baseUrl: this.config.XAI_BASE_URL,
+        model: this.config.XAI_IMAGE_MODEL,
+        prompt,
+        aspectRatio: input.aspectRatio,
+      };
+
+      if (referenceImage) {
+        xaiImageInput.referenceImage = referenceImage;
+      }
+
+      generated = await generateImageWithXai(xaiImageInput);
+      provider = "xai";
+      model = this.config.XAI_IMAGE_MODEL;
+    } else {
+      generated = await generateImageWithPollinations(prompt, input.aspectRatio);
+      provider = "pollinations";
+      model = "flux";
     }
-
-    const generated = await generateImageWithXai(xaiImageInput);
 
     if (generated.buffer.byteLength > this.config.MEDIA_MAX_UPLOAD_BYTES) {
       throw new DomainError("VALIDATION_FAILED", "Generated image is too large", {
@@ -159,7 +178,7 @@ export class MediaController {
     const absolutePath = this.resolveStorageKey(storageKey);
     const publicUrl = `/api/v1/media/${mediaId}/file`;
     const fileName = sanitizeFileName(
-      `${input.characterName || input.purpose}-xai-${Date.now()}.${extension}`,
+      `${input.characterName || input.purpose}-${provider}-${Date.now()}.${extension}`,
     );
 
     await mkdir(dirname(absolutePath), { recursive: true });
@@ -181,9 +200,9 @@ export class MediaController {
         width: null,
         height: null,
         metadata_json: {
-          source: "xai-image-generation",
+          source: `${provider}-image-generation`,
           mode: referenceImage ? "image_edit_reference" : "text_to_image",
-          model: this.config.XAI_IMAGE_MODEL,
+          model,
           prompt,
           revisedPrompt: generated.revisedPrompt,
           costTicks: generated.costTicks,
@@ -209,8 +228,8 @@ export class MediaController {
         purpose: input.purpose,
         mimeType: generated.mimeType,
         byteSize: generated.buffer.byteLength,
-        provider: "xai",
-        model: this.config.XAI_IMAGE_MODEL,
+        provider,
+        model,
         referenceMediaId: referenceImage?.mediaId ?? null,
       },
     });
@@ -222,8 +241,8 @@ export class MediaController {
       mimeType: generated.mimeType,
       byteSize: generated.buffer.byteLength,
       fileName,
-      provider: "xai",
-      model: this.config.XAI_IMAGE_MODEL,
+      provider,
+      model,
     };
   }
 
@@ -521,6 +540,59 @@ async function postXaiImageRequest(
 
 function isRetryableImageEditShapeError(status: number): boolean {
   return status === 400 || status === 422;
+}
+
+/**
+ * Pollinations.ai — free, no API key required.
+ * Uses the Flux model via the image CDN endpoint.
+ * Docs: https://pollinations.ai/
+ */
+async function generateImageWithPollinations(
+  prompt: string,
+  aspectRatio: string,
+): Promise<{
+  buffer: Buffer;
+  mimeType: keyof typeof mimeExtensions;
+  revisedPrompt: string;
+  costTicks: number | null;
+}> {
+  // Map aspect ratio strings to pixel dimensions Pollinations supports
+  const dimensionMap: Record<string, { width: number; height: number }> = {
+    "1:1": { width: 1024, height: 1024 },
+    "16:9": { width: 1344, height: 768 },
+    "4:3": { width: 1152, height: 896 },
+    "3:4": { width: 896, height: 1152 },
+  };
+  const { width, height } = dimensionMap[aspectRatio] ?? { width: 1024, height: 1024 };
+
+  const params = new URLSearchParams({
+    width: String(width),
+    height: String(height),
+    model: "flux",
+    nologo: "true",
+    enhance: "false",
+    safe: "false",
+    seed: String(Math.floor(Math.random() * 2_147_483_647)),
+  });
+  const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?${params.toString()}`;
+
+  const response = await fetchWithTimeout(url, { method: "GET" }, 90_000);
+
+  if (!response.ok) {
+    throw new DomainError("MODEL_PROVIDER_FAILED", "Pollinations image generation failed", {
+      status: response.status,
+    });
+  }
+
+  const contentType = response.headers.get("content-type")?.split(";")[0]?.trim();
+  const buffer = Buffer.from(await response.arrayBuffer());
+
+  return {
+    buffer,
+    mimeType: mimeTypeFromPayloadOrSignature(contentType, buffer),
+    revisedPrompt: "",
+    costTicks: null,
+  };
 }
 
 function mimeTypeFromPayloadOrSignature(
