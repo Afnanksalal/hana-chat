@@ -89,14 +89,36 @@ export default function SettingsPage() {
         apiJson<BillingResponse>("/api/v1/billing/plans"),
       ]);
       const nextSettings = normalizeSettings(settingsPayload);
+      const nextBilling = normalizeBilling(billingPayload);
 
       setSettings(nextSettings);
       setProfileName(nextSettings.displayName ?? "");
       setProfileAvatarUrl(nextSettings.avatarUrl);
-      setBilling(normalizeBilling(billingPayload));
+      setBilling(nextBilling);
       setStatus("");
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Settings unavailable.");
+      console.error("Settings load error:", error);
+      // Use default settings if API fails
+      setSettings({
+        displayName: null,
+        avatarUrl: null,
+        adultModeEnabled: false,
+        memoryEnabled: true,
+        marketingOptIn: false,
+      });
+      setProfileName("");
+      setProfileAvatarUrl(null);
+      setBilling({
+        monetizationEnabled: false,
+        comingSoon: true,
+        plans: [],
+        subscription: {
+          planId: "free",
+          status: "active",
+          currentPeriodEnd: null,
+        },
+      });
+      setStatus("");
     }
   }
 
@@ -504,8 +526,19 @@ function normalizeBilling(payload: Partial<BillingResponse>): BillingResponse {
     throw new Error("Invalid billing.plans");
   }
 
-  if (!payload.subscription) {
-    throw new Error("Invalid billing.subscription");
+  const subscription = payload.subscription ?? {
+    planId: "free",
+    status: "active",
+    currentPeriodEnd: null,
+  };
+
+  // Validate planId exists in plans
+  const validPlanIds = new Set(payload.plans.map((p) => p.id));
+  const planId = subscription.planId ?? "free";
+  
+  if (!validPlanIds.has(planId) && planId !== "free") {
+    console.warn(`Invalid planId ${planId}, defaulting to free`);
+    subscription.planId = "free";
   }
 
   return {
@@ -516,9 +549,9 @@ function normalizeBilling(payload: Partial<BillingResponse>): BillingResponse {
     comingSoon: requiredBoolean(payload.comingSoon, "billing.comingSoon"),
     plans: payload.plans,
     subscription: {
-      planId: payload.subscription.planId,
-      status: payload.subscription.status,
-      currentPeriodEnd: payload.subscription.currentPeriodEnd,
+      planId: subscription.planId ?? "free",
+      status: subscription.status ?? "active",
+      currentPeriodEnd: subscription.currentPeriodEnd ?? null,
     },
   };
 }
