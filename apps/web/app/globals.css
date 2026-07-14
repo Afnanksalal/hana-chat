@@ -9372,7 +9372,9 @@ textarea {
   max-width: 520px;
   background: #08080a;
   border: 1px solid rgba(255, 105, 180, 0.25);
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5), 0 0 15px rgba(255, 105, 180, 0.05);
+  box-shadow:
+    0 20px 50px rgba(0, 0, 0, 0.5),
+    0 0 15px rgba(255, 105, 180, 0.05);
   border-radius: var(--radius);
   overflow: hidden;
   display: flex;
@@ -9936,8 +9938,12 @@ textarea {
   border-bottom: 1px solid #1f1b26;
 }
 
-.or-separator::before { margin-right: .75em; }
-.or-separator::after { margin-left: .75em; }
+.or-separator::before {
+  margin-right: 0.75em;
+}
+.or-separator::after {
+  margin-left: 0.75em;
+}
 
 .or-divider {
   justify-content: center;

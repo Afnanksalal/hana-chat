@@ -314,10 +314,9 @@ try {
   await check("chat settings add and remove memory", async () => {
     const { characterId, characterName } = requireSeedCharacter();
     const memoryText = `Browser smoke memory ${Date.now().toString().slice(-6)}`;
-    await page.goto(
-      `${WEB_BASE_URL}/app/chat?characterId=${encodeURIComponent(characterId)}`,
-      { waitUntil: "load" },
-    );
+    await page.goto(`${WEB_BASE_URL}/app/chat?characterId=${encodeURIComponent(characterId)}`, {
+      waitUntil: "load",
+    });
     await waitForChatCharacterReady(page, characterName);
     await openChatSettings(page);
     await page
@@ -855,8 +854,7 @@ function assert(condition, message) {
 
 function requireAdminSession() {
   assert(
-    typeof globalThis.adminSessionToken === "string" &&
-      globalThis.adminSessionToken.length > 0,
+    typeof globalThis.adminSessionToken === "string" && globalThis.adminSessionToken.length > 0,
     "admin session token was not available",
   );
 

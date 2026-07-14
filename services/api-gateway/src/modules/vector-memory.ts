@@ -68,7 +68,6 @@ export async function upsertMemoryVector(
       `Qdrant memory upsert failed: HTTP ${response.status} ${await response.text()}`,
     );
   }
-
 }
 
 export async function deleteMemoryVector(config: AppConfig, memoryId: string): Promise<void> {
@@ -88,7 +87,6 @@ export async function deleteMemoryVector(config: AppConfig, memoryId: string): P
       `Qdrant memory delete failed: HTTP ${response.status} ${await response.text()}`,
     );
   }
-
 }
 
 export async function searchMemoryVectors(

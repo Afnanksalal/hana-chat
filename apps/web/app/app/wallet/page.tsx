@@ -184,7 +184,9 @@ export default function CreatorWalletPage() {
     }
 
     if (amountCents < wallet.policy.minimumPayoutCents) {
-      setStatus(`Payout amount must be at least ${money(wallet.policy.minimumPayoutCents, wallet.wallet.currency)}.`);
+      setStatus(
+        `Payout amount must be at least ${money(wallet.policy.minimumPayoutCents, wallet.wallet.currency)}.`,
+      );
       return;
     }
 

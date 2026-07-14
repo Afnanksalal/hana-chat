@@ -218,7 +218,9 @@ export function StellarWalletModal({
           {wallet && !hasCheckoutAsset ? (
             <div className="wallet-trustline-warning" style={{ marginBottom: "15px" }}>
               <p>
-                <strong>Trustline required:</strong> This wallet does not have a trustline for the required checkout asset ({wallet.checkoutAsset.assetCode}). You must establish a trustline in your wallet to complete payments or receive payouts.
+                <strong>Trustline required:</strong> This wallet does not have a trustline for the
+                required checkout asset ({wallet.checkoutAsset.assetCode}). You must establish a
+                trustline in your wallet to complete payments or receive payouts.
               </p>
             </div>
           ) : null}
@@ -229,7 +231,9 @@ export function StellarWalletModal({
                 <span>
                   <Coins size={16} /> Assets
                 </span>
-                <small>{wallet.funded ? `${wallet.assets.length} found` : "Account not funded"}</small>
+                <small>
+                  {wallet.funded ? `${wallet.assets.length} found` : "Account not funded"}
+                </small>
               </div>
               <div className="wallet-asset-list">
                 {wallet.assets.map((asset) => {
@@ -249,7 +253,9 @@ export function StellarWalletModal({
                       </span>
                       <span className="asset-balance">
                         <strong>{formatAssetBalance(asset.availableBalance)}</strong>
-                        <small>{asset.checkoutSupported ? "Checkout ready" : "Wallet balance"}</small>
+                        <small>
+                          {asset.checkoutSupported ? "Checkout ready" : "Wallet balance"}
+                        </small>
                       </span>
                       {selected ? <Check size={16} /> : null}
                     </button>

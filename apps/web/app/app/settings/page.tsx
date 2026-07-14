@@ -391,7 +391,9 @@ export default function SettingsPage() {
             {activePlan ? money(activePlan.monthlyPriceCents, activePlan.currency) : "$0"}
           </strong>
           <div className="billing-plan-status">
-            <span>{activePlan ? planCredits(activePlan).toLocaleString() : "900"} monthly credits</span>
+            <span>
+              {activePlan ? planCredits(activePlan).toLocaleString() : "900"} monthly credits
+            </span>
             <span>{activePlan?.deepMemoryEnabled ? "Deep memory" : "Basic memory"}</span>
             <span>{monetizationComingSoon ? "Checkout paused" : "Wallet checkout ready"}</span>
           </div>
@@ -536,7 +538,7 @@ function normalizeBilling(payload: Partial<BillingResponse>): BillingResponse {
   // Validate planId exists in plans
   const validPlanIds = new Set(payload.plans.map((p) => p.id));
   const planId = subscription.planId ?? "free";
-  
+
   if (!validPlanIds.has(planId) && planId !== "free") {
     console.warn(`Invalid planId ${planId}, defaulting to free`);
     subscription.planId = "free";

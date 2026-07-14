@@ -60,7 +60,7 @@ function parseChatContent(content: string): ChatContentPart[] {
         parts.push({ type: "text", content: textContent });
       }
     }
-    
+
     // Add the image
     if (match[1]) {
       parts.push({ type: "image", mediaId: match[1] });
@@ -79,7 +79,11 @@ function parseChatContent(content: string): ChatContentPart[] {
   return parts.length > 0 ? parts : [{ type: "text", content }];
 }
 
-function renderChatContent(parts: ChatContentPart[], characterId: string | undefined, onMintClick: (mediaId: string) => void) {
+function renderChatContent(
+  parts: ChatContentPart[],
+  characterId: string | undefined,
+  onMintClick: (mediaId: string) => void,
+) {
   return parts.map((part, index) => {
     if (part.type === "image") {
       return (
@@ -89,16 +93,13 @@ function renderChatContent(parts: ChatContentPart[], characterId: string | undef
             alt="AI generated image"
             className="chat-image"
           />
-          <button
-            className="chat-image-action"
-            onClick={() => onMintClick(part.mediaId)}
-          >
+          <button className="chat-image-action" onClick={() => onMintClick(part.mediaId)}>
             Mint as NFT
           </button>
         </div>
       );
     }
-    
+
     return (
       <div key={`text-${index}`} className="chat-text-content">
         {renderRoleplayContent(part.content)}
@@ -566,7 +567,10 @@ function ChatExperience() {
   const [groupSelection, setGroupSelection] = useState<string[]>([]);
   const [groupAddSelection, setGroupAddSelection] = useState<string[]>([]);
   const [isGroupSaving, setIsGroupSaving] = useState(false);
-  const [mintModalTarget, setMintModalTarget] = useState<{ mediaId: string; characterId: string } | null>(null);
+  const [mintModalTarget, setMintModalTarget] = useState<{
+    mediaId: string;
+    characterId: string;
+  } | null>(null);
   const streamRef = useRef<HTMLDivElement | null>(null);
   const draftInputRef = useRef<HTMLInputElement | null>(null);
   const assistantBufferRef = useRef("");
@@ -1966,7 +1970,11 @@ function ChatExperience() {
                       renderChatContent(
                         parseChatContent(message.content),
                         message.speaker?.characterId ?? selectedCharacter.id,
-                        (mediaId) => setMintModalTarget({ mediaId, characterId: message.speaker?.characterId ?? selectedCharacter.id })
+                        (mediaId) =>
+                          setMintModalTarget({
+                            mediaId,
+                            characterId: message.speaker?.characterId ?? selectedCharacter.id,
+                          }),
                       )
                     ) : message.id === typingMessageId ? (
                       <span className="typing-indicator" aria-label="Typing">

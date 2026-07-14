@@ -5,6 +5,7 @@ This guide covers how to use Stellar wallets and interact with the Hana NFT smar
 ## Overview
 
 Hana Chat uses Stellar blockchain for:
+
 - **NFT minting**: Creating memory NFTs and creator art NFTs
 - **Payments**: Processing subscription payments and character purchases
 - **Wallet integration**: Connecting user wallets via Freighter extension
@@ -12,12 +13,14 @@ Hana Chat uses Stellar blockchain for:
 ## Network Configuration
 
 ### Testnet (Development)
+
 - **Network**: Testnet
 - **Horizon URL**: https://horizon-testnet.stellar.org
 - **RPC URL**: https://soroban-testnet.stellar.org
 - **Friendbot**: https://friendbot.stellar.org/?addr=<ADDRESS>
 
 ### Mainnet (Production)
+
 - **Network**: Mainnet
 - **Horizon URL**: https://horizon.stellar.org
 - **RPC URL**: https://soroban-rpc.mainnet.stellar.org
@@ -43,21 +46,25 @@ Hana Chat uses Stellar blockchain for:
 ### Option 2: Stellar CLI (For Server-Side Operations)
 
 1. **Install Stellar CLI**
+
    ```bash
    cargo install --locked stellar-cli
    ```
 
 2. **Generate Key Pair**
+
    ```bash
    stellar keys generate <alias> --network testnet
    ```
 
 3. **Get Public Address**
+
    ```bash
    stellar keys public-key <alias>
    ```
 
 4. **Get Secret Key** (NEVER share this)
+
    ```bash
    stellar keys secret <alias>
    ```
@@ -276,19 +283,23 @@ const verification = await verifyStellarPayment({
 ### Common Errors
 
 **"Freighter is not installed"**
+
 - Install Freighter extension from https://www.freighter.app/
 - Refresh the page after installation
 
 **"Invalid Stellar address"**
+
 - Ensure address starts with `G` and is 56 characters long
 - Check network (testnet vs mainnet)
 
 **"Transaction simulation failed"**
+
 - Check account has sufficient XLM for fees
 - Verify contract is deployed and initialized
 - Ensure admin address matches contract configuration
 
 **"Memory leak detected"**
+
 - This is from the @stellar/freighter-api library
 - The wallet modal includes cleanup to minimize issues
 - Disable wallet extensions if problems persist
@@ -296,11 +307,13 @@ const verification = await verifyStellarPayment({
 ### Network Issues
 
 **Cannot connect to Stellar RPC**
+
 - Check network configuration matches environment
 - Verify RPC URL is accessible
 - Try switching between testnet and mainnet
 
 **Transaction stuck pending**
+
 - Check network status on Stellar.expert
 - Verify sufficient confirmations (default: 1)
 - Transaction may take 5-10 seconds to finalize
@@ -332,12 +345,14 @@ const verification = await verifyStellarPayment({
 ## Current Deployment
 
 ### Testnet Configuration
+
 - **Contract ID**: CBBF6GSIMW47Q2Z4WSZ3RT5D4OBZEIRF74M4YDMHF733BTDUKS7FEMXZ
 - **Admin Address**: GAPYAAYSSW457B2M6VMIVXGEVABTODCYBWOCUTX4ZVAQALHIU5TXBGFK
 - **Network**: Testnet
 - **Status**: Active
 
 ### Explorer Links
+
 - **Transaction Explorer**: https://stellar.expert/explorer/testnet/
 - **Contract Lab**: https://lab.stellar.org/r/testnet/contract/CBBF6GSIMW47Q2Z4WSZ3RT5D4OBZEIRF74M4YDMHF733BTDUKS7FEMXZ
 
@@ -351,6 +366,7 @@ const verification = await verifyStellarPayment({
 ## Support
 
 For issues related to:
+
 - **Wallet connection**: Check Freighter extension status
 - **Contract deployment**: Review Stellar CLI output
 - **Payment processing**: Check environment variables

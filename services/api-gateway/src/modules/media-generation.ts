@@ -136,7 +136,7 @@ function buildChatImagePrompt(
   purpose: "character_avatar" | "character_cover" | "nft_art" | "chat_image" = "chat_image",
 ): string {
   const nameLine = characterName ? `Character name: ${characterName}.` : "";
-  
+
   const basePrompt = [
     "Create Hana Chat artwork.",
     nameLine,
@@ -297,7 +297,7 @@ function mimeTypeFromPayloadOrSignature(
   buffer: Buffer,
 ): keyof typeof mimeExtensions {
   const generatedImageMimeTypes = ["image/png", "image/jpeg", "image/webp"] as const;
-  
+
   if (generatedImageMimeTypes.some((candidate) => candidate === mimeType)) {
     return mimeType as keyof typeof mimeExtensions;
   }
