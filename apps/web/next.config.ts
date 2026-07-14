@@ -24,7 +24,7 @@ const nextConfig: NextConfig = {
           "style-src 'self' 'unsafe-inline'",
           "img-src 'self' data: blob: https:",
           "font-src 'self' data:",
-          "connect-src 'self'",
+          "connect-src 'self' https://horizon-testnet.stellar.org https://horizon.stellar.org https://api.stellar.expert",
           "frame-src 'none'",
           "form-action 'self'",
           shouldUpgradeInsecureRequests ? "upgrade-insecure-requests" : "",
