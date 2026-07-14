@@ -248,6 +248,8 @@ export const CreateNftAssetRequestSchema = z.object({
   description: z.string().trim().min(12).max(1_000),
   ownerWalletAddress: StellarWalletAddressSchema,
   royaltyBps: z.number().int().min(0).max(1_000).default(500),
+  paymentId: z.string().uuid().optional(),
+  txHash: z.string().optional(),
 });
 
 export type CreateNftAssetRequest = z.infer<typeof CreateNftAssetRequestSchema>;

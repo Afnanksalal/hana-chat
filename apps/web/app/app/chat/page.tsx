@@ -29,9 +29,83 @@ import { useSearchParams } from "next/navigation";
 import type { CSSProperties } from "react";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { HanaLogo } from "../../components/hana-logo";
+import { MintFromChatModal } from "../components/mint-from-chat-modal";
 import { apiJson, money } from "../api";
 import { completeStellarPayment, type StellarPaymentIntent } from "../stellar-payments";
 import { renderRoleplayContent, renderRoleplayPreview } from "../roleplay-preview";
+
+interface ChatImagePart {
+  type: "image";
+  mediaId: string;
+}
+
+interface ChatTextPart {
+  type: "text";
+  content: string;
+}
+
+type ChatContentPart = ChatImagePart | ChatTextPart;
+
+function parseChatContent(content: string): ChatContentPart[] {
+  const parts: ChatContentPart[] = [];
+  const imageRegex = /!\[hana-img\]\(mediaId:([a-f0-9-]{36})\)/g;
+  let lastIndex = 0;
+  let match;
+
+  while ((match = imageRegex.exec(content)) !== null) {
+    // Add text before the image
+    if (match.index > lastIndex) {
+      const textContent = content.slice(lastIndex, match.index);
+      if (textContent.trim()) {
+        parts.push({ type: "text", content: textContent });
+      }
+    }
+    
+    // Add the image
+    if (match[1]) {
+      parts.push({ type: "image", mediaId: match[1] });
+    }
+    lastIndex = imageRegex.lastIndex;
+  }
+
+  // Add remaining text
+  if (lastIndex < content.length) {
+    const textContent = content.slice(lastIndex);
+    if (textContent.trim()) {
+      parts.push({ type: "text", content: textContent });
+    }
+  }
+
+  return parts.length > 0 ? parts : [{ type: "text", content }];
+}
+
+function renderChatContent(parts: ChatContentPart[], characterId: string | undefined, onMintClick: (mediaId: string) => void) {
+  return parts.map((part, index) => {
+    if (part.type === "image") {
+      return (
+        <div key={`img-${index}`} className="chat-image-bubble">
+          <img
+            src={`/api/v1/media/${part.mediaId}/file`}
+            alt="AI generated image"
+            className="chat-image"
+          />
+          <button
+            className="chat-image-action"
+            onClick={() => onMintClick(part.mediaId)}
+          >
+            Mint as NFT
+          </button>
+        </div>
+      );
+    }
+    
+    return (
+      <div key={`text-${index}`} className="chat-text-content">
+        {renderRoleplayContent(part.content)}
+      </div>
+    );
+  });
+}
 
 type MemoryKind = "preference" | "boundary" | "relationship" | "canon" | "event" | "style";
 
@@ -492,6 +566,7 @@ function ChatExperience() {
   const [groupSelection, setGroupSelection] = useState<string[]>([]);
   const [groupAddSelection, setGroupAddSelection] = useState<string[]>([]);
   const [isGroupSaving, setIsGroupSaving] = useState(false);
+  const [mintModalTarget, setMintModalTarget] = useState<{ mediaId: string; characterId: string } | null>(null);
   const streamRef = useRef<HTMLDivElement | null>(null);
   const draftInputRef = useRef<HTMLInputElement | null>(null);
   const assistantBufferRef = useRef("");
@@ -1888,7 +1963,11 @@ function ChatExperience() {
                   ) : null}
                   <div className="message-bubble">
                     {message.content ? (
-                      renderRoleplayContent(message.content)
+                      renderChatContent(
+                        parseChatContent(message.content),
+                        message.speaker?.characterId ?? selectedCharacter.id,
+                        (mediaId) => setMintModalTarget({ mediaId, characterId: message.speaker?.characterId ?? selectedCharacter.id })
+                      )
                     ) : message.id === typingMessageId ? (
                       <span className="typing-indicator" aria-label="Typing">
                         <i />
@@ -2324,6 +2403,16 @@ function ChatExperience() {
       ) : null}
 
       {status ? <p className="floating-status">{status}</p> : null}
+
+      {mintModalTarget && selectedCharacter && (
+        <MintFromChatModal
+          isOpen={Boolean(mintModalTarget)}
+          onClose={() => setMintModalTarget(null)}
+          mediaId={mintModalTarget.mediaId}
+          characterId={mintModalTarget.characterId}
+          characterName={selectedCharacter.name}
+        />
+      )}
     </div>
   );
 }

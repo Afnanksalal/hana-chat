@@ -64,6 +64,12 @@ import {
 } from "./turn-memory";
 import { searchMemoryVectors } from "./vector-memory";
 import { estimateTextModelCostUsd, usdToDatabaseDecimal } from "./xai-pricing";
+import { generateAndSaveImage } from "./media-generation";
+
+function imageGenerationEligible(content: string): boolean {
+  const pattern = /\b(draw|paint|generate|show|send|create|make|render|picture|image|photo|art|illustrat)\b.*\b(image|picture|art|illustration|portrait|scene|photo|drawing|painting|render)\b/i;
+  return pattern.test(content);
+}
 
 interface SseReply {
   header(name: string, value: string): SseReply;
@@ -1342,6 +1348,27 @@ export class ChatController {
             })
           : [];
 
+      let assistantContent = modelResult.content;
+      
+      // Generate image if user message contains image request pattern
+      if (imageGenerationEligible(input.content)) {
+        try {
+          const imageResult = await generateAndSaveImage({
+            db: this.db,
+            config: this.config,
+            userId: session.userId,
+            prompt: modelResult.content,
+            characterName: character.name,
+            purpose: "nft_art",
+            aspectRatio: "1:1",
+          });
+          assistantContent = `${modelResult.content}\n\n![hana-img](mediaId:${imageResult.mediaId})`;
+        } catch (error) {
+          // Log error but don't fail the message if image generation fails
+          console.error("Image generation failed in chat:", error);
+        }
+      }
+
       const assistantMessage = await this.db
         .insertInto("chat.messages")
         .values({
@@ -1349,7 +1376,7 @@ export class ChatController {
           user_id: session.userId,
           character_id: responseCharacter.id,
           role: "assistant",
-          content: modelResult.content,
+          content: assistantContent,
           client_message_id: null,
           metadata_json: {
             sourceUserMessageId: userMessage.id,
@@ -1496,7 +1523,7 @@ export class ChatController {
       assistantMessages.push({
         id: assistantMessage.id,
         role: "assistant",
-        content: modelResult.content,
+        content: assistantContent,
         createdAt: assistantMessage.created_at.toISOString(),
         speaker,
       });

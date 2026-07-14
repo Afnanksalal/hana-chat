@@ -12,6 +12,7 @@ import { createDatabase, type HanaDatabase } from "@hana/database";
 import { DomainError } from "@hana/errors";
 import {
   buildHanaNftMetadata,
+  buildStellarPaymentIntent,
   deriveCreatorArtNftTokenId,
   mintHanaNft,
   normalizeStellarAddress,
@@ -294,8 +295,8 @@ export class NftController {
         .executeTakeFirst(),
     ]);
 
-    if (!character || character.creator_user_id !== session.userId) {
-      throw new DomainError("RESOURCE_NOT_FOUND", "Creator character not found");
+    if (!character) {
+      throw new DomainError("RESOURCE_NOT_FOUND", "Character not found");
     }
 
     if (!media || media.owner_user_id !== session.userId) {
@@ -304,6 +305,81 @@ export class NftController {
 
     if (!["character_avatar", "character_cover", "nft_art"].includes(media.purpose)) {
       throw new DomainError("VALIDATION_FAILED", "Only creator-owned character art can be minted");
+    }
+
+    const isChatImageMint = media.purpose === "nft_art";
+
+    if (!isChatImageMint && character.creator_user_id !== session.userId) {
+      throw new DomainError("RESOURCE_NOT_FOUND", "Creator character not found");
+    }
+
+    const isPaidMint = isChatImageMint && character.creator_user_id !== session.userId;
+    if (isPaidMint) {
+      if (!input.paymentId || !input.txHash) {
+        const existingPayment = await this.db
+          .selectFrom("billing.crypto_payments")
+          .selectAll()
+          .where("purpose", "=", `nft_mint:${media.id}`)
+          .where("buyer_user_id", "=", session.userId)
+          .where("status", "in", ["created", "pending", "finalizing", "finalized"])
+          .orderBy("created_at", "desc")
+          .executeTakeFirst();
+
+        if (existingPayment) {
+          if (existingPayment.status !== "finalized") {
+            const memo = existingPayment.provider_reference.slice(0, 28);
+            const paymentIntent = buildStellarPaymentIntent({
+              id: existingPayment.id,
+              network: this.config.STELLAR_NETWORK,
+              horizonUrl: this.config.STELLAR_HORIZON_URL,
+              treasuryAddress: this.config.STELLAR_TREASURY_ADDRESS!,
+              assetCode: this.config.STELLAR_PAYMENT_ASSET_CODE,
+              assetIssuer: this.config.STELLAR_PAYMENT_ASSET_ISSUER ?? null,
+              amountCents: existingPayment.amount_cents,
+              tokenUsdCents: this.config.STELLAR_PAYMENT_TOKEN_USD_CENTS,
+              currency: existingPayment.currency,
+              expiresAt: existingPayment.expires_at,
+              providerReference: String(existingPayment.provider_reference),
+              memo,
+              requiredConfirmations: this.config.STELLAR_REQUIRED_CONFIRMATIONS,
+            });
+            return { provider: "stellar", payment: paymentIntent };
+          }
+        } else {
+          const payment = await createStellarPaymentIntent({
+            db: this.db,
+            config: this.config,
+            buyerUserId: session.userId,
+            purpose: `nft_mint:${media.id}`,
+            amountCents: 100, // $1.00 USD mint price
+            currency: "USD",
+            metadata: {
+              type: "nft_mint",
+              characterId: character.id,
+              mediaAssetId: media.id,
+            },
+          });
+          return { provider: "stellar", payment };
+        }
+      } else {
+        const verification = await verifyStellarPaymentIntent({
+          db: this.db,
+          config: this.config,
+          buyerUserId: session.userId,
+          paymentId: input.paymentId,
+          txHash: input.txHash,
+          walletAddress: input.ownerWalletAddress,
+          expectedPurposePrefix: "nft_mint:",
+        });
+
+        if (verification.status === "pending") {
+          return {
+            ok: false,
+            status: "pending",
+            assetId: null,
+          };
+        }
+      }
     }
 
     const assetId = randomUUID();
