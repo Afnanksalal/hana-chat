@@ -111,6 +111,16 @@ class ApiExceptionFilter implements ExceptionFilter {
     }>();
     const normalized = normalizeException(exception, this.redactUnexpectedErrors);
 
+    if (normalized.statusCode >= 500 || normalized.code === "INTERNAL") {
+      console.error("[ApiExceptionFilter] Unexpected error caught:", exception);
+    } else {
+      console.warn(
+        "[ApiExceptionFilter] Handled domain error:",
+        normalized.code,
+        normalized.message,
+      );
+    }
+
     response.status(normalized.statusCode).send({
       error: {
         code: normalized.code,
