@@ -56,18 +56,29 @@ export async function generateAndSaveImage(
     });
   }
 
-  const generated = useXai
-    ? await generateImageWithXai({
+  let generated;
+  if (useXai) {
+    try {
+      generated = await generateImageWithXai({
         apiKey: config.XAI_API_KEY!,
         baseUrl: config.XAI_BASE_URL,
         model: config.XAI_IMAGE_MODEL,
         prompt: buildChatImagePrompt(prompt, characterName, purpose),
         aspectRatio,
-      })
-    : await generateImageWithPollinations(
+      });
+    } catch (error) {
+      console.warn("xAI chat image generation failed, falling back to Pollinations:", error);
+      generated = await generateImageWithPollinations(
         buildChatImagePrompt(prompt, characterName, purpose),
         aspectRatio,
       );
+    }
+  } else {
+    generated = await generateImageWithPollinations(
+      buildChatImagePrompt(prompt, characterName, purpose),
+      aspectRatio,
+    );
+  }
 
   if (generated.buffer.byteLength > config.MEDIA_MAX_UPLOAD_BYTES) {
     throw new DomainError("VALIDATION_FAILED", "Generated image is too large", {
