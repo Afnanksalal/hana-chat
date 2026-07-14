@@ -1,7 +1,14 @@
 "use client";
 
 import { getNetwork, isConnected, requestAccess, signTransaction } from "@stellar/freighter-api";
-import { Asset, Horizon, Memo, Networks, Operation, TransactionBuilder } from "@stellar/stellar-sdk";
+import {
+  Asset,
+  Horizon,
+  Memo,
+  Networks,
+  Operation,
+  TransactionBuilder,
+} from "@stellar/stellar-sdk";
 import { apiJson } from "./api";
 import type { StellarPaymentIntent } from "./stellar-payments";
 

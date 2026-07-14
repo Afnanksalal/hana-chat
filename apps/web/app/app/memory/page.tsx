@@ -204,8 +204,8 @@ export default function SuperMemoryPage() {
     return [
       {
         label: "Memory Facts",
-        value: memories.filter(m => m.isActive).length.toLocaleString(),
-        detail: `${memories.filter(m => !m.isActive).length} inactive triggers`,
+        value: memories.filter((m) => m.isActive).length.toLocaleString(),
+        detail: `${memories.filter((m) => !m.isActive).length} inactive triggers`,
         icon: Brain,
       },
       {
@@ -247,7 +247,8 @@ export default function SuperMemoryPage() {
           </div>
           <h1>Super memory</h1>
           <p>
-            Explore and curate cognitive facts, relationships, and context models retained by your companions.
+            Explore and curate cognitive facts, relationships, and context models retained by your
+            companions.
           </p>
         </div>
 
@@ -260,7 +261,9 @@ export default function SuperMemoryPage() {
             <b>Active</b>
           </div>
           <strong>Vector + Graph projections</strong>
-          <small>Memory remains local, private, and exact-scoped per user, per companion, and per room.</small>
+          <small>
+            Memory remains local, private, and exact-scoped per user, per companion, and per room.
+          </small>
           <div className="memory-features-summary">
             <div className="feature-item">
               <CheckCircle2 size={14} className="icon-hotpink" />
@@ -325,9 +328,13 @@ export default function SuperMemoryPage() {
 
         <div className="memory-facts-grid">
           {filteredMemories.map((memory) => {
-            const charName = characters.find((c) => c.id === memory.characterId)?.name || "Companion";
+            const charName =
+              characters.find((c) => c.id === memory.characterId)?.name || "Companion";
             return (
-              <article key={memory.id} className={`memory-fact-card ${memory.isActive ? "active" : "inactive"}`}>
+              <article
+                key={memory.id}
+                className={`memory-fact-card ${memory.isActive ? "active" : "inactive"}`}
+              >
                 <div className="fact-header">
                   <span className="char-badge">{charName}</span>
                   <span className={`kind-badge ${memory.kind}`}>{memory.kind}</span>
@@ -335,8 +342,12 @@ export default function SuperMemoryPage() {
                 <p className="fact-text">{memory.text}</p>
                 <div className="fact-footer">
                   <div className="fact-stats">
-                    <span>Salience: <strong>{Math.round(memory.importance * 100)}%</strong></span>
-                    <span>Confidence: <strong>{Math.round(memory.confidence * 100)}%</strong></span>
+                    <span>
+                      Salience: <strong>{Math.round(memory.importance * 100)}%</strong>
+                    </span>
+                    <span>
+                      Confidence: <strong>{Math.round(memory.confidence * 100)}%</strong>
+                    </span>
                   </div>
                   <div className="fact-actions">
                     <button
@@ -563,7 +574,11 @@ function groupMemoryRooms(rooms: MemoryVaultResponse["rooms"]) {
       totalMemoryCount: number;
       latestMemoryAt: string | null;
       latestConversationId: string;
-      recentRooms: Array<{ conversationId: string; latestMemoryAt: string | null; memoryCount: number }>;
+      recentRooms: Array<{
+        conversationId: string;
+        latestMemoryAt: string | null;
+        memoryCount: number;
+      }>;
     }
   > = {};
 

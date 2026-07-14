@@ -591,7 +591,11 @@ export default function NftStudioPage() {
     }
   }
 
-  async function executeMakeOffer(listing: NftListing, amountCents: number, buyerWalletAddress: string) {
+  async function executeMakeOffer(
+    listing: NftListing,
+    amountCents: number,
+    buyerWalletAddress: string,
+  ) {
     setBusy(`offer:${listing.asset.id}`);
     setStatus("Preparing payment...");
 

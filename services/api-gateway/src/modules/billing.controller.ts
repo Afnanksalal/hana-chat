@@ -169,10 +169,7 @@ export class BillingController {
             assetIssuer,
             assetType: balance.asset_type,
             balance: balance.balance,
-            availableBalance: availableStellarBalance(
-              balance.balance,
-              balance.selling_liabilities,
-            ),
+            availableBalance: availableStellarBalance(balance.balance, balance.selling_liabilities),
             checkoutSupported:
               assetCode === checkoutAssetCode && assetIssuer === checkoutAssetIssuer,
           };

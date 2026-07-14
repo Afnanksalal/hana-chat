@@ -64,8 +64,7 @@ export function StellarCheckoutModal({
     return Number.isFinite(amount) && amount > 0 ? payment.amountCents / 100 / amount : null;
   }, [payment.amountCents, payment.amountDisplay]);
   const paymentAsset = wallet?.assets.find(
-    (asset) =>
-      asset.assetCode === payment.assetCode && asset.assetIssuer === payment.assetIssuer,
+    (asset) => asset.assetCode === payment.assetCode && asset.assetIssuer === payment.assetIssuer,
   );
   const paymentAssetBalance = paymentAsset ? Number(paymentAsset.availableBalance) : null;
   const requiredAmount = Number(payment.amountDisplay);
@@ -202,7 +201,12 @@ export function StellarCheckoutModal({
               <Wallet className="icon-hotpink" size={20} />
               <h2 id="checkout-title">Wallet checkout</h2>
             </div>
-            <button className="close-btn" type="button" onClick={onClose} aria-label="Close checkout">
+            <button
+              className="close-btn"
+              type="button"
+              onClick={onClose}
+              aria-label="Close checkout"
+            >
               <X size={20} />
             </button>
           </div>
@@ -272,15 +276,15 @@ export function StellarCheckoutModal({
                   </div>
                   {!loadingWallet && paymentAsset && !hasEnoughPaymentAsset ? (
                     <div className="wallet-trustline-warning">
-                      <p>
-                        This wallet has less {payment.assetCode} than this checkout requires.
-                      </p>
+                      <p>This wallet has less {payment.assetCode} than this checkout requires.</p>
                     </div>
                   ) : null}
                   {!loadingWallet && !paymentAsset ? (
                     <div className="wallet-trustline-warning">
                       <p>
-                        <strong>Trustline required:</strong> Your wallet does not have a trustline for the checkout asset ({payment.assetCode}). You must establish a trustline in your wallet to complete the payment.
+                        <strong>Trustline required:</strong> Your wallet does not have a trustline
+                        for the checkout asset ({payment.assetCode}). You must establish a trustline
+                        in your wallet to complete the payment.
                       </p>
                     </div>
                   ) : null}
@@ -324,7 +328,9 @@ export function StellarCheckoutModal({
                   <Wallet size={17} />
                 )}
                 <span>
-                  <strong>{payingWithWallet ? "Waiting for Freighter..." : "Pay with Freighter"}</strong>
+                  <strong>
+                    {payingWithWallet ? "Waiting for Freighter..." : "Pay with Freighter"}
+                  </strong>
                   <small>Sign and submit the exact checkout transaction</small>
                 </span>
               </button>
@@ -378,7 +384,11 @@ export function StellarCheckoutModal({
                   disabled={verifying || !/^[a-fA-F0-9]{64}$/.test(txHash.trim())}
                   onClick={() => void verifyPayment()}
                 >
-                  {verifying ? <Loader2 className="animate-spin" size={16} /> : <RefreshCw size={16} />}
+                  {verifying ? (
+                    <Loader2 className="animate-spin" size={16} />
+                  ) : (
+                    <RefreshCw size={16} />
+                  )}
                   Verify
                 </button>
               </div>

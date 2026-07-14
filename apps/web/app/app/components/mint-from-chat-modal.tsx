@@ -22,7 +22,9 @@ export function MintFromChatModal({
   characterName,
 }: MintFromChatModalProps) {
   const [title, setTitle] = useState(`${characterName} Vision`);
-  const [description, setDescription] = useState(`AI-generated artwork from chat with ${characterName}`);
+  const [description, setDescription] = useState(
+    `AI-generated artwork from chat with ${characterName}`,
+  );
   const [walletAddress, setWalletAddress] = useState("");
   const [royaltyBps, setRoyaltyBps] = useState(500);
   const [isMinting, setIsMinting] = useState(false);
@@ -152,11 +154,7 @@ export function MintFromChatModal({
               </div>
             )}
 
-            <button
-              onClick={() => void handleMint()}
-              disabled={isMinting}
-              className="mint-button"
-            >
+            <button onClick={() => void handleMint()} disabled={isMinting} className="mint-button">
               {isMinting ? (
                 <>
                   <Loader2 className="spinner" size={16} />

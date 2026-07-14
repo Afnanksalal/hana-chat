@@ -67,7 +67,8 @@ import { estimateTextModelCostUsd, usdToDatabaseDecimal } from "./xai-pricing";
 import { generateAndSaveImage } from "./media-generation";
 
 function imageGenerationEligible(content: string): boolean {
-  const pattern = /\b(draw|paint|generate|show|send|create|make|render|picture|image|photo|art|illustrat)\b.*\b(image|picture|art|illustration|portrait|scene|photo|drawing|painting|render)\b/i;
+  const pattern =
+    /\b(draw|paint|generate|show|send|create|make|render|picture|image|photo|art|illustrat)\b.*\b(image|picture|art|illustration|portrait|scene|photo|drawing|painting|render)\b/i;
   return pattern.test(content);
 }
 
@@ -1349,7 +1350,7 @@ export class ChatController {
           : [];
 
       let assistantContent = modelResult.content;
-      
+
       // Generate image if user message contains image request pattern
       if (imageGenerationEligible(input.content)) {
         try {
