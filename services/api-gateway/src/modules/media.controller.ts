@@ -143,21 +143,28 @@ export class MediaController {
     let model: string;
 
     if (useXai) {
-      const xaiImageInput: XaiImageInput = {
-        apiKey: this.config.XAI_API_KEY!,
-        baseUrl: this.config.XAI_BASE_URL,
-        model: this.config.XAI_IMAGE_MODEL,
-        prompt,
-        aspectRatio: input.aspectRatio,
-      };
+      try {
+        const xaiImageInput: XaiImageInput = {
+          apiKey: this.config.XAI_API_KEY!,
+          baseUrl: this.config.XAI_BASE_URL,
+          model: this.config.XAI_IMAGE_MODEL,
+          prompt,
+          aspectRatio: input.aspectRatio,
+        };
 
-      if (referenceImage) {
-        xaiImageInput.referenceImage = referenceImage;
+        if (referenceImage) {
+          xaiImageInput.referenceImage = referenceImage;
+        }
+
+        generated = await generateImageWithXai(xaiImageInput);
+        provider = "xai";
+        model = this.config.XAI_IMAGE_MODEL;
+      } catch (error) {
+        console.warn("xAI image generation failed, falling back to Pollinations:", error);
+        generated = await generateImageWithPollinations(prompt, input.aspectRatio);
+        provider = "pollinations";
+        model = "flux";
       }
-
-      generated = await generateImageWithXai(xaiImageInput);
-      provider = "xai";
-      model = this.config.XAI_IMAGE_MODEL;
     } else {
       generated = await generateImageWithPollinations(prompt, input.aspectRatio);
       provider = "pollinations";
