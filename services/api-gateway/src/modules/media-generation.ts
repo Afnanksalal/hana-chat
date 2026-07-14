@@ -273,6 +273,28 @@ async function generateImageWithPollinations(
   };
   const { width, height } = dimensionMap[aspectRatio] ?? { width: 1024, height: 1024 };
 
+  // Clean and clip prompt for Pollinations GET request to prevent 414 URI Too Long/400 Bad Request
+  let cleanPrompt = prompt
+    .replace("Create production-ready Hana Chat character art.", "")
+    .replace(
+      "Keep the asset readable on a dark app surface and avoid text, logos, watermarks, UI frames, and dialogue bubbles.",
+      "",
+    )
+    .replace(
+      "No nudity, no sexualized minors, no photorealistic real-person likeness, no gore, and no non-image elements.",
+      "",
+    )
+    .replace(
+      "Use the palette implied by the character, mood, and backdrop. Do not force Hana brand colors, pink, magenta, or neon accents unless the prompt explicitly asks for them.",
+      "",
+    )
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (cleanPrompt.length > 500) {
+    cleanPrompt = cleanPrompt.slice(0, 500).trim() + "...";
+  }
+
   const params = new URLSearchParams({
     width: String(width),
     height: String(height),
@@ -282,7 +304,7 @@ async function generateImageWithPollinations(
     safe: "false",
     seed: String(Math.floor(Math.random() * 2_147_483_647)),
   });
-  const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?${params.toString()}`;
+  const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(cleanPrompt)}?${params.toString()}`;
 
   const response = await fetchWithTimeout(url, { method: "GET" }, 90_000);
 
