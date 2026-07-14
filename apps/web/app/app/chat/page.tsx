@@ -92,10 +92,19 @@ function renderChatContent(
             src={`/api/v1/media/${part.mediaId}/file`}
             alt="AI generated image"
             className="chat-image"
+            loading="lazy"
           />
-          <button className="chat-image-action" onClick={() => onMintClick(part.mediaId)}>
-            Mint as NFT
-          </button>
+          <div className="chat-image-actions">
+            <button
+              className="chat-image-mint-btn"
+              type="button"
+              onClick={() => onMintClick(part.mediaId)}
+              aria-label="Mint this image as an NFT"
+            >
+              <Sparkles size={13} />
+              Mint as NFT
+            </button>
+          </div>
         </div>
       );
     }
@@ -107,6 +116,7 @@ function renderChatContent(
     );
   });
 }
+
 
 type MemoryKind = "preference" | "boundary" | "relationship" | "canon" | "event" | "style";
 
