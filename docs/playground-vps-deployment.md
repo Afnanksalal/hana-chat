@@ -7,7 +7,11 @@ For a Portainer-friendly explanation of every running `hana-chat-vps-*` containe
 
 ## Release From Windows
 
-Deploy from the repo root with the LF-safe helper:
+The normal production path is PR CI followed by the `Deploy Playground` GitHub Actions workflow on
+`master`. Codex agents should use that path and should not run the app stack or deploy helper
+locally unless the user explicitly grants a local runtime/deploy exception.
+
+Manual operator fallback from the repo root uses the LF-safe helper:
 
 ```powershell
 $env:PLAYGROUND_SSH_TARGET = "ubuntu@18.61.174.6"

@@ -14,6 +14,8 @@ configured `STELLAR_TREASURY_ADDRESS`.
 - The browser guides the user to send XLM or the configured Stellar asset to Hana's treasury address.
 - The API verifies the submitted Stellar transaction hash before activating access.
 - Creator payout destinations are Stellar addresses stored in `billing.crypto_payout_accounts`.
+- Creator payout setup requires a Freighter wallet signature proving control of the submitted payout
+  address before the profile can enter admin review.
 - Admin payout settlement is proof-based: the admin sends the Stellar payout transaction, then submits
   the transaction hash for server verification.
 - Development and production use the same proof path for buyer payments and creator payouts.
@@ -55,7 +57,8 @@ flowchart TD
 flowchart TD
   Wallet["Creator wallet"] --> Profile{"Verified Stellar payout address?"}
   Profile -- no --> Setup["Creator submits Stellar address"]
-  Setup --> AdminVerify["Admin verifies payout profile"]
+  Setup --> Proof["Creator signs payout-wallet proof"]
+  Proof --> AdminVerify["Admin verifies payout profile"]
   Profile -- yes --> Request["Creator requests payout"]
   AdminVerify --> Request
   Request --> Reserve["Reserve available balance"]
@@ -72,6 +75,8 @@ flowchart TD
 - The API checks purchase/subscription rows before granting paid access.
 - The trial is counted by persisted user messages for the exact buyer and character.
 - Payment verification checks transaction hash, recipient, amount, asset, memo, duplicate use, expiry, and confirmation state.
+- Payout profile verification requires a stored wallet-proof signature for the submitted Stellar
+  address; admin approval refuses unsigned payout profiles.
 - Payout verification checks treasury sender, creator recipient, amount, asset, duplicate use, and confirmation state.
 - Admin payout/profile routes require `identity.user_roles.role = admin`.
 - Failed payout handling returns reserved funds through ledger entries instead of silently mutating balances.

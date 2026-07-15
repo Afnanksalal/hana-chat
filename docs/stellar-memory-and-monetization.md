@@ -15,6 +15,9 @@ proofs around product state.
 - Creator-art NFTs are real Soroban mints. Creators generate or upload character-owned art, mint it
   through the backend signer, list it, accept funded offers, and transfer ownership only after the
   API verifies the matching Stellar payment intent and Soroban transfer transaction.
+- Chat-generated scene collectibles are locked media until checkout clears. The API verifies the
+  exact Stellar payment intent, stores the configured creator/platform split, and mints with the
+  buyer wallet as owner and the creator's verified payout wallet as the royalty creator address.
 - Memory snapshots remain commitment records in this release; they do not mint NFT proofs from the
   creator-art marketplace flag.
 
@@ -72,6 +75,9 @@ Production monetization requires `MONETIZATION_ENABLED=true`, `STELLAR_ENABLED=t
 - NFT art is created from authenticated Hana media assets with `purpose = nft_art`,
   `character_avatar`, or `character_cover`; creators can only mint media they own for characters they
   own.
+- Locked chat-image media is also stored as `purpose = nft_art`, but it must include
+  `lockedChatImage`, `characterId`, and `conversationId` metadata and cannot use the generic creator
+  mint path.
 - Token IDs are deterministic from creator id, character id, and media hash so mint retries are
   idempotent.
 - Metadata is served from `/v1/nft/assets/:assetId/metadata` and stores image URL, media hash,
@@ -84,6 +90,17 @@ Production monetization requires `MONETIZATION_ENABLED=true`, `STELLAR_ENABLED=t
   transaction hash to the exact sale or offer id before transferring the NFT.
 - Accepted sales update ownership, insert an ownership event, settle seller earnings, apply platform
   fees, and route resale royalties to the original creator when the seller is not the creator.
+
+## Chat-Image Collectibles
+
+- `CHAT_IMAGE_UNLOCK_AMOUNT_CENTS` is the source of truth for unlock price. The API converts that
+  value to the active Stellar asset using `STELLAR_PAYMENT_TOKEN_USD_CENTS`.
+- The media endpoint serves locked images only when the requester has a paid, minted, or retryable
+  failed unlock row for the exact media asset.
+- A paid unlock can be retried if Soroban minting fails after payment verification; the buyer is not
+  charged again.
+- Creator payout profiles must be verified before unlock checkout starts, because the payout wallet
+  is the royalty creator address on the minted collectible.
 
 ## Security Rules
 

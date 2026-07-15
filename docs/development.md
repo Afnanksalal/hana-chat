@@ -1,5 +1,10 @@
 # Hana Chat Development
 
+This page documents the human local-development workflow. Codex and other automation agents should
+not run the app stack, Docker Compose stack, or deploy/runtime services locally on this workstation.
+Agent verification should use pull-request CI and the Playground VPS deploy workflow unless the user
+explicitly grants a local runtime exception.
+
 ## Prerequisites
 
 - Node.js 20.19+
@@ -12,7 +17,10 @@
 pnpm install
 ```
 
-## Local Infrastructure
+## Human Local Infrastructure
+
+Skip this section for agent work. It is only for human developers with enough local disk and Docker
+capacity.
 
 ```bash
 pnpm infra:up
@@ -35,7 +43,10 @@ Services:
 - Temporal UI: http://localhost:8233
 - ClickHouse HTTP: http://localhost:8123
 
-## Run
+## Human Local Run
+
+Skip this section for agent work. Runtime behavior should be checked through GitHub Actions and the
+Playground VPS.
 
 ```bash
 pnpm dev
@@ -61,7 +72,9 @@ $env:WEB_BASE_URL='http://localhost:3001'; pnpm web:smoke
 
 Manual test URL in that case is `http://localhost:3001`.
 
-## Local Test Cast
+## Human Local Test Cast
+
+Skip this section for agent work unless the user explicitly asks for local database seeding.
 
 Use the local seed when you want a clean manual-testing account with enough variety to exercise
 marketplace, private characters, chat rooms, image media, and per-conversation memory:
@@ -84,9 +97,13 @@ Product smoke, web smoke, and the AI harness use the seeded cast. They should no
 
 ## Quality Gates
 
+For agents, PR CI is the authoritative gate. If dependencies are already installed and the user
+allows local non-runtime checks, the relevant static/unit subset is:
+
 ```bash
 pnpm format:check
 pnpm typecheck
+pnpm lint
 pnpm test
 pnpm build
 ```
@@ -99,7 +116,7 @@ Initial PostgreSQL schema is in:
 infra/database/migrations/001_initial.sql
 ```
 
-Apply it locally after `pnpm infra:up`:
+Human developers can apply it locally after `pnpm infra:up`:
 
 ```bash
 docker exec -i hana-postgres psql -U hana -d hana < infra/database/migrations/001_initial.sql

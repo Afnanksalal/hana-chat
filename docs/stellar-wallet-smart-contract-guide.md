@@ -6,9 +6,13 @@ This guide covers how to use Stellar wallets and interact with the Hana NFT smar
 
 Hana Chat uses Stellar blockchain for:
 
-- **NFT minting**: Creating memory NFTs and creator art NFTs
+- **Collectible minting**: Creating creator-art and chat-image collectibles through the Hana NFT
+  contract
 - **Payments**: Processing subscription payments and character purchases
 - **Wallet integration**: Connecting user wallets via Freighter extension
+
+Memory snapshots are encrypted commitment records in Postgres/Stellar proof lanes. They are not
+minted through the creator-art NFT marketplace in the current release.
 
 ## Network Configuration
 
@@ -138,8 +142,7 @@ STELLAR_REQUIRED_CONFIRMATIONS=1
 
 # Treasury Configuration
 STELLAR_TREASURY_ADDRESS=<ADMIN_PUBLIC_ADDRESS>
-STELLAR_SERVER_KEY_REF=env:STELLAR_SERVER_SECRET
-STELLAR_SERVER_SECRET=<ADMIN_SECRET_KEY>
+STELLAR_SERVER_KEY_REF=env:STELLAR_SERVER_SIGNING_SECRET
 
 # NFT Configuration
 STELLAR_NFT_CONTRACT_ID=<CONTRACT_ID>
@@ -216,9 +219,9 @@ useEffect(() => {
 import { mintHanaNft, buildHanaNftMetadata } from "@hana/stellar-bridge";
 
 const metadata = buildHanaNftMetadata({
-  id: "memory-123",
-  title: "Memory Snapshot",
-  description: "Character memory commitment",
+  id: "asset-123",
+  title: "Character Key Art",
+  description: "Creator-owned Hana collectible artwork",
   imageUrl: "https://...",
   mediaSha256Hex: "abc123...",
   creatorUserId: "user-123",
@@ -226,7 +229,7 @@ const metadata = buildHanaNftMetadata({
   characterName: "Character Name",
   network: "testnet",
   contractId: "<CONTRACT_ID>",
-  tokenId: "hana-nft:...",
+  tokenId: "hana-art:...",
   royaltyBps: 500,
 });
 
@@ -237,8 +240,8 @@ const result = await mintHanaNft({
   serverSecret: "<ADMIN_SECRET>",
   ownerAddress: "<OWNER_ADDRESS>",
   creatorAddress: "<CREATOR_ADDRESS>",
-  tokenId: metadata.metadataHash,
-  metadataUri: "ipfs://...",
+  tokenId: "hana-art:...",
+  metadataUri: "https://app.hanachat.site/api/v1/nft/assets/asset-123/metadata",
   royaltyBps: 500,
 });
 ```
@@ -253,7 +256,7 @@ const result = await transferHanaNft({
   network: "testnet",
   contractId: "<CONTRACT_ID>",
   serverSecret: "<ADMIN_SECRET>",
-  tokenId: "hana-nft:...",
+  tokenId: "hana-art:...",
   fromAddress: "<FROM_ADDRESS>",
   toAddress: "<TO_ADDRESS>",
   saleReference: "sale-123",
@@ -274,7 +277,7 @@ const verification = await verifyStellarPayment({
   expectedMemo: "<MEMO>",
   assetCode: "XLM",
   assetIssuer: null,
-  minimumAmountDisplay: "1.0000000",
+  exactAmountDisplay: "1.0000000",
 });
 ```
 
@@ -344,17 +347,12 @@ const verification = await verifyStellarPayment({
 
 ## Current Deployment
 
-### Testnet Configuration
+Use `/opt/hana-chat/shared/.env.vps` as the deployment source of truth for `STELLAR_NETWORK`,
+`STELLAR_NFT_CONTRACT_ID`, treasury address, and server signer secret reference. Do not hardcode live
+contract ids, admin addresses, or signer secrets in docs.
 
-- **Contract ID**: CBBF6GSIMW47Q2Z4WSZ3RT5D4OBZEIRF74M4YDMHF733BTDUKS7FEMXZ
-- **Admin Address**: GAPYAAYSSW457B2M6VMIVXGEVABTODCYBWOCUTX4ZVAQALHIU5TXBGFK
-- **Network**: Testnet
-- **Status**: Active
-
-### Explorer Links
-
-- **Transaction Explorer**: https://stellar.expert/explorer/testnet/
-- **Contract Lab**: https://lab.stellar.org/r/testnet/contract/CBBF6GSIMW47Q2Z4WSZ3RT5D4OBZEIRF74M4YDMHF733BTDUKS7FEMXZ
+For explorer checks, open the active network in Stellar Expert or Stellar Lab and paste the contract
+id from the VPS environment.
 
 ## Additional Resources
 
