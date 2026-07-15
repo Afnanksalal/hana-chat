@@ -213,6 +213,7 @@ export type CreateMediaAssetRequest = z.infer<typeof CreateMediaAssetRequestSche
 export const GenerateMediaAssetRequestSchema = z.object({
   purpose: z.enum(["character_avatar", "character_cover", "nft_art"]),
   prompt: z.string().trim().min(12).max(8_000),
+  characterId: z.string().uuid().optional(),
   characterName: z.string().trim().max(80).optional().default(""),
   style: z.string().trim().max(1_200).optional().default("premium fictional character art"),
   artDirection: z
@@ -415,6 +416,8 @@ export const UpsertPayoutProfileRequestSchema = z.object({
   legalName: z.string().min(2).max(160).optional().default(""),
   payoutMode: z.literal("stellar").default("stellar"),
   walletAddress: StellarWalletAddressSchema,
+  walletProofMessage: z.string().min(20).max(1_000),
+  walletProofSignature: z.string().min(80).max(200),
 });
 
 export type UpsertPayoutProfileRequest = z.infer<typeof UpsertPayoutProfileRequestSchema>;

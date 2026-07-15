@@ -85,3 +85,4 @@ flowchart TD
 - Mandatory paid-character trial length is configured by `CREATOR_PAID_CHARACTER_TRIAL_MESSAGES`.
 - Minimum payout and hold window are configured by `CREATOR_MIN_PAYOUT_CENTS` and `CREATOR_EARNING_HOLD_DAYS`.
 - Platform fee is configured by `CREATOR_PLATFORM_FEE_BPS`.
+- Chat-image unlock pricing is configured by `CHAT_IMAGE_UNLOCK_AMOUNT_CENTS`; payment intents convert that amount using `STELLAR_PAYMENT_TOKEN_USD_CENTS`.

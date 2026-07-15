@@ -10302,7 +10302,9 @@ textarea {
   font-weight: 600;
   border: none;
   cursor: pointer;
-  transition: background 0.15s, transform 0.1s;
+  transition:
+    background 0.15s,
+    transform 0.1s;
   letter-spacing: 0.01em;
 }
 
@@ -10447,7 +10449,9 @@ textarea {
   border: 1px solid var(--line);
   color: var(--muted);
   cursor: pointer;
-  transition: border-color 0.15s, color 0.15s;
+  transition:
+    border-color 0.15s,
+    color 0.15s;
 }
 
 .wallet-connect-btn:hover {
@@ -10504,7 +10508,9 @@ textarea {
   font-weight: 700;
   border: none;
   cursor: pointer;
-  transition: background 0.15s, transform 0.1s;
+  transition:
+    background 0.15s,
+    transform 0.1s;
   letter-spacing: 0.02em;
 }
 
@@ -10534,11 +10540,16 @@ textarea {
   width: 100%;
 }
 
-.locked-img {
-  filter: blur(14px) brightness(0.55);
+.locked-img-placeholder {
+  min-height: 220px;
   border-radius: 12px 12px 0 0;
   pointer-events: none;
   user-select: none;
+  display: grid;
+  place-items: center;
+  color: var(--primary);
+  background: #08080b;
+  border: 1px solid rgba(255, 31, 109, 0.24);
 }
 
 .chat-image-lock-overlay {
@@ -10553,7 +10564,7 @@ textarea {
   font-size: 13px;
   font-weight: 600;
   padding: 16px;
-  text-shadow: 0 1px 4px rgba(0,0,0,0.8);
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
 }
 
 .chat-image-unlock-btn {
@@ -10569,8 +10580,10 @@ textarea {
   font-weight: 700;
   border: none;
   cursor: pointer;
-  transition: background 0.15s, transform 0.1s;
-  box-shadow: 0 2px 14px rgba(255,31,109,0.45);
+  transition:
+    background 0.15s,
+    transform 0.1s;
+  box-shadow: 0 2px 14px rgba(255, 31, 109, 0.45);
 }
 
 .chat-image-unlock-btn:hover {
@@ -10637,9 +10650,17 @@ textarea {
   border-bottom: 1px solid var(--line);
 }
 
-.unlock-preview-img {
+.unlock-preview-img,
+.unlock-preview-placeholder {
   width: 100%;
   height: 100%;
+  display: grid;
+  place-items: center;
+  color: var(--primary);
+  background: #08080b;
+}
+
+.unlock-preview-img {
   object-fit: cover;
   display: block;
 }
@@ -10659,7 +10680,7 @@ textarea {
   color: #fff;
   font-size: 13px;
   font-weight: 600;
-  text-shadow: 0 1px 4px rgba(0,0,0,0.9);
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9);
 }
 
 .unlock-modal-info {
@@ -10741,8 +10762,10 @@ textarea {
   font-weight: 700;
   border: none;
   cursor: pointer;
-  transition: background 0.15s, transform 0.1s;
-  box-shadow: 0 4px 20px rgba(255,31,109,0.35);
+  transition:
+    background 0.15s,
+    transform 0.1s;
+  box-shadow: 0 4px 20px rgba(255, 31, 109, 0.35);
 }
 
 .unlock-pay-btn:hover:not(:disabled) {
@@ -10754,4 +10777,3 @@ textarea {
   opacity: 0.55;
   cursor: not-allowed;
 }
-

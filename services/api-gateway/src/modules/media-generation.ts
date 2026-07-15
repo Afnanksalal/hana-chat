@@ -20,6 +20,7 @@ interface GenerateImageInput {
   characterName?: string;
   purpose: "character_avatar" | "character_cover" | "nft_art";
   aspectRatio?: "1:1" | "16:9" | "3:4" | "4:3";
+  metadata?: Record<string, unknown>;
 }
 
 interface GenerateImageResult {
@@ -129,6 +130,7 @@ export async function generateAndSaveImage(
         costTicks: generated.costTicks,
         purpose,
         aspectRatio,
+        ...(input.metadata ?? {}),
       },
     })
     .execute();

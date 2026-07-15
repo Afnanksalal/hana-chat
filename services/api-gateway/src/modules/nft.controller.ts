@@ -12,7 +12,6 @@ import { createDatabase, type HanaDatabase } from "@hana/database";
 import { DomainError } from "@hana/errors";
 import {
   buildHanaNftMetadata,
-  buildStellarPaymentIntent,
   deriveCreatorArtNftTokenId,
   mintHanaNft,
   normalizeStellarAddress,
@@ -22,7 +21,11 @@ import { Body, Controller, Get, Headers, Param, Post, Query } from "@nestjs/comm
 import { Kysely, type Insertable } from "kysely";
 import { randomUUID } from "node:crypto";
 import { auditEvent, requireSession } from "./session";
-import { createStellarPaymentIntent, verifyStellarPaymentIntent } from "./stellar-payments";
+import {
+  createStellarPaymentIntent,
+  toStellarPaymentIntent,
+  verifyStellarPaymentIntent,
+} from "./stellar-payments";
 
 type Db = Kysely<HanaDatabase>;
 type CreatorLedgerEntryInsert = Insertable<HanaDatabase["billing.creator_ledger_entries"]>;
@@ -307,79 +310,20 @@ export class NftController {
       throw new DomainError("VALIDATION_FAILED", "Only creator-owned character art can be minted");
     }
 
-    const isChatImageMint = media.purpose === "nft_art";
+    const mediaMetadata = asRecord(media.metadata_json);
+    const mediaCharacterId = optionalString(mediaMetadata["characterId"]);
+    const isLockedChatImage = mediaMetadata["lockedChatImage"] === true;
 
-    if (!isChatImageMint && character.creator_user_id !== session.userId) {
+    if (isLockedChatImage) {
+      throw new DomainError("VALIDATION_FAILED", "Locked chat images must use the unlock flow");
+    }
+
+    if (character.creator_user_id !== session.userId) {
       throw new DomainError("RESOURCE_NOT_FOUND", "Creator character not found");
     }
 
-    const isPaidMint = isChatImageMint && character.creator_user_id !== session.userId;
-    if (isPaidMint) {
-      if (!input.paymentId || !input.txHash) {
-        const existingPayment = await this.db
-          .selectFrom("billing.crypto_payments")
-          .selectAll()
-          .where("purpose", "=", `nft_mint:${media.id}`)
-          .where("buyer_user_id", "=", session.userId)
-          .where("status", "in", ["created", "pending", "finalizing", "finalized"])
-          .orderBy("created_at", "desc")
-          .executeTakeFirst();
-
-        if (existingPayment) {
-          if (existingPayment.status !== "finalized") {
-            const memo = existingPayment.provider_reference.slice(0, 28);
-            const paymentIntent = buildStellarPaymentIntent({
-              id: existingPayment.id,
-              network: this.config.STELLAR_NETWORK,
-              horizonUrl: this.config.STELLAR_HORIZON_URL,
-              treasuryAddress: this.config.STELLAR_TREASURY_ADDRESS!,
-              assetCode: this.config.STELLAR_PAYMENT_ASSET_CODE,
-              assetIssuer: this.config.STELLAR_PAYMENT_ASSET_ISSUER ?? null,
-              amountCents: existingPayment.amount_cents,
-              tokenUsdCents: this.config.STELLAR_PAYMENT_TOKEN_USD_CENTS,
-              currency: existingPayment.currency,
-              expiresAt: existingPayment.expires_at,
-              providerReference: String(existingPayment.provider_reference),
-              memo,
-              requiredConfirmations: this.config.STELLAR_REQUIRED_CONFIRMATIONS,
-            });
-            return { provider: "stellar", payment: paymentIntent };
-          }
-        } else {
-          const payment = await createStellarPaymentIntent({
-            db: this.db,
-            config: this.config,
-            buyerUserId: session.userId,
-            purpose: `nft_mint:${media.id}`,
-            amountCents: 100, // $1.00 USD mint price
-            currency: "USD",
-            metadata: {
-              type: "nft_mint",
-              characterId: character.id,
-              mediaAssetId: media.id,
-            },
-          });
-          return { provider: "stellar", payment };
-        }
-      } else {
-        const verification = await verifyStellarPaymentIntent({
-          db: this.db,
-          config: this.config,
-          buyerUserId: session.userId,
-          paymentId: input.paymentId,
-          txHash: input.txHash,
-          walletAddress: input.ownerWalletAddress,
-          expectedPurposePrefix: "nft_mint:",
-        });
-
-        if (verification.status === "pending") {
-          return {
-            ok: false,
-            status: "pending",
-            assetId: null,
-          };
-        }
-      }
+    if (media.purpose === "nft_art" && mediaCharacterId !== character.id) {
+      throw new DomainError("VALIDATION_FAILED", "Creator art is not attached to this character");
     }
 
     const assetId = randomUUID();
@@ -561,12 +505,39 @@ export class NftController {
 
   /**
    * POST /v1/nft/chat-image/unlock
-   * Pay 5 XLM to unlock a locked chat image and auto-mint it as an NFT.
-   * Split: 70% (3.5 XLM) to the character creator, 30% (1.5 XLM) to platform.
+   * Creates a checkout for a locked chat image and mints ownership after payment clears.
+   * Creator/platform split follows the configured creator fee policy.
    *
    * First call (no paymentId/txHash) → creates a Stellar payment intent and returns it.
    * Second call (with paymentId + txHash) → verifies payment, records unlock, mints NFT.
    */
+  @Get("/chat-image/unlocks")
+  public async chatImageUnlocks(
+    @Query("mediaIds") mediaIds: string | undefined,
+    @Headers("authorization") authorization?: string,
+  ) {
+    const session = await requireSession(this.db, this.config, authorization);
+    const ids = (mediaIds ?? "")
+      .split(",")
+      .map((id) => id.trim())
+      .filter((id) => /^[0-9a-fA-F-]{36}$/.test(id))
+      .slice(0, 100);
+
+    if (ids.length === 0) {
+      return { mediaIds: [] };
+    }
+
+    const rows = await this.db
+      .selectFrom("chat.image_unlocks")
+      .select(["media_asset_id"])
+      .where("buyer_user_id", "=", session.userId)
+      .where("media_asset_id", "in", ids)
+      .where("status", "in", ["paid", "minted", "failed"])
+      .execute();
+
+    return { mediaIds: rows.map((row) => row.media_asset_id) };
+  }
+
   @Post("/chat-image/unlock")
   public async unlockChatImage(
     @Body() body: unknown,
@@ -578,18 +549,25 @@ export class NftController {
     // Validate body shape manually (no shared schema needed for this endpoint)
     const input = (() => {
       const b = body as Record<string, unknown>;
-      if (!b || typeof b["mediaAssetId"] !== "string" || typeof b["ownerWalletAddress"] !== "string") {
-        throw new DomainError("VALIDATION_FAILED", "mediaAssetId and ownerWalletAddress are required");
+      if (
+        !b ||
+        typeof b["mediaAssetId"] !== "string" ||
+        typeof b["ownerWalletAddress"] !== "string"
+      ) {
+        throw new DomainError(
+          "VALIDATION_FAILED",
+          "mediaAssetId and ownerWalletAddress are required",
+        );
       }
       return {
-        mediaAssetId: b["mediaAssetId"] as string,
-        ownerWalletAddress: b["ownerWalletAddress"] as string,
-        characterId: typeof b["characterId"] === "string" ? (b["characterId"] as string) : undefined,
-        paymentId: typeof b["paymentId"] === "string" ? (b["paymentId"] as string) : undefined,
-        txHash: typeof b["txHash"] === "string" ? (b["txHash"] as string) : undefined,
-        title: typeof b["title"] === "string" ? (b["title"] as string) : undefined,
-        description: typeof b["description"] === "string" ? (b["description"] as string) : undefined,
-        royaltyBps: typeof b["royaltyBps"] === "number" ? (b["royaltyBps"] as number) : 500,
+        mediaAssetId: b["mediaAssetId"],
+        ownerWalletAddress: b["ownerWalletAddress"],
+        characterId: typeof b["characterId"] === "string" ? b["characterId"] : undefined,
+        paymentId: typeof b["paymentId"] === "string" ? b["paymentId"] : undefined,
+        txHash: typeof b["txHash"] === "string" ? b["txHash"] : undefined,
+        title: typeof b["title"] === "string" ? b["title"] : undefined,
+        description: typeof b["description"] === "string" ? b["description"] : undefined,
+        royaltyBps: typeof b["royaltyBps"] === "number" ? b["royaltyBps"] : 500,
       };
     })();
 
@@ -598,7 +576,7 @@ export class NftController {
     // Look up the media asset (must be nft_art owned by any user — it's a chat image)
     const media = await this.db
       .selectFrom("creator.media_assets")
-      .select(["id", "owner_user_id", "purpose", "public_url", "sha256_hex"])
+      .select(["id", "owner_user_id", "purpose", "public_url", "sha256_hex", "metadata_json"])
       .where("id", "=", input.mediaAssetId)
       .executeTakeFirst();
 
@@ -606,8 +584,13 @@ export class NftController {
       throw new DomainError("RESOURCE_NOT_FOUND", "Chat image not found");
     }
 
-    // Resolve which character this image belongs to (from characterId or existing unlock)
-    const characterId = input.characterId ?? media.owner_user_id;
+    const mediaMetadata = asRecord(media.metadata_json);
+    const characterId = optionalString(mediaMetadata["characterId"]);
+
+    if (mediaMetadata["lockedChatImage"] !== true || !characterId) {
+      throw new DomainError("RESOURCE_NOT_FOUND", "Locked chat image not found");
+    }
+
     const character = await this.db
       .selectFrom("creator.characters")
       .select(["id", "creator_user_id", "name", "visibility"])
@@ -626,23 +609,53 @@ export class NftController {
       .where("buyer_user_id", "=", session.userId)
       .executeTakeFirst();
 
-    if (existingUnlock?.status === "minted" && existingUnlock.nft_asset_id) {
+    if (existingUnlock && existingUnlock.status === "minted" && existingUnlock.nft_asset_id) {
       return {
         ok: true,
         alreadyUnlocked: true,
         nftAssetId: existingUnlock.nft_asset_id,
         imageUrl: media.public_url,
+        mintPending: existingUnlock.status !== "minted",
       };
     }
+    const paidUnlockForRetry =
+      existingUnlock &&
+      ["paid", "failed"].includes(existingUnlock.status) &&
+      existingUnlock.nft_asset_id
+        ? existingUnlock
+        : null;
 
-    // 5 XLM in terms of tokenUsdCents for createStellarPaymentIntent
-    // amountCents = 5 * tokenUsdCents means "5 tokens" at rate 1:1
-    const xlmAmount = 5;
-    const amountCents = xlmAmount * this.config.STELLAR_PAYMENT_TOKEN_USD_CENTS;
+    const creatorPayout = await this.db
+      .selectFrom("billing.creator_payout_profiles as profiles")
+      .innerJoin("billing.crypto_payout_accounts as crypto", (join) =>
+        join
+          .onRef("crypto.creator_user_id", "=", "profiles.creator_user_id")
+          .on("crypto.chain_id", "=", stellarNetworkChainId(this.config)),
+      )
+      .select(["crypto.wallet_address"])
+      .where("profiles.creator_user_id", "=", character.creator_user_id)
+      .where("profiles.status", "=", "verified")
+      .where("crypto.status", "=", "verified")
+      .executeTakeFirst();
+
+    if (!creatorPayout?.wallet_address) {
+      throw new DomainError("ENTITLEMENT_REQUIRED", "This collection is not ready for checkout");
+    }
+
+    const creatorAddress = normalizeStellarAddress(
+      creatorPayout.wallet_address,
+      "creatorWalletAddress",
+    );
+
+    const pricing = chatImageUnlockPricing({
+      amountCents: this.config.CHAT_IMAGE_UNLOCK_AMOUNT_CENTS,
+      tokenUsdCents: this.config.STELLAR_PAYMENT_TOKEN_USD_CENTS,
+      platformFeeBps: this.config.CREATOR_PLATFORM_FEE_BPS,
+    });
     const purpose = `chat_image_unlock:${media.id}`;
 
-    // ── Phase 1: No payment yet → create payment intent ──────────────────────
-    if (!input.paymentId || !input.txHash) {
+    // Phase 1: create or reuse the payment intent.
+    if (!paidUnlockForRetry && (!input.paymentId || !input.txHash)) {
       // Reuse existing pending/created payment if available
       const existingPayment = await this.db
         .selectFrom("billing.crypto_payments")
@@ -654,22 +667,7 @@ export class NftController {
         .executeTakeFirst();
 
       if (existingPayment) {
-        const memo = existingPayment.provider_reference.slice(0, 28);
-        const paymentIntent = buildStellarPaymentIntent({
-          id: existingPayment.id,
-          network: this.config.STELLAR_NETWORK,
-          horizonUrl: this.config.STELLAR_HORIZON_URL,
-          treasuryAddress: this.config.STELLAR_TREASURY_ADDRESS!,
-          assetCode: this.config.STELLAR_PAYMENT_ASSET_CODE,
-          assetIssuer: this.config.STELLAR_PAYMENT_ASSET_ISSUER ?? null,
-          amountCents: existingPayment.amount_cents,
-          tokenUsdCents: this.config.STELLAR_PAYMENT_TOKEN_USD_CENTS,
-          currency: existingPayment.currency,
-          expiresAt: existingPayment.expires_at,
-          providerReference: String(existingPayment.provider_reference),
-          memo,
-          requiredConfirmations: this.config.STELLAR_REQUIRED_CONFIRMATIONS,
-        });
+        const paymentIntent = toStellarPaymentIntent(existingPayment, this.config);
         return { provider: "stellar", payment: paymentIntent };
       }
 
@@ -678,53 +676,92 @@ export class NftController {
         config: this.config,
         buyerUserId: session.userId,
         purpose,
-        amountCents,
+        amountCents: pricing.amountCents,
         currency: "USD",
         metadata: {
           type: "chat_image_unlock",
           mediaAssetId: media.id,
           characterId: character.id,
-          xlmAmount,
+          tokenAmount: pricing.tokenAmountDisplay,
+          platformFeeBps: this.config.CREATOR_PLATFORM_FEE_BPS,
         },
       });
 
       return { provider: "stellar", payment };
     }
 
-    // ── Phase 2: Verify payment ───────────────────────────────────────────────
-    const verification = await verifyStellarPaymentIntent({
-      db: this.db,
-      config: this.config,
-      buyerUserId: session.userId,
-      paymentId: input.paymentId,
-      txHash: input.txHash,
-      walletAddress: input.ownerWalletAddress,
-      expectedPurposePrefix: "chat_image_unlock:",
-    });
+    // Phase 2: verify payment.
+    if (!paidUnlockForRetry) {
+      if (!input.paymentId || !input.txHash) {
+        throw new DomainError("VALIDATION_FAILED", "paymentId and txHash are required");
+      }
 
-    if (verification.status === "pending") {
-      return { ok: false, status: "pending" };
+      const verification = await verifyStellarPaymentIntent({
+        db: this.db,
+        config: this.config,
+        buyerUserId: session.userId,
+        paymentId: input.paymentId,
+        txHash: input.txHash,
+        walletAddress: input.ownerWalletAddress,
+        expectedPurposePrefix: "chat_image_unlock:",
+      });
+
+      if (verification.status === "pending") {
+        return { ok: false, status: "pending" };
+      }
     }
 
-    // ── Phase 3: Record unlock and mint NFT ───────────────────────────────────
+    // Phase 3: record unlock and mint the collectible.
     const contractId = this.config.STELLAR_NFT_CONTRACT_ID!;
-    const nftAssetId = randomUUID();
+    const existingAsset = await this.db
+      .selectFrom("web3.nft_assets")
+      .select(["id", "owner_user_id", "status", "token_id", "mint_tx_hash"])
+      .where("media_asset_id", "=", media.id)
+      .executeTakeFirst();
+
+    if (paidUnlockForRetry && existingAsset?.status === "minted" && existingAsset.mint_tx_hash) {
+      await this.db
+        .updateTable("chat.image_unlocks")
+        .set({ status: "minted", updated_at: new Date() })
+        .where("id", "=", paidUnlockForRetry.id)
+        .execute();
+
+      return {
+        ok: true,
+        alreadyUnlocked: true,
+        nftAssetId: existingAsset.id,
+        tokenId: existingAsset.token_id,
+        txHash: existingAsset.mint_tx_hash,
+        imageUrl: media.public_url,
+      };
+    }
+
+    if (existingAsset && existingAsset.owner_user_id !== session.userId) {
+      throw new DomainError("CONFLICT", "Chat image is already attached to another wallet");
+    }
+
+    const unlockPaymentId = paidUnlockForRetry?.payment_id ?? input.paymentId!;
+    const nftAssetId = existingUnlock?.nft_asset_id ?? existingAsset?.id ?? randomUUID();
     const tokenId = deriveCreatorArtNftTokenId({
       mediaSha256Hex: media.sha256_hex,
       characterId: character.id,
-      creatorUserId: session.userId,
+      creatorUserId: character.creator_user_id,
     });
     const imageUrl = absoluteProductUrl(this.config, media.public_url);
-    const metadataUri = absoluteProductUrl(this.config, `/api/v1/nft/assets/${nftAssetId}/metadata`);
+    const metadataUri = absoluteProductUrl(
+      this.config,
+      `/api/v1/nft/assets/${nftAssetId}/metadata`,
+    );
     const title = input.title?.trim() || `${character.name} Vision`;
-    const description = input.description?.trim() || `Unlocked AI artwork from chat with ${character.name}`;
+    const description =
+      input.description?.trim() || `Unlocked AI artwork from chat with ${character.name}`;
     const { metadata, metadataHash } = buildHanaNftMetadata({
       id: nftAssetId,
       title,
       description,
       imageUrl,
       mediaSha256Hex: media.sha256_hex,
-      creatorUserId: media.owner_user_id,
+      creatorUserId: character.creator_user_id,
       characterId: character.id,
       characterName: character.name,
       network: this.config.STELLAR_NETWORK,
@@ -732,13 +769,6 @@ export class NftController {
       tokenId,
       royaltyBps: input.royaltyBps,
     });
-
-    // Creator revenue split: 70% creator (3.5 XLM), 30% platform (1.5 XLM)
-    const creatorShareXlm = 3.5;
-    const platformShareXlm = 1.5;
-    // Convert back to cents for ledger accounting
-    const creatorShareCents = Math.round(creatorShareXlm * this.config.STELLAR_PAYMENT_TOKEN_USD_CENTS);
-    const platformShareCents = Math.round(platformShareXlm * this.config.STELLAR_PAYMENT_TOKEN_USD_CENTS);
 
     const now = new Date();
 
@@ -760,69 +790,102 @@ export class NftController {
         .execute();
 
       // Record creator's ledger entry
-      await tx
+      const creatorLedger = await tx
         .insertInto("billing.creator_ledger_entries")
         .values({
           creator_user_id: character.creator_user_id,
           character_id: character.id,
           source_user_id: session.userId,
           entry_type: "sale_gross",
-          amount_cents: creatorShareCents,
+          amount_cents: pricing.creatorShareCents,
           currency: "USD",
           status: "pending",
-          available_at: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1_000), // 7-day hold
+          available_at: new Date(
+            now.getTime() + this.config.CREATOR_EARNING_HOLD_DAYS * 24 * 60 * 60 * 1_000,
+          ),
           reference_type: "chat.image_unlock",
           reference_id: media.id,
-          idempotency_key: `chat-img-unlock:${input.paymentId}:creator`,
+          idempotency_key: `chat-img-unlock:${unlockPaymentId}:creator`,
           metadata_json: {
             type: "chat_image_unlock",
             mediaAssetId: media.id,
-            xlmShare: creatorShareXlm,
+            platformFeeBps: this.config.CREATOR_PLATFORM_FEE_BPS,
           },
         })
         .onConflict((oc) => oc.column("idempotency_key").doNothing())
-        .execute();
+        .returning(["id"])
+        .executeTakeFirst();
 
       // Update creator wallet pending balance
-      await tx
-        .updateTable("billing.creator_wallets")
-        .set((eb) => ({
-          pending_cents: eb("pending_cents", "+", creatorShareCents),
-          lifetime_earned_cents: eb("lifetime_earned_cents", "+", creatorShareCents),
-          lifetime_fee_cents: eb("lifetime_fee_cents", "+", platformShareCents),
-          updated_at: now,
-        }))
-        .where("creator_user_id", "=", character.creator_user_id)
-        .execute();
+      if (creatorLedger) {
+        await tx
+          .updateTable("billing.creator_wallets")
+          .set((eb) => ({
+            pending_cents: eb("pending_cents", "+", pricing.creatorShareCents),
+            lifetime_earned_cents: eb("lifetime_earned_cents", "+", pricing.creatorShareCents),
+            lifetime_fee_cents: eb("lifetime_fee_cents", "+", pricing.platformShareCents),
+            updated_at: now,
+          }))
+          .where("creator_user_id", "=", character.creator_user_id)
+          .execute();
+      }
 
-      // Insert NFT asset
-      await tx
-        .insertInto("web3.nft_assets")
-        .values({
-          id: nftAssetId,
-          creator_user_id: media.owner_user_id,
-          owner_user_id: session.userId,
-          character_id: character.id,
-          media_asset_id: media.id,
-          contract_id: contractId,
-          token_id: tokenId,
-          network: this.config.STELLAR_NETWORK,
-          title,
-          description,
-          image_url: imageUrl,
-          metadata_uri: metadataUri,
-          metadata_hash: metadataHash,
-          royalty_bps: input.royaltyBps,
-          creator_address: ownerAddress,
-          owner_address: ownerAddress,
-          mint_tx_hash: null,
-          status: "minting",
-          moderation_status: "approved",
-          failure_reason: null,
-          metadata_json: metadata,
-          updated_at: now,
-        })
-        .execute();
+      if (existingAsset) {
+        await tx
+          .updateTable("web3.nft_assets")
+          .set({
+            creator_user_id: character.creator_user_id,
+            owner_user_id: session.userId,
+            character_id: character.id,
+            contract_id: contractId,
+            token_id: tokenId,
+            network: this.config.STELLAR_NETWORK,
+            title,
+            description,
+            image_url: imageUrl,
+            metadata_uri: metadataUri,
+            metadata_hash: metadataHash,
+            royalty_bps: input.royaltyBps,
+            creator_address: creatorAddress,
+            owner_address: ownerAddress,
+            mint_tx_hash: null,
+            status: "minting",
+            moderation_status: "approved",
+            failure_reason: null,
+            metadata_json: metadata,
+            updated_at: now,
+          })
+          .where("id", "=", existingAsset.id)
+          .execute();
+      } else {
+        await tx
+          .insertInto("web3.nft_assets")
+          .values({
+            id: nftAssetId,
+            creator_user_id: character.creator_user_id,
+            owner_user_id: session.userId,
+            character_id: character.id,
+            media_asset_id: media.id,
+            contract_id: contractId,
+            token_id: tokenId,
+            network: this.config.STELLAR_NETWORK,
+            title,
+            description,
+            image_url: imageUrl,
+            metadata_uri: metadataUri,
+            metadata_hash: metadataHash,
+            royalty_bps: input.royaltyBps,
+            creator_address: creatorAddress,
+            owner_address: ownerAddress,
+            mint_tx_hash: null,
+            status: "minting",
+            moderation_status: "approved",
+            failure_reason: null,
+            metadata_json: metadata,
+            updated_at: now,
+          })
+          .execute();
+      }
 
       // Record unlock
       await tx
@@ -831,26 +894,29 @@ export class NftController {
           media_asset_id: media.id,
           buyer_user_id: session.userId,
           character_id: character.id,
-          payment_id: input.paymentId!, // guaranteed non-null in Phase 3
+          payment_id: unlockPaymentId,
           nft_asset_id: nftAssetId,
           status: "paid",
-          amount_xlm: String(xlmAmount.toFixed(7)),
-          creator_share_xlm: String(creatorShareXlm.toFixed(7)),
-          platform_share_xlm: String(platformShareXlm.toFixed(7)),
+          amount_xlm: pricing.tokenAmountDisplay,
+          creator_share_xlm: pricing.creatorShareTokenDisplay,
+          platform_share_xlm: pricing.platformShareTokenDisplay,
           updated_at: now,
         })
         .onConflict((oc) =>
           oc.columns(["buyer_user_id", "media_asset_id"]).doUpdateSet({
             status: "paid",
             nft_asset_id: nftAssetId,
-            payment_id: input.paymentId!, // guaranteed non-null in Phase 3
+            payment_id: unlockPaymentId,
+            amount_xlm: pricing.tokenAmountDisplay,
+            creator_share_xlm: pricing.creatorShareTokenDisplay,
+            platform_share_xlm: pricing.platformShareTokenDisplay,
             updated_at: now,
           }),
         )
         .execute();
     });
 
-    // Mint NFT on Stellar (outside transaction — may fail, will be retried)
+    // Mint outside the database transaction. A failed mint leaves the paid image viewable and retryable.
     try {
       const mint = await mintHanaNft({
         rpcUrl: this.config.STELLAR_RPC_URL,
@@ -858,7 +924,7 @@ export class NftController {
         contractId,
         serverSecret: resolveServerSecret(this.config),
         ownerAddress,
-        creatorAddress: ownerAddress,
+        creatorAddress,
         tokenId,
         metadataUri,
         royaltyBps: input.royaltyBps,
@@ -867,7 +933,12 @@ export class NftController {
       await this.db.transaction().execute(async (tx) => {
         await tx
           .updateTable("web3.nft_assets")
-          .set({ status: "minted", mint_tx_hash: mint.txHash, minted_at: new Date(), updated_at: new Date() })
+          .set({
+            status: "minted",
+            mint_tx_hash: mint.txHash,
+            minted_at: new Date(),
+            updated_at: new Date(),
+          })
           .where("id", "=", nftAssetId)
           .execute();
         await tx
@@ -909,16 +980,20 @@ export class NftController {
     } catch (error) {
       await this.db
         .updateTable("web3.nft_assets")
-        .set({ status: "failed", failure_reason: error instanceof Error ? error.message : "Mint failed", updated_at: new Date() })
+        .set({
+          status: "failed",
+          failure_reason: error instanceof Error ? error.message : "Mint failed",
+          updated_at: new Date(),
+        })
         .where("id", "=", nftAssetId)
         .execute();
       await this.db
         .updateTable("chat.image_unlocks")
-        .set({ status: "failed", updated_at: new Date() })
+        .set({ status: "paid", updated_at: new Date() })
         .where("media_asset_id", "=", media.id)
         .where("buyer_user_id", "=", session.userId)
         .execute();
-      // Payment was finalized — return partial success so frontend can show the image
+      // Payment was finalized; return partial success so the frontend can show the image.
       return {
         ok: true,
         nftAssetId,
@@ -928,14 +1003,12 @@ export class NftController {
     }
   }
 
-
   @Post("/assets/:assetId/listings")
   public async createListing(
     @Param("assetId") assetId: string,
     @Body() body: unknown,
     @Headers("authorization") authorization?: string,
   ) {
-
     const session = await requireSession(this.db, this.config, authorization);
     const input = CreateNftListingRequestSchema.parse(body);
     assertNftReady(this.config);
@@ -1534,18 +1607,6 @@ export class NftController {
         })
         .where("id", "=", sale.sale_id)
         .execute();
-      await tx
-        .updateTable("web3.nft_listings")
-        .set({
-          status: "sold",
-          reserved_by_user_id: null,
-          reserved_sale_id: null,
-          reserved_until: null,
-          sold_at: new Date(),
-          updated_at: new Date(),
-        })
-        .where("id", "=", sale.listing_id!)
-        .execute();
 
       return saleSettlementFromRow(sale, input.txHash);
     });
@@ -1606,49 +1667,63 @@ export class NftController {
         sellerUserId,
         creatorUserId: offer.creator_user_id,
       });
-      const sale = await tx
-        .insertInto("web3.nft_sales")
-        .values({
-          nft_asset_id: offer.nft_asset_id,
-          listing_id: null,
-          offer_id: offer.offer_id,
-          seller_user_id: sellerUserId,
-          buyer_user_id: offer.buyer_user_id,
-          seller_address: offer.owner_address,
-          buyer_address: offer.buyer_address,
-          amount_cents: offer.amount_cents,
-          currency: offer.currency,
-          platform_fee_cents: fees.platformFeeCents,
-          royalty_fee_cents: fees.royaltyFeeCents,
-          seller_net_cents: fees.sellerNetCents,
-          provider_payment_id: offer.provider_payment_id,
-          payment_tx_hash: offer.tx_hash,
-          transfer_tx_hash: null,
-          status: "transferring",
-          failure_reason: null,
-          metadata_json: { offerId: offer.offer_id },
-          paid_at: new Date(),
-          updated_at: new Date(),
-        })
-        .returning(["id"])
-        .executeTakeFirstOrThrow();
+      const existingSale = await tx
+        .selectFrom("web3.nft_sales")
+        .select(["id"])
+        .where("offer_id", "=", offer.offer_id)
+        .where("status", "in", ["failed", "paid", "transferring"])
+        .orderBy("created_at", "desc")
+        .forUpdate()
+        .executeTakeFirst();
+      const sale =
+        existingSale ??
+        (await tx
+          .insertInto("web3.nft_sales")
+          .values({
+            nft_asset_id: offer.nft_asset_id,
+            listing_id: null,
+            offer_id: offer.offer_id,
+            seller_user_id: sellerUserId,
+            buyer_user_id: offer.buyer_user_id,
+            seller_address: offer.owner_address,
+            buyer_address: offer.buyer_address,
+            amount_cents: offer.amount_cents,
+            currency: offer.currency,
+            platform_fee_cents: fees.platformFeeCents,
+            royalty_fee_cents: fees.royaltyFeeCents,
+            seller_net_cents: fees.sellerNetCents,
+            provider_payment_id: offer.provider_payment_id,
+            payment_tx_hash: offer.tx_hash,
+            transfer_tx_hash: null,
+            status: "transferring",
+            failure_reason: null,
+            metadata_json: { offerId: offer.offer_id },
+            paid_at: new Date(),
+            updated_at: new Date(),
+          })
+          .returning(["id"])
+          .executeTakeFirstOrThrow());
+
+      if (existingSale) {
+        await tx
+          .updateTable("web3.nft_sales")
+          .set({
+            provider_payment_id: offer.provider_payment_id,
+            payment_tx_hash: offer.tx_hash,
+            transfer_tx_hash: null,
+            status: "transferring",
+            failure_reason: null,
+            paid_at: new Date(),
+            updated_at: new Date(),
+          })
+          .where("id", "=", existingSale.id)
+          .execute();
+      }
 
       await tx
         .updateTable("web3.nft_offers")
         .set({ status: "accepted", accepted_at: new Date(), updated_at: new Date() })
         .where("id", "=", offer.offer_id)
-        .execute();
-      await tx
-        .updateTable("web3.nft_listings")
-        .set({
-          status: "cancelled",
-          reserved_by_user_id: null,
-          reserved_sale_id: null,
-          reserved_until: null,
-          updated_at: new Date(),
-        })
-        .where("nft_asset_id", "=", offer.nft_asset_id)
-        .where("status", "in", ["active", "reserved"])
         .execute();
 
       return {
@@ -1675,15 +1750,56 @@ export class NftController {
   }
 
   private async failSale(saleId: string, error: unknown): Promise<void> {
-    await this.db
-      .updateTable("web3.nft_sales")
-      .set({
-        status: "failed",
-        failure_reason: error instanceof Error ? error.message : "NFT transfer failed",
-        updated_at: new Date(),
-      })
-      .where("id", "=", saleId)
-      .execute();
+    const reason = error instanceof Error ? error.message : "NFT transfer failed";
+
+    await this.db.transaction().execute(async (tx) => {
+      const sale = await tx
+        .selectFrom("web3.nft_sales")
+        .select(["id", "listing_id", "offer_id", "buyer_user_id"])
+        .where("id", "=", saleId)
+        .forUpdate()
+        .executeTakeFirst();
+
+      if (!sale) {
+        return;
+      }
+
+      await tx
+        .updateTable("web3.nft_sales")
+        .set({
+          status: sale.listing_id ? "paid" : "failed",
+          failure_reason: reason,
+          updated_at: new Date(),
+        })
+        .where("id", "=", saleId)
+        .execute();
+
+      if (sale.listing_id) {
+        const reservedUntil = new Date();
+        reservedUntil.setUTCMinutes(
+          reservedUntil.getUTCMinutes() + this.config.STELLAR_PAYMENT_INTENT_TTL_MINUTES,
+        );
+        await tx
+          .updateTable("web3.nft_listings")
+          .set({
+            status: "reserved",
+            reserved_by_user_id: sale.buyer_user_id,
+            reserved_sale_id: sale.id,
+            reserved_until: reservedUntil,
+            updated_at: new Date(),
+          })
+          .where("id", "=", sale.listing_id)
+          .execute();
+      }
+
+      if (sale.offer_id) {
+        await tx
+          .updateTable("web3.nft_offers")
+          .set({ status: "funded", accepted_at: null, updated_at: new Date() })
+          .where("id", "=", sale.offer_id)
+          .execute();
+      }
+    });
   }
 }
 
@@ -1747,6 +1863,42 @@ async function finalizeNftSale(
       })
       .where("id", "=", input.assetId)
       .execute();
+
+    if (input.listingId) {
+      await tx
+        .updateTable("web3.nft_listings")
+        .set({
+          status: "sold",
+          reserved_by_user_id: null,
+          reserved_sale_id: null,
+          reserved_until: null,
+          sold_at: now,
+          updated_at: now,
+        })
+        .where("id", "=", input.listingId)
+        .execute();
+    }
+
+    if (input.offerId) {
+      await tx
+        .updateTable("web3.nft_offers")
+        .set({ status: "accepted", accepted_at: now, updated_at: now })
+        .where("id", "=", input.offerId)
+        .execute();
+      await tx
+        .updateTable("web3.nft_listings")
+        .set({
+          status: "cancelled",
+          reserved_by_user_id: null,
+          reserved_sale_id: null,
+          reserved_until: null,
+          updated_at: now,
+        })
+        .where("nft_asset_id", "=", input.assetId)
+        .where("status", "in", ["active", "reserved"])
+        .execute();
+    }
+
     await tx
       .insertInto("web3.nft_ownership_events")
       .values({
@@ -1926,6 +2078,37 @@ function saleFees(input: {
   return { platformFeeCents, royaltyFeeCents, sellerNetCents };
 }
 
+function chatImageUnlockPricing(input: {
+  amountCents: number;
+  tokenUsdCents: number;
+  platformFeeBps: number;
+}): {
+  tokenAmountDisplay: string;
+  amountCents: number;
+  creatorShareCents: number;
+  platformShareCents: number;
+  creatorShareTokenDisplay: string;
+  platformShareTokenDisplay: string;
+} {
+  const amountCents = input.amountCents;
+  const tokenAmount = amountCents / input.tokenUsdCents;
+  const platformShareCents = Math.floor((amountCents * input.platformFeeBps) / 10_000);
+  const creatorShareCents = amountCents - platformShareCents;
+
+  return {
+    tokenAmountDisplay: tokenAmount.toFixed(7),
+    amountCents,
+    creatorShareCents,
+    platformShareCents,
+    creatorShareTokenDisplay: (creatorShareCents / input.tokenUsdCents).toFixed(7),
+    platformShareTokenDisplay: (platformShareCents / input.tokenUsdCents).toFixed(7),
+  };
+}
+
+function stellarNetworkChainId(config: AppConfig): number {
+  return config.STELLAR_NETWORK === "mainnet" ? 1 : 2;
+}
+
 function assertNftReady(config: AppConfig): void {
   if (!config.STELLAR_ENABLED || !config.STELLAR_PAYMENTS_ENABLED || !config.STELLAR_NFT_ENABLED) {
     throw new DomainError("ENTITLEMENT_REQUIRED", "NFT marketplace is not enabled.");
@@ -1990,4 +2173,8 @@ function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : {};
+}
+
+function optionalString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
 }

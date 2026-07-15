@@ -406,6 +406,7 @@ export default function NftStudioPage() {
         body: JSON.stringify({
           purpose: "nft_art",
           prompt,
+          characterId: selectedCharacter.id,
           characterName: selectedCharacter.name,
           style: "premium collectible character artwork",
           artDirection: "semi_real",

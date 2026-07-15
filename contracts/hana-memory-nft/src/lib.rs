@@ -16,6 +16,8 @@ const NAME: Symbol = symbol_short!("NAME");
 const SYMBOL: Symbol = symbol_short!("SYMBOL");
 const SUPPLY: Symbol = symbol_short!("SUPPLY");
 const MAX_ROYALTY_BPS: u32 = 1_000;
+const TTL_THRESHOLD_LEDGERS: u32 = 120_960; // About 7 days at 5s ledgers.
+const TTL_EXTEND_TO_LEDGERS: u32 = 518_400; // About 30 days at 5s ledgers.
 
 #[derive(Clone)]
 #[contracttype]
@@ -51,6 +53,7 @@ impl HanaNftCollectionContract {
         env.storage().instance().set(&NAME, &name);
         env.storage().instance().set(&SYMBOL, &symbol);
         env.storage().instance().set(&SUPPLY, &0u64);
+        bump_instance_ttl(&env);
     }
 
     pub fn mint(
@@ -62,6 +65,7 @@ impl HanaNftCollectionContract {
         royalty_bps: u32,
     ) -> String {
         let admin: Address = env.storage().instance().get(&ADMIN).unwrap();
+        bump_instance_ttl(&env);
         admin.require_auth();
 
         if royalty_bps > MAX_ROYALTY_BPS {
@@ -79,6 +83,7 @@ impl HanaNftCollectionContract {
                 && existing.uri == uri
                 && existing.royalty_bps == royalty_bps
             {
+                bump_persistent_ttl(&env, &token_key);
                 return token_id;
             }
 
@@ -97,11 +102,13 @@ impl HanaNftCollectionContract {
         };
 
         env.storage().persistent().set(&token_key, &metadata);
+        bump_persistent_ttl(&env, &token_key);
         add_owner_token(&env, owner.clone(), token_id.clone());
 
         let mut supply: u64 = env.storage().instance().get(&SUPPLY).unwrap();
         supply += 1;
         env.storage().instance().set(&SUPPLY, &supply);
+        bump_instance_ttl(&env);
 
         env.events().publish(
             (symbol_short!("mint"), owner, creator),
@@ -119,10 +126,12 @@ impl HanaNftCollectionContract {
         sale_ref: String,
     ) -> String {
         let admin: Address = env.storage().instance().get(&ADMIN).unwrap();
+        bump_instance_ttl(&env);
         admin.require_auth();
 
         let token_key = StorageKey::Token(token_id.clone());
         let mut metadata: TokenMetadata = env.storage().persistent().get(&token_key).unwrap();
+        bump_persistent_ttl(&env, &token_key);
 
         if metadata.owner != from {
             panic!("seller is not owner");
@@ -134,6 +143,7 @@ impl HanaNftCollectionContract {
         metadata.owner = to.clone();
         metadata.updated_at = env.ledger().timestamp();
         env.storage().persistent().set(&token_key, &metadata);
+        bump_persistent_ttl(&env, &token_key);
 
         env.events().publish(
             (symbol_short!("sale"), from, to),
@@ -144,46 +154,69 @@ impl HanaNftCollectionContract {
     }
 
     pub fn owner_of(env: Env, token_id: String) -> Address {
+        let token_key = StorageKey::Token(token_id);
         let metadata: TokenMetadata = env
             .storage()
             .persistent()
-            .get(&StorageKey::Token(token_id))
+            .get(&token_key)
             .unwrap();
 
+        bump_persistent_ttl(&env, &token_key);
         metadata.owner
     }
 
     pub fn get_token(env: Env, token_id: String) -> Option<TokenMetadata> {
-        env.storage().persistent().get(&StorageKey::Token(token_id))
+        let token_key = StorageKey::Token(token_id);
+        let token = env.storage().persistent().get(&token_key);
+
+        if token.is_some() {
+            bump_persistent_ttl(&env, &token_key);
+        }
+
+        token
     }
 
     pub fn get_owner_tokens(env: Env, owner: Address) -> Vec<String> {
-        env.storage()
+        let owner_key = StorageKey::OwnerTokens(owner);
+        let tokens = env
+            .storage()
             .persistent()
-            .get(&StorageKey::OwnerTokens(owner))
-            .unwrap_or(Vec::new(&env))
+            .get(&owner_key)
+            .unwrap_or(Vec::new(&env));
+
+        bump_persistent_ttl(&env, &owner_key);
+        tokens
     }
 
     pub fn get_total_supply(env: Env) -> u64 {
-        env.storage().instance().get(&SUPPLY).unwrap_or(0)
+        bump_instance_ttl(&env);
+        env.storage()
+            .instance()
+            .get(&SUPPLY)
+            .unwrap_or(0)
     }
 
     pub fn get_name(env: Env) -> String {
+        bump_instance_ttl(&env);
         env.storage().instance().get(&NAME).unwrap()
     }
 
     pub fn get_symbol(env: Env) -> String {
+        bump_instance_ttl(&env);
         env.storage().instance().get(&SYMBOL).unwrap()
     }
 
     pub fn get_admin(env: Env) -> Address {
+        bump_instance_ttl(&env);
         env.storage().instance().get(&ADMIN).unwrap()
     }
 
     pub fn transfer_admin(env: Env, new_admin: Address) {
         let admin: Address = env.storage().instance().get(&ADMIN).unwrap();
+        bump_instance_ttl(&env);
         admin.require_auth();
         env.storage().instance().set(&ADMIN, &new_admin);
+        bump_instance_ttl(&env);
     }
 }
 
@@ -197,6 +230,7 @@ fn add_owner_token(env: &Env, owner: Address, token_id: String) {
 
     tokens.push_back(token_id);
     env.storage().persistent().set(&owner_key, &tokens);
+    bump_persistent_ttl(env, &owner_key);
 }
 
 fn remove_owner_token(env: &Env, owner: Address, token_id: String) {
@@ -215,6 +249,19 @@ fn remove_owner_token(env: &Env, owner: Address, token_id: String) {
     }
 
     env.storage().persistent().set(&owner_key, &retained);
+    bump_persistent_ttl(env, &owner_key);
+}
+
+fn bump_instance_ttl(env: &Env) {
+    env.storage()
+        .instance()
+        .extend_ttl(TTL_THRESHOLD_LEDGERS, TTL_EXTEND_TO_LEDGERS);
+}
+
+fn bump_persistent_ttl(env: &Env, key: &StorageKey) {
+    env.storage()
+        .persistent()
+        .extend_ttl(key, TTL_THRESHOLD_LEDGERS, TTL_EXTEND_TO_LEDGERS);
 }
 
 #[cfg(test)]

@@ -1,5 +1,17 @@
 # Hana Chat Agent Memory
 
+- 2026-07-15: Chat-image collectibles use API-enforced media entitlements. Locked chat media must
+  carry `lockedChatImage`, `characterId`, and `conversationId` metadata, direct NFT minting of locked
+  media is forbidden, buyers only see files after a paid/minted/failed unlock row, and frontend
+  placeholders must not fetch protected media before checkout.
+- 2026-07-15: Chat-image unlock pricing is runtime configuration via
+  `CHAT_IMAGE_UNLOCK_AMOUNT_CENTS`; the API converts it to the active Stellar payment asset and
+  persists the calculated platform/creator split. Do not hardcode launch XLM amounts in schema,
+  comments, UI, or checkout code.
+- 2026-07-15: Creator-art and chat-image collectible mints must use exact Stellar payment
+  verification, unique payment memos, verified payout-wallet signatures, and verified creator payout
+  wallets for royalty creator addresses. Buyer wallets are owners, not creator royalty addresses,
+  unless the buyer is minting their own creator-owned art.
 - 2026-07-13: Paid subscriptions are two credit-based tiers: Hana Plus at $9.99/mo with 6,000
   monthly credits, deep memory, and creator tools; Hana Ultra at $19.99/mo with 20,000 monthly
   credits, deep memory, creator tools, and 18+ spaces after account eligibility checks.

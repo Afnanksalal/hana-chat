@@ -710,9 +710,9 @@ export interface ChatImageUnlocksTable {
   payment_id: string;
   nft_asset_id: string | null;
   status: DefaultColumn<"pending" | "paid" | "minted" | "failed">;
-  amount_xlm: DefaultColumn<string>;
-  creator_share_xlm: DefaultColumn<string>;
-  platform_share_xlm: DefaultColumn<string>;
+  amount_xlm: string;
+  creator_share_xlm: string;
+  platform_share_xlm: string;
   created_at: TimestampColumn;
   updated_at: TimestampColumn;
 }

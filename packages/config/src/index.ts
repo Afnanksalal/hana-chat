@@ -156,6 +156,7 @@ export const AppConfigSchema = z
     CREATOR_EARNING_HOLD_DAYS: z.coerce.number().int().min(0).max(90).default(7),
     CREATOR_MIN_PAYOUT_CENTS: z.coerce.number().int().min(100).max(1_000_000).default(1_000),
     CREATOR_PAID_CHARACTER_TRIAL_MESSAGES: z.coerce.number().int().min(0).max(200).default(30),
+    CHAT_IMAGE_UNLOCK_AMOUNT_CENTS: z.coerce.number().int().min(1).max(1_000_000).default(50),
 
     STELLAR_ENABLED: booleanEnvSchema.default(false),
     STELLAR_STORAGE_ENABLED: booleanEnvSchema.default(false),

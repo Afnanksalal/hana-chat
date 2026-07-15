@@ -82,6 +82,18 @@ function parseChatContent(content: string): ChatContentPart[] {
   return parts.length > 0 ? parts : [{ type: "text", content }];
 }
 
+function lockedMediaIdsFromMessages(messages: Pick<ChatMessage, "content">[]): string[] {
+  return Array.from(
+    new Set(
+      messages.flatMap((message) =>
+        parseChatContent(message.content)
+          .filter((part): part is ChatImagePart => part.type === "image" && part.locked)
+          .map((part) => part.mediaId),
+      ),
+    ),
+  );
+}
+
 function renderChatContent(
   parts: ChatContentPart[],
   characterId: string | undefined,
@@ -103,17 +115,19 @@ function renderChatContent(
               className="chat-image"
               loading="lazy"
             />
-            <div className="chat-image-actions">
-              <button
-                className="chat-image-mint-btn"
-                type="button"
-                onClick={() => onMintClick(part.mediaId)}
-                aria-label="Mint this image as an NFT"
-              >
-                <Sparkles size={13} />
-                Mint as NFT
-              </button>
-            </div>
+            {!part.locked ? (
+              <div className="chat-image-actions">
+                <button
+                  className="chat-image-mint-btn"
+                  type="button"
+                  onClick={() => onMintClick(part.mediaId)}
+                  aria-label="Add this image to your collection"
+                >
+                  <Sparkles size={13} />
+                  Add to collection
+                </button>
+              </div>
+            ) : null}
           </div>
         );
       }
@@ -121,14 +135,10 @@ function renderChatContent(
       // Locked: blur + unlock button
       return (
         <div key={`img-${index}`} className="chat-image-bubble locked">
-          <div className="chat-image-locked-wrap">
-            <img
-              src={`/api/v1/media/${part.mediaId}/file`}
-              alt="Locked AI image"
-              className="chat-image locked-img"
-              loading="lazy"
-              aria-hidden="true"
-            />
+          <div className="chat-image-locked-wrap" aria-label="Locked generated scene">
+            <div className="chat-image locked-img-placeholder" aria-hidden="true">
+              <Sparkles size={28} />
+            </div>
             <div className="chat-image-lock-overlay">
               <Lock size={28} />
               <span>Exclusive scene</span>
@@ -136,10 +146,10 @@ function renderChatContent(
                 className="chat-image-unlock-btn"
                 type="button"
                 onClick={() => onUnlockClick(part.mediaId)}
-                aria-label="Unlock this image for 5 XLM"
+                aria-label="Unlock this image"
               >
                 <Sparkles size={13} />
-                Unlock for 5 XLM
+                Unlock scene
               </button>
             </div>
           </div>
@@ -154,7 +164,6 @@ function renderChatContent(
     );
   });
 }
-
 
 type MemoryKind = "preference" | "boundary" | "relationship" | "canon" | "event" | "style";
 
@@ -905,6 +914,7 @@ function ChatExperience() {
       setMessages(
         mergePendingMessages(persistedMessages, conversation.characterId, conversation.id),
       );
+      await refreshUnlockedImagesForMessages(persistedMessages);
       setEvolution(payload.evolution ?? null);
       if (conversation.type === "group") {
         setMemories([]);
@@ -915,6 +925,24 @@ function ChatExperience() {
       setStatus("");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Could not open this chat.");
+    }
+  }
+
+  async function refreshUnlockedImagesForMessages(sourceMessages: ChatMessage[]) {
+    const mediaIds = lockedMediaIdsFromMessages(sourceMessages);
+
+    if (mediaIds.length === 0) {
+      setUnlockedImages(new Set());
+      return;
+    }
+
+    try {
+      const payload = await apiJson<{ mediaIds: string[] }>(
+        `/api/v1/nft/chat-image/unlocks?mediaIds=${encodeURIComponent(mediaIds.join(","))}`,
+      );
+      setUnlockedImages(new Set(Array.isArray(payload.mediaIds) ? payload.mediaIds : []));
+    } catch {
+      setUnlockedImages(new Set());
     }
   }
 
@@ -2036,7 +2064,6 @@ function ChatExperience() {
                           }),
                         unlockedImages,
                       )
-
                     ) : message.id === typingMessageId ? (
                       <span className="typing-indicator" aria-label="Typing">
                         <i />
@@ -2497,7 +2524,6 @@ function ChatExperience() {
         />
       )}
     </div>
-
   );
 }
 

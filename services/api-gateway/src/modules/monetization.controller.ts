@@ -10,14 +10,17 @@ import { createDatabase, type HanaDatabase } from "@hana/database";
 import { DomainError } from "@hana/errors";
 import { Body, Controller, Get, Headers, Param, Patch, Post } from "@nestjs/common";
 import { Kysely, sql } from "kysely";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { completedUserTurnCount } from "./billable-messages";
 import {
   createStellarPaymentIntent,
   verifyStellarPaymentIntent,
   verifyStellarPayoutTransfer,
 } from "./stellar-payments";
-import { normalizeStellarAddress as normalizeAddress } from "@hana/stellar-bridge";
+import {
+  normalizeStellarAddress as normalizeAddress,
+  verifyStellarWalletSignature,
+} from "@hana/stellar-bridge";
 import { auditEvent, requireAdmin, requireSession } from "./session";
 
 type Db = Kysely<HanaDatabase>;
@@ -184,6 +187,12 @@ export class MonetizationController {
     assertMonetizationEnabled(this.config);
 
     const walletAddress = normalizeAddress(input.walletAddress, "walletAddress");
+    assertPayoutWalletProof({
+      walletAddress,
+      network: this.config.STELLAR_NETWORK,
+      message: input.walletProofMessage,
+      signature: input.walletProofSignature,
+    });
     const now = new Date();
     const status = "pending_review" as const;
     const stellarChainId = this.config.STELLAR_NETWORK === "mainnet" ? 1 : 2;
@@ -192,6 +201,8 @@ export class MonetizationController {
       network: this.config.STELLAR_NETWORK,
       walletAddress,
       assetCode: this.config.STELLAR_PAYMENT_ASSET_CODE,
+      proofMessageHash: sha256Hex(input.walletProofMessage),
+      proofVerifiedAt: now.toISOString(),
     };
 
     await ensureCreatorWallet(this.db, session.userId, "USD");
@@ -909,12 +920,16 @@ export class AdminMonetizationController {
     const admin = await requireAdmin(this.db, this.config, authorization);
     const profile = await this.db
       .selectFrom("billing.creator_payout_profiles")
-      .select(["creator_user_id", "status"])
+      .select(["creator_user_id", "status", "metadata_json"])
       .where("creator_user_id", "=", creatorUserId)
       .executeTakeFirst();
 
     if (!profile) {
       throw new DomainError("RESOURCE_NOT_FOUND", "Payout profile not found");
+    }
+
+    if (typeof asRecord(profile.metadata_json)["proofVerifiedAt"] !== "string") {
+      throw new DomainError("AUTH_FORBIDDEN", "Payout wallet proof is required before approval");
     }
 
     await this.db.transaction().execute(async (tx) => {
@@ -1357,6 +1372,40 @@ function toWalletSummary(wallet: {
     lifetimePaidCents: wallet.lifetime_paid_cents,
     updatedAt: wallet.updated_at.toISOString(),
   };
+}
+
+function assertPayoutWalletProof(input: {
+  walletAddress: string;
+  network: "mainnet" | "testnet";
+  message: string;
+  signature: string;
+}): void {
+  const expectedLines = [
+    "Hana Chat payout wallet verification",
+    "Purpose: creator_payout",
+    `Network: ${input.network}`,
+    `Wallet: ${input.walletAddress}`,
+  ];
+
+  for (const line of expectedLines) {
+    if (!input.message.includes(line)) {
+      throw new DomainError("AUTH_FORBIDDEN", "Payout wallet proof does not match this profile");
+    }
+  }
+
+  if (
+    !verifyStellarWalletSignature({
+      walletAddress: input.walletAddress,
+      message: input.message,
+      signatureBase64: input.signature,
+    })
+  ) {
+    throw new DomainError("AUTH_FORBIDDEN", "Payout wallet signature could not be verified");
+  }
+}
+
+function sha256Hex(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
 }
 
 function asRecord(value: unknown): Record<string, unknown> {

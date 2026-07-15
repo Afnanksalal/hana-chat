@@ -75,7 +75,7 @@ function aiOutputHasVisualScene(content: string): boolean {
   // Must have clear scene/visual language in the model reply
   const scenePatterns = [
     /\b(picture|painting|portrait|illustration|artwork|image|drawing|sketch|render|scene|landscape|closeup|close-up)\b/i,
-    /\*[^*]+\*(\s+|$)/,  // *action* emote — roleplay visual action
+    /\*[^*]+\*(\s+|$)/, // *action* emote — roleplay visual action
     /\b(here is|here's|behold|presenting|feast your eyes|take a look)\b/i,
     /\b(she looks|he looks|i look|my appearance|you see|before you|in front of you)\b/i,
     /\b(painted|drawn|illustrated|rendered|depicted|captured)\b/i,
@@ -1363,8 +1363,8 @@ export class ChatController {
 
       let assistantContent = modelResult.content;
 
-      // Generate image if the AI character's response contains visual scene language.
-      // The image is embedded as a LOCKED marker — the user must pay 5 XLM to unlock it.
+      // Generate locked artwork when the response contains visual scene language.
+      // The image is embedded as a locked media marker and unlocked through checkout.
       if (aiOutputHasVisualScene(modelResult.content)) {
         try {
           const imageResult = await generateAndSaveImage({
@@ -1372,11 +1372,16 @@ export class ChatController {
             config: this.config,
             userId: session.userId,
             prompt: modelResult.content,
-            characterName: character.name,
+            characterName: responseCharacter.name,
             purpose: "nft_art",
             aspectRatio: "1:1",
+            metadata: {
+              lockedChatImage: true,
+              characterId: responseCharacter.id,
+              conversationId,
+            },
           });
-          // Locked marker: frontend renders blurred preview + Unlock for 5 XLM button
+          // Locked marker: frontend renders the gated checkout surface.
           assistantContent = `${modelResult.content}\n\n![hana-img-locked](mediaId:${imageResult.mediaId})`;
         } catch (error) {
           // Log but don't fail the message if image generation fails
