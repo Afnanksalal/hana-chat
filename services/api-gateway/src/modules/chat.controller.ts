@@ -1363,8 +1363,8 @@ export class ChatController {
 
       let assistantContent = modelResult.content;
 
-      // Generate image if the AI character's response contains visual scene language.
-      // The image is embedded as a LOCKED marker — the user must pay 5 XLM to unlock it.
+      // Generate locked artwork when the response contains visual scene language.
+      // The image is embedded as a locked media marker and unlocked through checkout.
       if (aiOutputHasVisualScene(modelResult.content)) {
         try {
           const imageResult = await generateAndSaveImage({
@@ -1372,11 +1372,16 @@ export class ChatController {
             config: this.config,
             userId: session.userId,
             prompt: modelResult.content,
-            characterName: character.name,
+            characterName: responseCharacter.name,
             purpose: "nft_art",
             aspectRatio: "1:1",
+            metadata: {
+              lockedChatImage: true,
+              characterId: responseCharacter.id,
+              conversationId,
+            },
           });
-          // Locked marker: frontend renders blurred preview + Unlock for 5 XLM button
+          // Locked marker: frontend renders the gated checkout surface.
           assistantContent = `${modelResult.content}\n\n![hana-img-locked](mediaId:${imageResult.mediaId})`;
         } catch (error) {
           // Log but don't fail the message if image generation fails

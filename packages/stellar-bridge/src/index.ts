@@ -1,4 +1,4 @@
-import { Horizon, StrKey } from "@stellar/stellar-sdk";
+import { Horizon, Keypair, StrKey } from "@stellar/stellar-sdk";
 import { createHash } from "node:crypto";
 
 // ---------------------------------------------------------------------------
@@ -266,7 +266,7 @@ export async function verifyStellarPayment(input: {
   expectedMemo?: string;
   assetCode: string;
   assetIssuer: string | null;
-  minimumAmountDisplay: string;
+  exactAmountDisplay: string;
 }): Promise<StellarTransferVerification> {
   const server = new Horizon.Server(input.horizonUrl, { allowHttp: false });
   const txHash = normalizeStellarTxHash(input.txHash);
@@ -315,9 +315,9 @@ export async function verifyStellarPayment(input: {
     throw new Error("Stellar transaction sender does not match the expected wallet");
   }
 
-  if (!isSufficientAmount(paymentOp.amount, input.minimumAmountDisplay)) {
+  if (!isExactStellarAmount(paymentOp.amount, input.exactAmountDisplay)) {
     throw new Error(
-      `Stellar payment amount ${paymentOp.amount} is below required ${input.minimumAmountDisplay}`,
+      `Stellar payment amount ${paymentOp.amount} does not match required ${input.exactAmountDisplay}`,
     );
   }
 
@@ -430,7 +430,7 @@ export async function verifyStellarPayout(input: {
   expectedMemo?: string;
   assetCode: string;
   assetIssuer: string | null;
-  minimumAmountDisplay: string;
+  exactAmountDisplay: string;
 }): Promise<StellarTransferVerification> {
   const verificationInput: Parameters<typeof verifyStellarPayment>[0] = {
     horizonUrl: input.horizonUrl,
@@ -440,7 +440,7 @@ export async function verifyStellarPayout(input: {
     expectedFrom: input.expectedFrom,
     assetCode: input.assetCode,
     assetIssuer: input.assetIssuer,
-    minimumAmountDisplay: input.minimumAmountDisplay,
+    exactAmountDisplay: input.exactAmountDisplay,
   };
 
   if (input.expectedMemo) {
@@ -456,6 +456,25 @@ export async function verifyStellarPayout(input: {
 
 export function amountCentsToStellarDisplay(amountCents: number, tokenUsdCents: number): string {
   return buildAmountDisplay(amountCents, tokenUsdCents);
+}
+
+export function verifyStellarWalletSignature(input: {
+  walletAddress: string;
+  message: string;
+  signatureBase64: string;
+}): boolean {
+  const walletAddress = normalizeStellarAddress(input.walletAddress, "walletAddress");
+  const signature = Buffer.from(input.signatureBase64, "base64");
+
+  if (signature.byteLength !== 64) {
+    return false;
+  }
+
+  try {
+    return Keypair.fromPublicKey(walletAddress).verify(Buffer.from(input.message, "utf8"), signature);
+  } catch {
+    return false;
+  }
 }
 
 function buildAmountDisplay(amountCents: number, tokenUsdCents: number): string {
@@ -612,13 +631,31 @@ export function isMatchingStellarPaymentAsset(
   return op.asset_code === normalizedAssetCode && op.asset_issuer === (assetIssuer || null);
 }
 
-function isSufficientAmount(actual: string, minimum: string): boolean {
-  const a = parseFloat(actual);
-  const m = parseFloat(minimum);
+export function isExactStellarAmount(actual: string, expected: string): boolean {
+  const actualStroops = stellarDisplayToStroops(actual);
+  const expectedStroops = stellarDisplayToStroops(expected);
 
-  if (!isFinite(a) || !isFinite(m)) {
-    return false;
+  return actualStroops !== null && expectedStroops !== null && actualStroops === expectedStroops;
+}
+
+function stellarDisplayToStroops(value: string): bigint | null {
+  const trimmed = value.trim();
+  const match = /^([0-9]+)(?:\.([0-9]{1,7}))?$/.exec(trimmed);
+
+  if (!match) {
+    return null;
   }
 
-  return a >= m;
+  const whole = match[1];
+  const fraction = (match[2] ?? "").padEnd(7, "0");
+
+  if (!whole) {
+    return null;
+  }
+
+  try {
+    return BigInt(whole) * 10_000_000n + BigInt(fraction);
+  } catch {
+    return null;
+  }
 }

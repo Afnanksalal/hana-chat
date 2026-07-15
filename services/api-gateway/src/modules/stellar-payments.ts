@@ -46,8 +46,7 @@ export async function createStellarPaymentIntent(input: {
     input.config.STELLAR_PAYMENT_TOKEN_USD_CENTS,
   );
   const providerReference = `${input.purpose}:${randomUUID()}`;
-  // Memo is the first 28 chars of providerReference (Stellar memo text limit = 28 bytes)
-  const memo = providerReference.slice(0, 28);
+  const memo = randomPaymentMemo();
 
   const payment = await input.db
     .insertInto("billing.crypto_payments")
@@ -165,7 +164,7 @@ export async function verifyStellarPaymentIntent(input: {
       expectedMemo: stellarMemo(payment),
       assetCode: paymentAsset.assetCode,
       assetIssuer: paymentAsset.assetIssuer,
-      minimumAmountDisplay: String(payment.amount_atomic),
+      exactAmountDisplay: String(payment.amount_atomic),
     };
     if (walletAddress) {
       verificationInput.expectedFrom = walletAddress;
@@ -217,7 +216,7 @@ export async function verifyStellarPaymentIntent(input: {
     expectedMemo: stellarMemo(payment),
     assetCode: paymentAsset.assetCode,
     assetIssuer: paymentAsset.assetIssuer,
-    minimumAmountDisplay: String(payment.amount_atomic),
+    exactAmountDisplay: String(payment.amount_atomic),
   };
   if (walletAddress) {
     verificationInput.expectedFrom = walletAddress;
@@ -317,7 +316,7 @@ export async function verifyStellarPayoutTransfer(input: {
     expectedTo: normalizeStellarAddress(input.creatorWalletAddress, "creatorWalletAddress"),
     assetCode: input.config.STELLAR_PAYMENT_ASSET_CODE,
     assetIssuer: input.config.STELLAR_PAYMENT_ASSET_ISSUER ?? null,
-    minimumAmountDisplay: amountDisplay,
+    exactAmountDisplay: amountDisplay,
   });
 
   const metadata = {
@@ -355,7 +354,7 @@ export function toStellarPaymentIntent(
   },
   config: AppConfig,
 ): StellarPaymentIntent {
-  const memo = String(payment.provider_reference).slice(0, 28);
+  const memo = stellarMemo(payment);
   const paymentAsset = resolveStellarPaymentAsset(payment, config);
 
   return buildStellarPaymentIntent({
@@ -478,7 +477,7 @@ function optionalString(value: unknown): string | undefined {
 }
 
 function stellarMemo(payment: {
-  metadata_json: unknown;
+  metadata_json?: unknown;
   provider_reference: string | null;
 }): string {
   const metadata = asRecord(payment.metadata_json);
@@ -489,4 +488,8 @@ function stellarMemo(payment: {
   }
 
   return String(payment.provider_reference ?? "").slice(0, 28);
+}
+
+function randomPaymentMemo(): string {
+  return randomUUID().replace(/-/g, "").slice(0, 28);
 }

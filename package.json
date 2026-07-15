@@ -32,11 +32,6 @@
     "web:smoke": "node scripts/web-smoke.mjs",
     "clean": "turbo clean && rimraf node_modules"
   },
-  "pnpm": {
-    "overrides": {
-      "postcss": "8.5.15"
-    }
-  },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
     "@types/node": "^20.19.25",

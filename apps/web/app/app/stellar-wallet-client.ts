@@ -1,6 +1,12 @@
 "use client";
 
-import { getNetwork, isConnected, requestAccess, signTransaction } from "@stellar/freighter-api";
+import {
+  getNetwork,
+  isConnected,
+  requestAccess,
+  signMessage,
+  signTransaction,
+} from "@stellar/freighter-api";
 import {
   Asset,
   Horizon,
@@ -37,6 +43,12 @@ export interface StellarWalletSnapshot {
 export interface SubmittedStellarPayment {
   txHash: string;
   walletAddress: string;
+}
+
+export interface StellarWalletProof {
+  walletAddress: string;
+  message: string;
+  signature: string;
 }
 
 let freighterConnectionCount = 0;
@@ -96,6 +108,46 @@ export async function loadStellarWallet(address: string): Promise<StellarWalletS
   return apiJson<StellarWalletSnapshot>(
     `/api/v1/billing/stellar/wallet/${encodeURIComponent(address)}`,
   );
+}
+
+export async function signHanaWalletProof(input: {
+  walletAddress: string;
+  network: "mainnet" | "testnet";
+  purpose: "creator_payout";
+}): Promise<StellarWalletProof> {
+  const signerAddress = await connectFreighterWallet(input.network);
+  const expectedAddress = input.walletAddress.trim();
+
+  if (signerAddress !== expectedAddress) {
+    throw new Error("Freighter is connected to a different wallet than the payout address.");
+  }
+
+  const message = [
+    "Hana Chat payout wallet verification",
+    `Purpose: ${input.purpose}`,
+    `Network: ${input.network}`,
+    `Wallet: ${signerAddress}`,
+  ].join("\n");
+  const signed = await signMessage(message, {
+    networkPassphrase: stellarNetworkPassphrase(input.network),
+    address: signerAddress,
+  });
+
+  if (signed.error) {
+    throw new Error(freighterErrorMessage(signed.error));
+  }
+
+  if (signed.signerAddress !== signerAddress) {
+    throw new Error("Freighter signed with a different wallet than the payout address.");
+  }
+
+  const signature = normalizeFreighterSignature(signed.signedMessage);
+
+  if (!signature) {
+    throw new Error("Freighter did not return a wallet signature.");
+  }
+
+  return { walletAddress: signerAddress, message, signature };
 }
 
 export async function submitStellarPaymentWithFreighter(input: {
@@ -180,6 +232,26 @@ function stellarAsset(payment: Pick<StellarPaymentIntent, "assetCode" | "assetIs
 
 function stellarNetworkPassphrase(network: "mainnet" | "testnet"): string {
   return network === "mainnet" ? Networks.PUBLIC : Networks.TESTNET;
+}
+
+function normalizeFreighterSignature(signature: unknown): string | null {
+  if (!signature) {
+    return null;
+  }
+
+  if (typeof signature === "string") {
+    return signature;
+  }
+
+  if (
+    typeof signature === "object" &&
+    "toString" in signature &&
+    typeof signature.toString === "function"
+  ) {
+    return (signature as { toString(encoding: "base64"): string }).toString("base64");
+  }
+
+  return null;
 }
 
 function freighterErrorMessage(error: unknown): string {

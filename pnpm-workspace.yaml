@@ -2,3 +2,11 @@ packages:
   - "apps/*"
   - "services/*"
   - "packages/*"
+
+allowBuilds:
+  '@nestjs/core': true
+  esbuild: true
+  sharp: true
+
+overrides:
+  postcss: 8.5.15

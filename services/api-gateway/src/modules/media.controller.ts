@@ -105,6 +105,18 @@ export class MediaController {
   public async generate(@Body() body: unknown, @Headers("authorization") authorization?: string) {
     const session = await requireSession(this.db, this.config, authorization);
     const input = GenerateMediaAssetRequestSchema.parse(body);
+    const character =
+      input.purpose === "nft_art"
+        ? await this.db
+            .selectFrom("creator.characters")
+            .select(["id", "creator_user_id"])
+            .where("id", "=", input.characterId ?? "")
+            .executeTakeFirst()
+        : null;
+
+    if (input.purpose === "nft_art" && (!character || character.creator_user_id !== session.userId)) {
+      throw new DomainError("RESOURCE_NOT_FOUND", "Creator character not found");
+    }
 
     const useXai = Boolean(this.config.XAI_API_KEY);
 
@@ -222,6 +234,8 @@ export class MediaController {
           mood: input.mood,
           backdrop: input.backdrop,
           detailLevel: input.detailLevel,
+          characterId: character?.id ?? input.characterId ?? null,
+          lockedChatImage: false,
         },
       })
       .execute();
@@ -254,15 +268,23 @@ export class MediaController {
   }
 
   @Get("/:mediaId/file")
-  public async file(@Param("mediaId") mediaId: string, @Res() reply: BinaryReply): Promise<void> {
+  public async file(
+    @Param("mediaId") mediaId: string,
+    @Headers("authorization") authorization: string | undefined,
+    @Res() reply: BinaryReply,
+  ): Promise<void> {
     const media = await this.db
       .selectFrom("creator.media_assets")
-      .select(["storage_key", "mime_type", "byte_size"])
+      .select(["id", "owner_user_id", "purpose", "storage_key", "mime_type", "byte_size", "metadata_json"])
       .where("id", "=", mediaId)
       .executeTakeFirst();
 
     if (!media) {
       throw new DomainError("RESOURCE_NOT_FOUND", "Media asset not found");
+    }
+
+    if (!(await this.canServeMedia(media, authorization))) {
+      throw new DomainError("AUTH_FORBIDDEN", "Media asset is not available");
     }
 
     const file = await readMediaFile(this.resolveStorageKey(media.storage_key));
@@ -322,6 +344,65 @@ export class MediaController {
       mimeType: media.mime_type,
       byteSize: Number(media.byte_size ?? buffer.byteLength),
     };
+  }
+
+  private async canServeMedia(
+    media: {
+      id: string;
+      owner_user_id: string;
+      purpose: "character_avatar" | "character_cover" | "nft_art" | "user_avatar";
+      metadata_json: unknown;
+    },
+    authorization: string | undefined,
+  ): Promise<boolean> {
+    if (media.purpose !== "nft_art") {
+      return true;
+    }
+
+    if (await this.hasPublicNftAsset(media.id)) {
+      return true;
+    }
+
+    let sessionUserId: string | null = null;
+
+    try {
+      sessionUserId = (await requireSession(this.db, this.config, authorization)).userId;
+    } catch {
+      sessionUserId = null;
+    }
+
+    if (!sessionUserId) {
+      return false;
+    }
+
+    if (!isLockedChatImage(media.metadata_json) && media.owner_user_id === sessionUserId) {
+      return true;
+    }
+
+    return this.hasPaidChatImageUnlock(media.id, sessionUserId);
+  }
+
+  private async hasPublicNftAsset(mediaId: string): Promise<boolean> {
+    const asset = await this.db
+      .selectFrom("web3.nft_assets")
+      .select(["id"])
+      .where("media_asset_id", "=", mediaId)
+      .where("status", "in", ["minted", "listed", "sold", "delisted"])
+      .executeTakeFirst();
+
+    return Boolean(asset);
+  }
+
+  private async hasPaidChatImageUnlock(mediaId: string, userId: string): Promise<boolean> {
+    const unlock = await this.db
+      .selectFrom("chat.image_unlocks")
+      .select(["id"])
+      .where("media_asset_id", "=", mediaId)
+      .where("buyer_user_id", "=", userId)
+      .where("status", "in", ["paid", "minted", "failed"])
+      .executeTakeFirst();
+
+    return Boolean(unlock);
   }
 }
 
@@ -693,6 +774,16 @@ async function fetchWithTimeout(
 
 function sanitizeFileName(fileName: string): string {
   return fileName.replace(/[^a-zA-Z0-9._-]+/g, "-").slice(0, 180) || "upload";
+}
+
+function isLockedChatImage(metadata: unknown): boolean {
+  return asRecord(metadata)["lockedChatImage"] === true;
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
 }
 
 function isMissingFileError(error: unknown): boolean {

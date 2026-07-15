@@ -87,7 +87,6 @@ export function UnlockChatImageModal({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           mediaAssetId: mediaId,
-          characterId,
           ownerWalletAddress: walletAddress.trim(),
         }),
       });
@@ -102,7 +101,7 @@ export function UnlockChatImageModal({
       if (response.provider === "stellar" && response.payment) {
         setActivePayment(response.payment);
         setIsCheckoutOpen(true);
-        setStatus("Complete your 5 XLM payment to unlock this image.");
+        setStatus("Complete checkout to unlock this scene.");
         return;
       }
 
@@ -127,7 +126,7 @@ export function UnlockChatImageModal({
         <div className="unlock-modal-header">
           <div className="unlock-modal-title">
             <Lock size={17} />
-            <h2>Unlock this Scene</h2>
+            <h2>Unlock scene</h2>
           </div>
           <button onClick={onClose} className="close-button" type="button" aria-label="Close">
             <X size={20} />
@@ -135,17 +134,13 @@ export function UnlockChatImageModal({
         </div>
 
         <div className="unlock-modal-body">
-          {/* Blurred preview */}
           <div className="unlock-preview-wrap">
-            <img
-              src={`/api/v1/media/${mediaId}/file`}
-              alt="Locked image preview"
-              className="unlock-preview-img blurred"
-              aria-hidden="true"
-            />
+            <div className="unlock-preview-placeholder" aria-hidden="true">
+              <Sparkles size={34} />
+            </div>
             <div className="unlock-preview-lock">
               <Lock size={32} />
-              <span>Pay to Reveal</span>
+              <span>Locked scene</span>
             </div>
           </div>
 
@@ -153,19 +148,19 @@ export function UnlockChatImageModal({
             <div className="unlock-price-card">
               <Sparkles size={18} />
               <div>
-                <strong>5 XLM</strong>
-                <p>Unlock + own this AI artwork as an NFT</p>
+                <strong>Secure checkout</strong>
+                <p>Reveal this scene and add it to your collection.</p>
               </div>
             </div>
 
             <div className="unlock-split-row">
               <span>
                 <Image size={13} />
-                {characterName}'s creator receives <strong>3.5 XLM</strong>
+                {characterName}'s creator earns from the unlock.
               </span>
               <span>
                 <Sparkles size={13} />
-                Platform fee <strong>1.5 XLM</strong>
+                Ownership proof is created after payment clears.
               </span>
             </div>
 
@@ -180,7 +175,7 @@ export function UnlockChatImageModal({
                   value={walletAddress}
                   onChange={(e) => setWalletAddress(e.target.value)}
                   className="form-input"
-                  placeholder="G... (receives the NFT)"
+                  placeholder="G... (collection wallet)"
                 />
                 <button
                   type="button"
@@ -233,7 +228,7 @@ export function UnlockChatImageModal({
               ) : (
                 <>
                   <Lock size={16} />
-                  Unlock for 5 XLM
+                  Unlock scene
                 </>
               )}
             </button>
@@ -253,7 +248,7 @@ export function UnlockChatImageModal({
           verifyBody={verifyBody}
           onSuccess={() => {
             setIsCheckoutOpen(false);
-            setStatus("Unlocked! Image is now yours as an NFT.");
+            setStatus("Unlocked. Scene added to your collection.");
             onUnlocked(mediaId, `/api/v1/media/${mediaId}/file`, "pending");
             setTimeout(onClose, 1800);
           }}

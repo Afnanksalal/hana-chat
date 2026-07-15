@@ -21,6 +21,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import { apiJson, money } from "../api";
 import { StellarWalletModal } from "../components/stellar-wallet-modal";
+import { signHanaWalletProof } from "../stellar-wallet-client";
 
 interface WalletResponse {
   monetizationEnabled: boolean;
@@ -146,16 +147,24 @@ export default function CreatorWalletPage() {
       return;
     }
 
-    setStatus("Saving payout profile...");
+    setStatus("Confirm the payout wallet in Freighter...");
 
     try {
+      const proof = await signHanaWalletProof({
+        walletAddress: walletAddress.trim(),
+        network: wallet.network,
+        purpose: "creator_payout",
+      });
+      setStatus("Saving payout profile...");
       await apiJson("/api/v1/monetization/payout-profile", {
         method: "PATCH",
         body: JSON.stringify({
           displayName: displayName.trim(),
           legalName: legalName.trim(),
           payoutMode: "stellar",
-          walletAddress: walletAddress.trim(),
+          walletAddress: proof.walletAddress,
+          walletProofMessage: proof.message,
+          walletProofSignature: proof.signature,
         }),
       });
       await loadWallet();

@@ -1,6 +1,6 @@
 -- Migration 025: Chat image unlock tracking
--- Tracks which users have paid to unlock (and auto-mint) AI-generated chat images.
--- Payment = 5 XLM, split between platform and character creator.
+-- Tracks which users have paid to unlock and collect AI-generated chat images.
+-- Runtime pricing and creator/platform split are written by the API.
 
 CREATE TABLE IF NOT EXISTS chat.image_unlocks (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
