@@ -66,10 +66,22 @@ import { searchMemoryVectors } from "./vector-memory";
 import { estimateTextModelCostUsd, usdToDatabaseDecimal } from "./xai-pricing";
 import { generateAndSaveImage } from "./media-generation";
 
-function imageGenerationEligible(content: string): boolean {
-  const pattern =
-    /\b(draw|paint|generate|show|send|create|make|render|picture|image|photo|art|illustrat)\b.*\b(image|picture|art|illustration|portrait|scene|photo|drawing|painting|render)\b/i;
-  return pattern.test(content);
+/**
+ * Detects whether the AI character's response describes a visual scene,
+ * appearance, action, or setting that warrants an image being generated.
+ * This fires on the MODEL OUTPUT — the character decides to paint, not the user.
+ */
+function aiOutputHasVisualScene(content: string): boolean {
+  // Must have clear scene/visual language in the model reply
+  const scenePatterns = [
+    /\b(picture|painting|portrait|illustration|artwork|image|drawing|sketch|render|scene|landscape|closeup|close-up)\b/i,
+    /\*[^*]+\*(\s+|$)/,  // *action* emote — roleplay visual action
+    /\b(here is|here's|behold|presenting|feast your eyes|take a look)\b/i,
+    /\b(she looks|he looks|i look|my appearance|you see|before you|in front of you)\b/i,
+    /\b(painted|drawn|illustrated|rendered|depicted|captured)\b/i,
+    /\b(canvas|easel|brush strokes|composition|palette)\b/i,
+  ];
+  return scenePatterns.some((p) => p.test(content));
 }
 
 interface SseReply {
@@ -1351,8 +1363,9 @@ export class ChatController {
 
       let assistantContent = modelResult.content;
 
-      // Generate image if user message contains image request pattern
-      if (imageGenerationEligible(input.content)) {
+      // Generate image if the AI character's response contains visual scene language.
+      // The image is embedded as a LOCKED marker — the user must pay 5 XLM to unlock it.
+      if (aiOutputHasVisualScene(modelResult.content)) {
         try {
           const imageResult = await generateAndSaveImage({
             db: this.db,
@@ -1363,9 +1376,10 @@ export class ChatController {
             purpose: "nft_art",
             aspectRatio: "1:1",
           });
-          assistantContent = `${modelResult.content}\n\n![hana-img](mediaId:${imageResult.mediaId})`;
+          // Locked marker: frontend renders blurred preview + Unlock for 5 XLM button
+          assistantContent = `${modelResult.content}\n\n![hana-img-locked](mediaId:${imageResult.mediaId})`;
         } catch (error) {
-          // Log error but don't fail the message if image generation fails
+          // Log but don't fail the message if image generation fails
           console.error("Image generation failed in chat:", error);
         }
       }

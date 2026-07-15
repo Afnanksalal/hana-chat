@@ -30,6 +30,7 @@ import type { CSSProperties } from "react";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { HanaLogo } from "../../components/hana-logo";
 import { MintFromChatModal } from "../components/mint-from-chat-modal";
+import { UnlockChatImageModal } from "../components/unlock-chat-image-modal";
 import { apiJson, money } from "../api";
 import { completeStellarPayment, type StellarPaymentIntent } from "../stellar-payments";
 import { renderRoleplayContent, renderRoleplayPreview } from "../roleplay-preview";
@@ -37,6 +38,7 @@ import { renderRoleplayContent, renderRoleplayPreview } from "../roleplay-previe
 interface ChatImagePart {
   type: "image";
   mediaId: string;
+  locked: boolean;
 }
 
 interface ChatTextPart {
@@ -48,7 +50,8 @@ type ChatContentPart = ChatImagePart | ChatTextPart;
 
 function parseChatContent(content: string): ChatContentPart[] {
   const parts: ChatContentPart[] = [];
-  const imageRegex = /!\[hana-img\]\(mediaId:([a-f0-9-]{36})\)/g;
+  // Match both locked and unlocked image markers
+  const imageRegex = /!\[hana-img(-locked)?\]\(mediaId:([a-f0-9-]{36})\)/g;
   let lastIndex = 0;
   let match;
 
@@ -61,9 +64,9 @@ function parseChatContent(content: string): ChatContentPart[] {
       }
     }
 
-    // Add the image
-    if (match[1]) {
-      parts.push({ type: "image", mediaId: match[1] });
+    // Add the image (locked or unlocked)
+    if (match[2]) {
+      parts.push({ type: "image", mediaId: match[2], locked: match[1] === "-locked" });
     }
     lastIndex = imageRegex.lastIndex;
   }
@@ -83,27 +86,62 @@ function renderChatContent(
   parts: ChatContentPart[],
   characterId: string | undefined,
   onMintClick: (mediaId: string) => void,
+  onUnlockClick: (mediaId: string) => void,
+  unlockedImages: Set<string>,
 ) {
   return parts.map((part, index) => {
     if (part.type === "image") {
+      const isUnlocked = !part.locked || unlockedImages.has(part.mediaId);
+
+      if (isUnlocked) {
+        // Unlocked: show full image with Mint as NFT button
+        return (
+          <div key={`img-${index}`} className="chat-image-bubble">
+            <img
+              src={`/api/v1/media/${part.mediaId}/file`}
+              alt="AI generated image"
+              className="chat-image"
+              loading="lazy"
+            />
+            <div className="chat-image-actions">
+              <button
+                className="chat-image-mint-btn"
+                type="button"
+                onClick={() => onMintClick(part.mediaId)}
+                aria-label="Mint this image as an NFT"
+              >
+                <Sparkles size={13} />
+                Mint as NFT
+              </button>
+            </div>
+          </div>
+        );
+      }
+
+      // Locked: blur + unlock button
       return (
-        <div key={`img-${index}`} className="chat-image-bubble">
-          <img
-            src={`/api/v1/media/${part.mediaId}/file`}
-            alt="AI generated image"
-            className="chat-image"
-            loading="lazy"
-          />
-          <div className="chat-image-actions">
-            <button
-              className="chat-image-mint-btn"
-              type="button"
-              onClick={() => onMintClick(part.mediaId)}
-              aria-label="Mint this image as an NFT"
-            >
-              <Sparkles size={13} />
-              Mint as NFT
-            </button>
+        <div key={`img-${index}`} className="chat-image-bubble locked">
+          <div className="chat-image-locked-wrap">
+            <img
+              src={`/api/v1/media/${part.mediaId}/file`}
+              alt="Locked AI image"
+              className="chat-image locked-img"
+              loading="lazy"
+              aria-hidden="true"
+            />
+            <div className="chat-image-lock-overlay">
+              <Lock size={28} />
+              <span>Exclusive scene</span>
+              <button
+                className="chat-image-unlock-btn"
+                type="button"
+                onClick={() => onUnlockClick(part.mediaId)}
+                aria-label="Unlock this image for 5 XLM"
+              >
+                <Sparkles size={13} />
+                Unlock for 5 XLM
+              </button>
+            </div>
           </div>
         </div>
       );
@@ -581,6 +619,12 @@ function ChatExperience() {
     mediaId: string;
     characterId: string;
   } | null>(null);
+  const [unlockModalTarget, setUnlockModalTarget] = useState<{
+    mediaId: string;
+    characterId: string;
+  } | null>(null);
+  const [unlockedImages, setUnlockedImages] = useState<Set<string>>(new Set());
+
   const streamRef = useRef<HTMLDivElement | null>(null);
   const draftInputRef = useRef<HTMLInputElement | null>(null);
   const assistantBufferRef = useRef("");
@@ -1985,7 +2029,14 @@ function ChatExperience() {
                             mediaId,
                             characterId: message.speaker?.characterId ?? selectedCharacter.id,
                           }),
+                        (mediaId) =>
+                          setUnlockModalTarget({
+                            mediaId,
+                            characterId: message.speaker?.characterId ?? selectedCharacter.id,
+                          }),
+                        unlockedImages,
                       )
+
                     ) : message.id === typingMessageId ? (
                       <span className="typing-indicator" aria-label="Typing">
                         <i />
@@ -2431,7 +2482,22 @@ function ChatExperience() {
           characterName={selectedCharacter.name}
         />
       )}
+
+      {unlockModalTarget && selectedCharacter && (
+        <UnlockChatImageModal
+          isOpen={Boolean(unlockModalTarget)}
+          onClose={() => setUnlockModalTarget(null)}
+          mediaId={unlockModalTarget.mediaId}
+          characterId={unlockModalTarget.characterId}
+          characterName={selectedCharacter.name}
+          onUnlocked={(mediaId) => {
+            setUnlockedImages((prev) => new Set([...prev, mediaId]));
+            setUnlockModalTarget(null);
+          }}
+        />
+      )}
     </div>
+
   );
 }
 

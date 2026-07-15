@@ -559,12 +559,383 @@ export class NftController {
     }
   }
 
+  /**
+   * POST /v1/nft/chat-image/unlock
+   * Pay 5 XLM to unlock a locked chat image and auto-mint it as an NFT.
+   * Split: 70% (3.5 XLM) to the character creator, 30% (1.5 XLM) to platform.
+   *
+   * First call (no paymentId/txHash) → creates a Stellar payment intent and returns it.
+   * Second call (with paymentId + txHash) → verifies payment, records unlock, mints NFT.
+   */
+  @Post("/chat-image/unlock")
+  public async unlockChatImage(
+    @Body() body: unknown,
+    @Headers("authorization") authorization?: string,
+  ) {
+    const session = await requireSession(this.db, this.config, authorization);
+    assertNftReady(this.config);
+
+    // Validate body shape manually (no shared schema needed for this endpoint)
+    const input = (() => {
+      const b = body as Record<string, unknown>;
+      if (!b || typeof b["mediaAssetId"] !== "string" || typeof b["ownerWalletAddress"] !== "string") {
+        throw new DomainError("VALIDATION_FAILED", "mediaAssetId and ownerWalletAddress are required");
+      }
+      return {
+        mediaAssetId: b["mediaAssetId"] as string,
+        ownerWalletAddress: b["ownerWalletAddress"] as string,
+        characterId: typeof b["characterId"] === "string" ? (b["characterId"] as string) : undefined,
+        paymentId: typeof b["paymentId"] === "string" ? (b["paymentId"] as string) : undefined,
+        txHash: typeof b["txHash"] === "string" ? (b["txHash"] as string) : undefined,
+        title: typeof b["title"] === "string" ? (b["title"] as string) : undefined,
+        description: typeof b["description"] === "string" ? (b["description"] as string) : undefined,
+        royaltyBps: typeof b["royaltyBps"] === "number" ? (b["royaltyBps"] as number) : 500,
+      };
+    })();
+
+    const ownerAddress = normalizeStellarAddress(input.ownerWalletAddress, "ownerWalletAddress");
+
+    // Look up the media asset (must be nft_art owned by any user — it's a chat image)
+    const media = await this.db
+      .selectFrom("creator.media_assets")
+      .select(["id", "owner_user_id", "purpose", "public_url", "sha256_hex"])
+      .where("id", "=", input.mediaAssetId)
+      .executeTakeFirst();
+
+    if (!media || media.purpose !== "nft_art") {
+      throw new DomainError("RESOURCE_NOT_FOUND", "Chat image not found");
+    }
+
+    // Resolve which character this image belongs to (from characterId or existing unlock)
+    const characterId = input.characterId ?? media.owner_user_id;
+    const character = await this.db
+      .selectFrom("creator.characters")
+      .select(["id", "creator_user_id", "name", "visibility"])
+      .where("id", "=", characterId)
+      .executeTakeFirst();
+
+    if (!character) {
+      throw new DomainError("RESOURCE_NOT_FOUND", "Character not found");
+    }
+
+    // Check if already unlocked by this user
+    const existingUnlock = await this.db
+      .selectFrom("chat.image_unlocks")
+      .selectAll()
+      .where("media_asset_id", "=", media.id)
+      .where("buyer_user_id", "=", session.userId)
+      .executeTakeFirst();
+
+    if (existingUnlock?.status === "minted" && existingUnlock.nft_asset_id) {
+      return {
+        ok: true,
+        alreadyUnlocked: true,
+        nftAssetId: existingUnlock.nft_asset_id,
+        imageUrl: media.public_url,
+      };
+    }
+
+    // 5 XLM in terms of tokenUsdCents for createStellarPaymentIntent
+    // amountCents = 5 * tokenUsdCents means "5 tokens" at rate 1:1
+    const xlmAmount = 5;
+    const amountCents = xlmAmount * this.config.STELLAR_PAYMENT_TOKEN_USD_CENTS;
+    const purpose = `chat_image_unlock:${media.id}`;
+
+    // ── Phase 1: No payment yet → create payment intent ──────────────────────
+    if (!input.paymentId || !input.txHash) {
+      // Reuse existing pending/created payment if available
+      const existingPayment = await this.db
+        .selectFrom("billing.crypto_payments")
+        .selectAll()
+        .where("purpose", "=", purpose)
+        .where("buyer_user_id", "=", session.userId)
+        .where("status", "in", ["created", "pending", "finalizing"])
+        .orderBy("created_at", "desc")
+        .executeTakeFirst();
+
+      if (existingPayment) {
+        const memo = existingPayment.provider_reference.slice(0, 28);
+        const paymentIntent = buildStellarPaymentIntent({
+          id: existingPayment.id,
+          network: this.config.STELLAR_NETWORK,
+          horizonUrl: this.config.STELLAR_HORIZON_URL,
+          treasuryAddress: this.config.STELLAR_TREASURY_ADDRESS!,
+          assetCode: this.config.STELLAR_PAYMENT_ASSET_CODE,
+          assetIssuer: this.config.STELLAR_PAYMENT_ASSET_ISSUER ?? null,
+          amountCents: existingPayment.amount_cents,
+          tokenUsdCents: this.config.STELLAR_PAYMENT_TOKEN_USD_CENTS,
+          currency: existingPayment.currency,
+          expiresAt: existingPayment.expires_at,
+          providerReference: String(existingPayment.provider_reference),
+          memo,
+          requiredConfirmations: this.config.STELLAR_REQUIRED_CONFIRMATIONS,
+        });
+        return { provider: "stellar", payment: paymentIntent };
+      }
+
+      const payment = await createStellarPaymentIntent({
+        db: this.db,
+        config: this.config,
+        buyerUserId: session.userId,
+        purpose,
+        amountCents,
+        currency: "USD",
+        metadata: {
+          type: "chat_image_unlock",
+          mediaAssetId: media.id,
+          characterId: character.id,
+          xlmAmount,
+        },
+      });
+
+      return { provider: "stellar", payment };
+    }
+
+    // ── Phase 2: Verify payment ───────────────────────────────────────────────
+    const verification = await verifyStellarPaymentIntent({
+      db: this.db,
+      config: this.config,
+      buyerUserId: session.userId,
+      paymentId: input.paymentId,
+      txHash: input.txHash,
+      walletAddress: input.ownerWalletAddress,
+      expectedPurposePrefix: "chat_image_unlock:",
+    });
+
+    if (verification.status === "pending") {
+      return { ok: false, status: "pending" };
+    }
+
+    // ── Phase 3: Record unlock and mint NFT ───────────────────────────────────
+    const contractId = this.config.STELLAR_NFT_CONTRACT_ID!;
+    const nftAssetId = randomUUID();
+    const tokenId = deriveCreatorArtNftTokenId({
+      mediaSha256Hex: media.sha256_hex,
+      characterId: character.id,
+      creatorUserId: session.userId,
+    });
+    const imageUrl = absoluteProductUrl(this.config, media.public_url);
+    const metadataUri = absoluteProductUrl(this.config, `/api/v1/nft/assets/${nftAssetId}/metadata`);
+    const title = input.title?.trim() || `${character.name} Vision`;
+    const description = input.description?.trim() || `Unlocked AI artwork from chat with ${character.name}`;
+    const { metadata, metadataHash } = buildHanaNftMetadata({
+      id: nftAssetId,
+      title,
+      description,
+      imageUrl,
+      mediaSha256Hex: media.sha256_hex,
+      creatorUserId: media.owner_user_id,
+      characterId: character.id,
+      characterName: character.name,
+      network: this.config.STELLAR_NETWORK,
+      contractId,
+      tokenId,
+      royaltyBps: input.royaltyBps,
+    });
+
+    // Creator revenue split: 70% creator (3.5 XLM), 30% platform (1.5 XLM)
+    const creatorShareXlm = 3.5;
+    const platformShareXlm = 1.5;
+    // Convert back to cents for ledger accounting
+    const creatorShareCents = Math.round(creatorShareXlm * this.config.STELLAR_PAYMENT_TOKEN_USD_CENTS);
+    const platformShareCents = Math.round(platformShareXlm * this.config.STELLAR_PAYMENT_TOKEN_USD_CENTS);
+
+    const now = new Date();
+
+    // Insert NFT asset and unlock record in a transaction
+    await this.db.transaction().execute(async (tx) => {
+      // Upsert creator wallet for the character creator
+      await tx
+        .insertInto("billing.creator_wallets")
+        .values({
+          creator_user_id: character.creator_user_id,
+          currency: "USD",
+          pending_cents: 0,
+          available_cents: 0,
+          lifetime_earned_cents: 0,
+          lifetime_fee_cents: 0,
+          updated_at: now,
+        })
+        .onConflict((oc) => oc.column("creator_user_id").doNothing())
+        .execute();
+
+      // Record creator's ledger entry
+      await tx
+        .insertInto("billing.creator_ledger_entries")
+        .values({
+          creator_user_id: character.creator_user_id,
+          character_id: character.id,
+          source_user_id: session.userId,
+          entry_type: "sale_gross",
+          amount_cents: creatorShareCents,
+          currency: "USD",
+          status: "pending",
+          available_at: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1_000), // 7-day hold
+          reference_type: "chat.image_unlock",
+          reference_id: media.id,
+          idempotency_key: `chat-img-unlock:${input.paymentId}:creator`,
+          metadata_json: {
+            type: "chat_image_unlock",
+            mediaAssetId: media.id,
+            xlmShare: creatorShareXlm,
+          },
+        })
+        .onConflict((oc) => oc.column("idempotency_key").doNothing())
+        .execute();
+
+      // Update creator wallet pending balance
+      await tx
+        .updateTable("billing.creator_wallets")
+        .set((eb) => ({
+          pending_cents: eb("pending_cents", "+", creatorShareCents),
+          lifetime_earned_cents: eb("lifetime_earned_cents", "+", creatorShareCents),
+          lifetime_fee_cents: eb("lifetime_fee_cents", "+", platformShareCents),
+          updated_at: now,
+        }))
+        .where("creator_user_id", "=", character.creator_user_id)
+        .execute();
+
+      // Insert NFT asset
+      await tx
+        .insertInto("web3.nft_assets")
+        .values({
+          id: nftAssetId,
+          creator_user_id: media.owner_user_id,
+          owner_user_id: session.userId,
+          character_id: character.id,
+          media_asset_id: media.id,
+          contract_id: contractId,
+          token_id: tokenId,
+          network: this.config.STELLAR_NETWORK,
+          title,
+          description,
+          image_url: imageUrl,
+          metadata_uri: metadataUri,
+          metadata_hash: metadataHash,
+          royalty_bps: input.royaltyBps,
+          creator_address: ownerAddress,
+          owner_address: ownerAddress,
+          mint_tx_hash: null,
+          status: "minting",
+          moderation_status: "approved",
+          failure_reason: null,
+          metadata_json: metadata,
+          updated_at: now,
+        })
+        .execute();
+
+      // Record unlock
+      await tx
+        .insertInto("chat.image_unlocks")
+        .values({
+          media_asset_id: media.id,
+          buyer_user_id: session.userId,
+          character_id: character.id,
+          payment_id: input.paymentId!, // guaranteed non-null in Phase 3
+          nft_asset_id: nftAssetId,
+          status: "paid",
+          amount_xlm: String(xlmAmount.toFixed(7)),
+          creator_share_xlm: String(creatorShareXlm.toFixed(7)),
+          platform_share_xlm: String(platformShareXlm.toFixed(7)),
+          updated_at: now,
+        })
+        .onConflict((oc) =>
+          oc.columns(["buyer_user_id", "media_asset_id"]).doUpdateSet({
+            status: "paid",
+            nft_asset_id: nftAssetId,
+            payment_id: input.paymentId!, // guaranteed non-null in Phase 3
+            updated_at: now,
+          }),
+        )
+        .execute();
+    });
+
+    // Mint NFT on Stellar (outside transaction — may fail, will be retried)
+    try {
+      const mint = await mintHanaNft({
+        rpcUrl: this.config.STELLAR_RPC_URL,
+        network: this.config.STELLAR_NETWORK,
+        contractId,
+        serverSecret: resolveServerSecret(this.config),
+        ownerAddress,
+        creatorAddress: ownerAddress,
+        tokenId,
+        metadataUri,
+        royaltyBps: input.royaltyBps,
+      });
+
+      await this.db.transaction().execute(async (tx) => {
+        await tx
+          .updateTable("web3.nft_assets")
+          .set({ status: "minted", mint_tx_hash: mint.txHash, minted_at: new Date(), updated_at: new Date() })
+          .where("id", "=", nftAssetId)
+          .execute();
+        await tx
+          .insertInto("web3.nft_ownership_events")
+          .values({
+            nft_asset_id: nftAssetId,
+            from_user_id: null,
+            to_user_id: session.userId,
+            from_address: null,
+            to_address: ownerAddress,
+            tx_hash: mint.txHash,
+            event_type: "mint",
+            metadata_json: { tokenId, source: "chat_image_unlock" },
+          })
+          .execute();
+        await tx
+          .updateTable("chat.image_unlocks")
+          .set({ status: "minted", updated_at: new Date() })
+          .where("media_asset_id", "=", media.id)
+          .where("buyer_user_id", "=", session.userId)
+          .execute();
+      });
+
+      await auditEvent(this.db, {
+        actorUserId: session.userId,
+        action: "nft.chat_image.unlocked",
+        resourceType: "web3.nft_asset",
+        resourceId: nftAssetId,
+        metadata: { tokenId, txHash: mint.txHash, mediaAssetId: media.id },
+      });
+
+      return {
+        ok: true,
+        nftAssetId,
+        tokenId,
+        txHash: mint.txHash,
+        imageUrl: media.public_url,
+      };
+    } catch (error) {
+      await this.db
+        .updateTable("web3.nft_assets")
+        .set({ status: "failed", failure_reason: error instanceof Error ? error.message : "Mint failed", updated_at: new Date() })
+        .where("id", "=", nftAssetId)
+        .execute();
+      await this.db
+        .updateTable("chat.image_unlocks")
+        .set({ status: "failed", updated_at: new Date() })
+        .where("media_asset_id", "=", media.id)
+        .where("buyer_user_id", "=", session.userId)
+        .execute();
+      // Payment was finalized — return partial success so frontend can show the image
+      return {
+        ok: true,
+        nftAssetId,
+        imageUrl: media.public_url,
+        mintPending: true,
+      };
+    }
+  }
+
+
   @Post("/assets/:assetId/listings")
   public async createListing(
     @Param("assetId") assetId: string,
     @Body() body: unknown,
     @Headers("authorization") authorization?: string,
   ) {
+
     const session = await requireSession(this.db, this.config, authorization);
     const input = CreateNftListingRequestSchema.parse(body);
     assertNftReady(this.config);

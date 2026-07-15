@@ -702,6 +702,21 @@ export interface PlatformOutboxEventsTable {
   locked_by: string | null;
 }
 
+export interface ChatImageUnlocksTable {
+  id: Generated<string>;
+  media_asset_id: string;
+  buyer_user_id: string;
+  character_id: string;
+  payment_id: string;
+  nft_asset_id: string | null;
+  status: DefaultColumn<"pending" | "paid" | "minted" | "failed">;
+  amount_xlm: DefaultColumn<string>;
+  creator_share_xlm: DefaultColumn<string>;
+  platform_share_xlm: DefaultColumn<string>;
+  created_at: TimestampColumn;
+  updated_at: TimestampColumn;
+}
+
 export interface HanaDatabase {
   "identity.users": IdentityUsersTable;
   "identity.phone_credentials": IdentityPhoneCredentialsTable;
@@ -749,6 +764,7 @@ export interface HanaDatabase {
   "web3.nft_ownership_events": Web3NftOwnershipEventsTable;
   "platform.audit_events": PlatformAuditEventsTable;
   "platform.outbox_events": PlatformOutboxEventsTable;
+  "chat.image_unlocks": ChatImageUnlocksTable;
 }
 
 export function createDatabase(config: AppConfig): Kysely<HanaDatabase> {
