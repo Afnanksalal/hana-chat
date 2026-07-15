@@ -252,7 +252,6 @@ export function UnlockChatImageModal({
             onUnlocked(mediaId, `/api/v1/media/${mediaId}/file`, "pending");
             setTimeout(onClose, 1800);
           }}
-
         />
       )}
     </div>

@@ -184,7 +184,11 @@ export function MintFromChatModal({
                   title="Connect Freighter wallet"
                   aria-label="Connect Freighter wallet"
                 >
-                  {isConnectingWallet ? <Loader2 size={15} className="spinner" /> : <Wallet size={15} />}
+                  {isConnectingWallet ? (
+                    <Loader2 size={15} className="spinner" />
+                  ) : (
+                    <Wallet size={15} />
+                  )}
                 </button>
               </div>
               {walletAddress && (
@@ -219,7 +223,11 @@ export function MintFromChatModal({
             {status && (
               <div
                 className={`status-message ${
-                  status.includes("success") ? "success" : status.includes("Payment") ? "info" : "error"
+                  status.includes("success")
+                    ? "success"
+                    : status.includes("Payment")
+                      ? "info"
+                      : "error"
                 }`}
               >
                 {status}

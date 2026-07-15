@@ -165,7 +165,6 @@ function renderChatContent(
   });
 }
 
-
 type MemoryKind = "preference" | "boundary" | "relationship" | "canon" | "event" | "style";
 
 interface CharacterSummary {
@@ -2065,7 +2064,6 @@ function ChatExperience() {
                           }),
                         unlockedImages,
                       )
-
                     ) : message.id === typingMessageId ? (
                       <span className="typing-indicator" aria-label="Typing">
                         <i />
@@ -2526,7 +2524,6 @@ function ChatExperience() {
         />
       )}
     </div>
-
   );
 }
 

@@ -114,7 +114,10 @@ export class MediaController {
             .executeTakeFirst()
         : null;
 
-    if (input.purpose === "nft_art" && (!character || character.creator_user_id !== session.userId)) {
+    if (
+      input.purpose === "nft_art" &&
+      (!character || character.creator_user_id !== session.userId)
+    ) {
       throw new DomainError("RESOURCE_NOT_FOUND", "Creator character not found");
     }
 
@@ -275,7 +278,15 @@ export class MediaController {
   ): Promise<void> {
     const media = await this.db
       .selectFrom("creator.media_assets")
-      .select(["id", "owner_user_id", "purpose", "storage_key", "mime_type", "byte_size", "metadata_json"])
+      .select([
+        "id",
+        "owner_user_id",
+        "purpose",
+        "storage_key",
+        "mime_type",
+        "byte_size",
+        "metadata_json",
+      ])
       .where("id", "=", mediaId)
       .executeTakeFirst();
 

@@ -75,7 +75,7 @@ function aiOutputHasVisualScene(content: string): boolean {
   // Must have clear scene/visual language in the model reply
   const scenePatterns = [
     /\b(picture|painting|portrait|illustration|artwork|image|drawing|sketch|render|scene|landscape|closeup|close-up)\b/i,
-    /\*[^*]+\*(\s+|$)/,  // *action* emote — roleplay visual action
+    /\*[^*]+\*(\s+|$)/, // *action* emote — roleplay visual action
     /\b(here is|here's|behold|presenting|feast your eyes|take a look)\b/i,
     /\b(she looks|he looks|i look|my appearance|you see|before you|in front of you)\b/i,
     /\b(painted|drawn|illustrated|rendered|depicted|captured)\b/i,

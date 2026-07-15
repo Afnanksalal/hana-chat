@@ -609,11 +609,7 @@ export class NftController {
       .where("buyer_user_id", "=", session.userId)
       .executeTakeFirst();
 
-    if (
-      existingUnlock &&
-      existingUnlock.status === "minted" &&
-      existingUnlock.nft_asset_id
-    ) {
+    if (existingUnlock && existingUnlock.status === "minted" && existingUnlock.nft_asset_id) {
       return {
         ok: true,
         alreadyUnlocked: true,
@@ -723,11 +719,7 @@ export class NftController {
       .where("media_asset_id", "=", media.id)
       .executeTakeFirst();
 
-    if (
-      paidUnlockForRetry &&
-      existingAsset?.status === "minted" &&
-      existingAsset.mint_tx_hash
-    ) {
+    if (paidUnlockForRetry && existingAsset?.status === "minted" && existingAsset.mint_tx_hash) {
       await this.db
         .updateTable("chat.image_unlocks")
         .set({ status: "minted", updated_at: new Date() })
@@ -756,9 +748,13 @@ export class NftController {
       creatorUserId: character.creator_user_id,
     });
     const imageUrl = absoluteProductUrl(this.config, media.public_url);
-    const metadataUri = absoluteProductUrl(this.config, `/api/v1/nft/assets/${nftAssetId}/metadata`);
+    const metadataUri = absoluteProductUrl(
+      this.config,
+      `/api/v1/nft/assets/${nftAssetId}/metadata`,
+    );
     const title = input.title?.trim() || `${character.name} Vision`;
-    const description = input.description?.trim() || `Unlocked AI artwork from chat with ${character.name}`;
+    const description =
+      input.description?.trim() || `Unlocked AI artwork from chat with ${character.name}`;
     const { metadata, metadataHash } = buildHanaNftMetadata({
       id: nftAssetId,
       title,
@@ -937,7 +933,12 @@ export class NftController {
       await this.db.transaction().execute(async (tx) => {
         await tx
           .updateTable("web3.nft_assets")
-          .set({ status: "minted", mint_tx_hash: mint.txHash, minted_at: new Date(), updated_at: new Date() })
+          .set({
+            status: "minted",
+            mint_tx_hash: mint.txHash,
+            minted_at: new Date(),
+            updated_at: new Date(),
+          })
           .where("id", "=", nftAssetId)
           .execute();
         await tx
@@ -979,7 +980,11 @@ export class NftController {
     } catch (error) {
       await this.db
         .updateTable("web3.nft_assets")
-        .set({ status: "failed", failure_reason: error instanceof Error ? error.message : "Mint failed", updated_at: new Date() })
+        .set({
+          status: "failed",
+          failure_reason: error instanceof Error ? error.message : "Mint failed",
+          updated_at: new Date(),
+        })
         .where("id", "=", nftAssetId)
         .execute();
       await this.db
@@ -998,14 +1003,12 @@ export class NftController {
     }
   }
 
-
   @Post("/assets/:assetId/listings")
   public async createListing(
     @Param("assetId") assetId: string,
     @Body() body: unknown,
     @Headers("authorization") authorization?: string,
   ) {
-
     const session = await requireSession(this.db, this.config, authorization);
     const input = CreateNftListingRequestSchema.parse(body);
     assertNftReady(this.config);

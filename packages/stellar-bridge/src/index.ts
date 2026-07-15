@@ -471,7 +471,10 @@ export function verifyStellarWalletSignature(input: {
   }
 
   try {
-    return Keypair.fromPublicKey(walletAddress).verify(Buffer.from(input.message, "utf8"), signature);
+    return Keypair.fromPublicKey(walletAddress).verify(
+      Buffer.from(input.message, "utf8"),
+      signature,
+    );
   } catch {
     return false;
   }
