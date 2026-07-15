@@ -155,6 +155,18 @@ sequenceDiagram
 Listings reserve during checkout for the Stellar payment-intent TTL. A sale or offer transfer only
 continues when the submitted transaction hash matches the exact persisted sale or offer payment id.
 
+Chat-generated scene collectibles use the same settlement lane with stricter media entitlement
+rules. When the chat gateway creates visual scene media, it stores the image as `purpose = nft_art`
+with `lockedChatImage`, `characterId`, and `conversationId` metadata, then embeds only a locked media
+marker in the message. The media file endpoint refuses to serve that asset until the requesting user
+owns a paid, minted, or retryable failed unlock row for the exact media id.
+
+Unlock checkout derives the character from server-side media metadata, requires the character
+creator to have a verified Stellar payout wallet, verifies the exact Stellar payment intent, writes
+the configured creator/platform split, and mints ownership with the buyer wallet as owner and the
+creator payout wallet as the royalty creator address. If Soroban minting fails after payment clears,
+the unlock remains viewable and retryable without charging the buyer again.
+
 ## Admin Analytics Flow
 
 ```mermaid

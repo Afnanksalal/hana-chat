@@ -171,11 +171,17 @@ Set and keep secret:
 - `SMTP_RELAY_HOSTNAME`
 - `PAYOUT_ENCRYPTION_KEY_BASE64`
 - `STELLAR_ENABLED`, `STELLAR_PAYMENTS_ENABLED`, `STELLAR_HORIZON_URL`, `STELLAR_RPC_URL`, and `STELLAR_TREASURY_ADDRESS` when `MONETIZATION_ENABLED=true`
+- `STELLAR_NFT_ENABLED`, `STELLAR_NFT_CONTRACT_ID`, `STELLAR_SERVER_KEY_REF`, and
+  `CHAT_IMAGE_UNLOCK_AMOUNT_CENTS` when creator collectibles are enabled
 
 The deployed Playground env supports Groq for text routing with `llama-3.1-8b-instant` as the
 economical default/memory reviewer and `llama-3.3-70b-versatile` for complex turns. xAI remains the
 image-generation provider only until a separate image provider is integrated. Monetization uses
 Stellar payments when the monetization and Stellar payment flags are enabled.
+
+AgentRouter values may remain present for future cutover testing, but production should not use
+`TEXT_MODEL_PROVIDER=agentrouter` until the API route is confirmed from the VPS without a WAF HTML
+challenge. Keep `TEXT_MODEL_FALLBACK_PROVIDER=none` while xAI text credits are unavailable.
 
 `ADMIN_EMAIL` configures the owner/admin bootstrap. The configured owner signs in through the normal
 email OTP workflow and receives the same OTP delivery path as other users.

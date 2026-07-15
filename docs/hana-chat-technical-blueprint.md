@@ -749,11 +749,14 @@ Do not put raw Hermes Agent in the public hot path with broad tools enabled. It 
 
 ### Default Chat Model
 
-- Provider: configured text model provider. Production can use AgentRouter through
-  `TEXT_MODEL_PROVIDER=agentrouter`; xAI remains available for image generation and explicit text
-  fallback.
-- Default AgentRouter model: `deepseek-v3.2`.
-- Complex AgentRouter model: `gpt-5.1`.
+- Provider: configured text model provider. Playground production currently uses Groq through
+  `TEXT_MODEL_PROVIDER=groq` because AgentRouter API probes from the VPS have returned a WAF HTML
+  challenge. Keep xAI scoped to image generation while text credits are unavailable.
+- Default Groq model: `llama-3.1-8b-instant`.
+- Complex Groq model: `llama-3.3-70b-versatile`.
+- Memory-review Groq model: `llama-3.1-8b-instant`.
+- AgentRouter can be restored through `TEXT_MODEL_PROVIDER=agentrouter` only after the VPS API route
+  returns JSON from `https://agentrouter.org/v1/chat/completions`.
 - Reasoning: `none` by default.
 - Use `low` for:
   - story repair,
@@ -766,7 +769,7 @@ Do not put raw Hermes Agent in the public hot path with broad tools enabled. It 
 
 ```ts
 export interface ModelProvider {
-  readonly provider: "xai" | "agentrouter" | "nous" | "openrouter" | "local" | "custom";
+  readonly provider: "xai" | "agentrouter" | "groq" | "nous" | "openrouter" | "local" | "custom";
   complete(input: ModelCompleteInput): Promise<ModelCompleteResult>;
   stream(input: ModelStreamInput): AsyncIterable<ModelStreamEvent>;
   countTokens(input: TokenCountInput): Promise<TokenCountResult>;

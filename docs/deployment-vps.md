@@ -65,9 +65,11 @@ handled by the lightweight `smtp-relay` Postfix container on the private Docker 
 keys under `/opt/hana-chat/shared/opendkim-keys` and do not commit private keys.
 
 AgentRouter's OpenAI-compatible base URL is `https://agentrouter.org/v1`, so chat completions route
-to `https://agentrouter.org/v1/chat/completions`. If VPS probes return `text/html` with an Aliyun WAF
-challenge instead of JSON, keep `TEXT_MODEL_FALLBACK_PROVIDER=xai` enabled and contact AgentRouter for
-backend traffic allowlisting before removing fallback.
+to `https://agentrouter.org/v1/chat/completions` when `TEXT_MODEL_PROVIDER=agentrouter`. Current VPS
+probes have returned `text/html` with an Aliyun WAF challenge instead of JSON, so do not switch
+production back to AgentRouter until the dashboard allowlist/backend route is confirmed from the VPS.
+Do not use xAI text fallback while xAI text credits are unavailable; keep xAI limited to image
+generation in that state.
 
 Generate the DKIM key before first production mail send:
 
@@ -79,7 +81,15 @@ pnpm mail:dkim app.hanachat.site mail /opt/hana-chat/shared/opendkim-keys
 
 ## Start
 
-Preferred deploy from the workstation:
+Preferred production deploy path:
+
+1. Create a feature branch.
+2. Open a pull request to `master`.
+3. Wait for PR CI to pass.
+4. Merge only after checks pass.
+5. Let the `Deploy Playground` GitHub Actions workflow deploy and verify public routes.
+
+Manual deploy from a workstation is a fallback for operators, not the default Codex workflow:
 
 ```powershell
 $env:PLAYGROUND_SSH_TARGET = "ubuntu@18.61.174.6"

@@ -4,7 +4,17 @@ Hana Chat is a production-oriented AI companion platform: Next.js web app, NestJ
 
 The product centers on creator-owned characters, a premium marketplace, passwordless email identity, safety gates, and per-character/per-chat memory. Paid plans and creator monetization are Stellar-native and remain server-gated as "coming soon" until monetization is explicitly enabled with a funded Stellar treasury.
 
-## Quick Start
+## Agent Operating Rule
+
+Codex and other automation agents must not run the Hana Chat app stack, Docker Compose stack, or
+deploy/runtime services locally. Runtime verification, service smoke tests, and deploy checks belong
+in GitHub Actions and the Playground VPS. Local agent work should stay to reading/editing files and
+lightweight git/search commands unless the user explicitly grants a one-off exception.
+
+## Human Local Quick Start
+
+The commands below are for human developers with enough local disk and Docker capacity. They are not
+the default workflow for Codex agents on this workstation.
 
 ```powershell
 pnpm install
@@ -23,7 +33,7 @@ $env:WEB_BASE_URL='http://localhost:3001'; pnpm web:smoke
 
 The API gateway defaults to `http://localhost:4000`.
 
-## Local Test Cast
+## Human Local Test Cast
 
 For manual end-to-end testing with a clean database, bring the stack up, bootstrap infra, then seed
 the admin account and fourteen generated characters:
@@ -40,7 +50,12 @@ per character, and writes per-conversation memories for multi-persona testing.
 
 ## Verification
 
+For production changes, open a branch and PR, let GitHub Actions run the full CI matrix, and merge
+only after the checks pass. Local commands are optional human-developer aids, not the release gate for
+agents.
+
 ```powershell
+pnpm format:check
 pnpm typecheck
 pnpm lint
 pnpm test
@@ -57,6 +72,9 @@ pnpm web:smoke
 - Creator collectibles studio for character art: generate collectible images, create ownership,
   set royalties and offer floors, list assets, fund offers, buy listings, cancel listings, and
   settle transfers through verified payment intents.
+- Chat-generated scene collectibles are locked media until a server-verified unlock exists. The API
+  enforces media entitlements, exact payment verification, creator payout-wallet readiness, and
+  retryable mint state before serving the full image or collection ownership.
 - Chat orchestration through the configured text model provider with private identity, risk, chat-planning, billing, moderation, memory-policy, retrieval, graph, and batch boundaries, strict input/output guardrails, entitlement checks, usage limits, SSE streaming, durable memory injection, and an evolving per-chat relationship profile.
 - Memory scoped by `user_id + character_id + conversation_id`; no global user memories are injected into chat context.
 - Billing plans, Stellar checkout flow, creator wallet ledger, 7-day creator earning hold, Stellar payout profiles, and admin payout operations are preserved behind `MONETIZATION_ENABLED`; current public billing and creator monetization copy shows "coming soon."
@@ -78,6 +96,7 @@ pnpm web:smoke
 - [Identity and Abuse Prevention](docs/hana-chat-identity-and-abuse-prevention.md)
 - [Email Auth and Admin Access](docs/auth-email-setup.md)
 - [Development Guide](docs/development.md)
+- [Documentation Maintenance](docs/documentation-maintenance.md)
 - [VPS Deployment](docs/deployment-vps.md)
 - [Playground VPS Deployment](docs/playground-vps-deployment.md)
 - [VPS Container Map](docs/vps-container-map.md)
@@ -92,4 +111,4 @@ pnpm web:smoke
 
 ## Agent Context
 
-Future coding agents should start with [AGENTS.md](AGENTS.md) and the synced memory folder in [.agents/memory](.agents/memory/README.md).
+Future coding agents should start with [AGENTS.md](AGENTS.md) and the synced Hana memory in [.agents/memory/hana-chat.md](.agents/memory/hana-chat.md).

@@ -8,7 +8,8 @@ This is a production product repository. Keep changes production-oriented, typed
 2. `docs/architecture.md`
 3. `docs/character-marketplace-system.md`
 4. `docs/memory-architecture.md`
-5. `.agents/memory/hana-chat.md`
+5. `docs/documentation-maintenance.md`
+6. `.agents/memory/hana-chat.md`
 
 ## Product Rules
 
@@ -29,24 +30,34 @@ This is a production product repository. Keep changes production-oriented, typed
 
 ## Verification
 
-Run the relevant subset while iterating, then finish with:
+For Codex and other automation agents, do not run the Hana Chat app stack, Docker Compose stack, or
+deploy/runtime services locally. Use GitHub Actions and the Playground VPS for runtime checks,
+deployment verification, service smoke tests, and infrastructure validation unless the user
+explicitly grants a one-off local runtime exception.
+
+When dependency artifacts are already installed and the user allows local non-runtime checks, the
+safe local subset is:
 
 ```powershell
+pnpm format:check
 pnpm typecheck
 pnpm lint
 pnpm test
+```
+
+Runtime smoke and harness checks should run through GitHub Actions or the Playground VPS:
+
+```powershell
 pnpm product:smoke
 pnpm ai:harness
 pnpm web:smoke
+gh pr checks <pr-number>
+gh run watch <deploy-run-id> --exit-status
 ```
 
-If infrastructure changed:
-
-```powershell
-pnpm infra:up
-pnpm infra:bootstrap
-docker compose -f docker-compose.vps.yml config
-```
+Human developers may still use the local workflow in `docs/development.md`, but agent verification
+must prefer PR CI and Playground deployment workflows so local disk usage stays low and the deployed
+stack remains the source of truth.
 
 ## Agent Memory Sync
 

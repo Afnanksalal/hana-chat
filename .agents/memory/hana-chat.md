@@ -1,5 +1,15 @@
 # Hana Chat Agent Memory
 
+- 2026-07-16: Documentation source-of-truth is `README.md`, `docs/architecture.md`,
+  `docs/character-marketplace-system.md`, `docs/memory-architecture.md`,
+  `docs/monetization-payouts.md`, `docs/stellar-memory-and-monetization.md`,
+  `docs/deployment-vps.md`, `docs/playground-vps-deployment.md`, `docs/vps-container-map.md`,
+  `AGENTS.md`, and `docs/documentation-maintenance.md`. Historical audit docs should not override
+  these canonical docs.
+- 2026-07-16: Do not run the Hana Chat app stack or deploy/runtime services locally. Use GitHub
+  Actions and the Playground VPS for runtime checks, deploy verification, and service-level testing;
+  local work should stay limited to reading/editing files unless the user explicitly allows a local
+  command.
 - 2026-07-15: Chat-image collectibles use API-enforced media entitlements. Locked chat media must
   carry `lockedChatImage`, `characterId`, and `conversationId` metadata, direct NFT minting of locked
   media is forbidden, buyers only see files after a paid/minted/failed unlock row, and frontend
@@ -36,8 +46,9 @@
 - 2026-07-09: AgentRouter's documented OpenAI-compatible route is
   `https://agentrouter.org/v1/chat/completions`, with `https://agentrouter.org/v1` as the base URL.
   Playground VPS probes to `/v1/models`, `/v1/chat/completions`, `/v1/responses`, and
-  `/v1/messages` currently return an Aliyun WAF HTML challenge instead of JSON, so treat xAI fallback
-  as required until AgentRouter allowlists/fixes backend API traffic.
+  `/v1/messages` returned an Aliyun WAF HTML challenge instead of JSON. Do not route production text
+  back to AgentRouter until the VPS receives JSON from the OpenAI-compatible route; the current
+  production text route is the Groq decision below.
 - 2026-07-10: Because xAI text credits are unavailable and AgentRouter is WAF-blocked from the VPS,
   production text routing should use Groq via `TEXT_MODEL_PROVIDER=groq`, `GROQ_API_KEY`, and
   `https://api.groq.com/openai/v1`. Use `llama-3.1-8b-instant` for default/memory turns and
